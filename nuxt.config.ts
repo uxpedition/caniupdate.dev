@@ -1,7 +1,19 @@
-// https://nuxt.com/docs/api/configuration/nuxt-config
+import tailwindcss from '@tailwindcss/vite';
+import { defineNuxtConfig } from 'nuxt/config';
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-09-16',
   devtools: { enabled: true },
+  css: ['~/assets/css/main.css'],
+  vite: {
+    plugins: [tailwindcss()],
+  },
+  imports: {
+    autoImport: false,
+  },
+  components: {
+    dirs: [],
+  },
   typescript: {
     strict: true,
     typeCheck: true,
