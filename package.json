@@ -1,0 +1,21 @@
+{
+  "name": "can-i-npm-update",
+  "version": "0.0.1",
+  "type": "module",
+  "packageManager": "nub@0.8.3",
+  "devEngines": {
+    "packageManager": {
+      "name": "nub",
+      "version": "^0.8.3",
+      "onFail": "ignore"
+    }
+  },
+  "scripts": {
+    "start": "nub index.ts"
+  },
+  "devDependencies": {
+    "@nubjs/types": ">=0.4.13 <=0.8.3",
+    "@types/node": "^26",
+    "typescript": "^7"
+  }
+}
