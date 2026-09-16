@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": ["**/.*/**", "node_modules", ".nuxt", ".output", ".nitro", "dist", "docs/superpowers"],
+  "sortImports": true,
+  "printWidth": 120,
+  "semi": true,
+  "trailingComma": "all",
+  "singleQuote": true,
+  "jsxSingleQuote": true
+}

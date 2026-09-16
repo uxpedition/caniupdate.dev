@@ -1,8 +1,34 @@
 {
   "name": "can-i-npm-update",
-  "version": "0.0.1",
+  "private": true,
   "type": "module",
-  "packageManager": "nub@0.8.3",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "prepare": "nuxt prepare",
+    "postinstall": "nuxt prepare",
+    "type-check": "nuxt typecheck",
+    "lint": "oxlint . --fix",
+    "lint:check": "oxlint .",
+    "format": "oxfmt . --write",
+    "format:check": "oxfmt ."
+  },
+  "dependencies": {
+    "effect": "^4.0.0-rc.115",
+    "nuxt": "^4.5.2",
+    "vue": "^3.5.42",
+    "vue-router": "^5.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "oxfmt": "^0.68.0",
+    "oxlint": "^1.83.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vue-tsc": "^3.3.11"
+  },
   "devEngines": {
     "packageManager": {
       "name": "nub",
@@ -10,12 +36,5 @@
       "onFail": "ignore"
     }
   },
-  "scripts": {
-    "start": "nub index.ts"
-  },
-  "devDependencies": {
-    "@nubjs/types": ">=0.4.13 <=0.8.3",
-    "@types/node": "^26",
-    "typescript": "^7"
-  }
+  "packageManager": "nub@0.8.3"
 }

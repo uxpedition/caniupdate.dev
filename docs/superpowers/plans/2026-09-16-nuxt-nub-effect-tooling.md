@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the Nub hello-world starter with a Nub-managed Nuxt application that demonstrates Effect on the server and enforces `docpenny`'s TypeScript, Oxlint, and Oxfmt policies.
+**Goal:** Replace the Nub hello-world starter with a Nub-managed Nuxt application that demonstrates the latest Effect v4 release candidate on the server and enforces `docpenny`'s TypeScript, Oxlint, and Oxfmt policies.
 
 **Architecture:** Use Nuxi through `nub dlx` to generate the root Nuxt application, then use Nub to install dependencies and maintain `nub.lock`. Keep Nuxt's generated TypeScript project references and configure shared compiler checks through `nuxt.config.ts`; adapt only workspace-specific lint/format ignores. Add one `/api/health` server route whose response is produced by `Effect.runSync`.
 
-**Tech Stack:** Nuxt 4, Vue, TypeScript, Nub 0.8.3, Effect, Oxlint, Oxfmt.
+**Tech Stack:** Nuxt 4, Vue, TypeScript, Nub 0.8.3, latest `effect@rc` v4 release candidate, Oxlint, Oxfmt.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-nuxt-nub-effect-tooling-design.md`
 
@@ -14,6 +14,9 @@
 
 - Work in the current checkout; do not create a worktree.
 - Use Nub for initialization, dependency changes, scripts, installation, and the committed lockfile.
+- Add the latest published `effect@rc` v4 release candidate; resolve every other dependency at its latest available version.
+- Use `typescript@npm:@typescript/typescript6@^6.0.2` as the narrow compatibility exception required by the latest `vue-tsc`; all unrelated packages remain latest.
+- Add latest `oxlint-tsgolint` because Oxlint type-aware mode requires its executable bridge.
 - Initialize with `nub dlx nuxi@latest init . --packageManager=nub --no-install --force`.
 - Preserve the project name `can-i-npm-update` and Nub package-manager metadata.
 - Do not add pnpm workspace files or pnpm-specific scripts.
@@ -27,12 +30,14 @@
 ### Task 1: Scaffold the Nuxt application through Nub
 
 **Files:**
+
 - Create/modify: Nuxi-generated root application files.
 - Modify: `package.json`, `tsconfig.json`, `.gitignore`.
 - Modify: `nub.lock`.
 - Delete: `index.ts`.
 
 **Interfaces:**
+
 - Produces a root Nuxt app with `nuxt.config.ts`, the Nuxt project-reference `tsconfig.json`, and an initial app entrypoint.
 - Keeps `package.json#packageManager` as `nub@0.8.3` and the existing package name.
 
@@ -89,10 +94,10 @@ Expected: Nub creates/updates `nub.lock` and links the generated Nuxt dependenci
 - [ ] **Step 6: Prepare Nuxt’s generated contexts**
 
 ```bash
-nub run prepare
+nub exec nuxt prepare
 ```
 
-Expected: `.nuxt/tsconfig.app.json`, `.nuxt/tsconfig.server.json`, `.nuxt/tsconfig.shared.json`, and `.nuxt/tsconfig.node.json` exist and the root `tsconfig.json` remains a project-reference entrypoint.
+Expected: `.nuxt/tsconfig.app.json`, `.nuxt/tsconfig.server.json`, `.nuxt/tsconfig.shared.json`, and `.nuxt/tsconfig.node.json` exist and the root `tsconfig.json` remains a project-reference entrypoint. The `prepare` package script is added in Task 2.
 
 - [ ] **Step 7: Verify the scaffold before adding custom behavior**
 
@@ -107,38 +112,40 @@ Expected: the generated Nuxt app builds successfully before the Effect route and
 ### Task 2: Add Effect integration and Nub scripts
 
 **Files:**
+
 - Modify: `package.json`.
 - Modify: `nub.lock`.
 - Create: `server/api/health.get.ts`.
 
 **Interfaces:**
+
 - `GET /api/health` returns `{ status: 'ok' }` with HTTP success status.
 - The response is produced by a synchronous Effect program, not a direct object literal.
 
 - [ ] **Step 1: Add the Effect runtime dependency**
 
 ```bash
-nub add effect
+nub add effect@rc
 ```
 
-Expected: `effect` is added under `dependencies` and the lockfile resolves it.
+Expected: `effect` is added under `dependencies` with the current v4 RC range (currently `4.0.0-rc.115`) and the lockfile resolves that RC exactly.
 
 - [ ] **Step 2: Add Nuxt type-check and Ox tooling dependencies**
 
 ```bash
-nub add -D typescript vue-tsc @types/node oxlint oxfmt
+nub add -D typescript@npm:@typescript/typescript6@^6.0.2 vue-tsc @types/node oxlint oxlint-tsgolint oxfmt
 ```
 
-Expected: the manifest contains the tools needed by `nuxt typecheck`, Oxlint, and Oxfmt. Keep any Nuxi-generated Nuxt and Vue dependencies.
+Expected: the manifest contains the tools needed by `nuxt typecheck`, Oxlint type-aware mode, and Oxfmt. `typescript` resolves through the `@typescript/typescript6` npm alias so `vue-tsc` can load its compiler entrypoint, and `oxlint-tsgolint` supplies Oxlint's type-aware bridge. Keep any Nuxi-generated Nuxt and Vue dependencies.
 
 - [ ] **Step 3: Add the Effect-backed health endpoint**
 
 Create `server/api/health.get.ts`:
 
 ```ts
-import { Effect } from 'effect'
+import { Effect } from 'effect';
 
-export default defineEventHandler(() => Effect.runSync(Effect.succeed({ status: 'ok' as const })))
+export default defineEventHandler(() => Effect.runSync(Effect.succeed({ status: 'ok' as const })));
 ```
 
 Expected: Nuxt auto-registers this file as `GET /api/health`; no extra server plugin or Effect abstraction is introduced.
@@ -169,17 +176,19 @@ Remove the obsolete `start: nub index.ts` script. Do not add a second package-ma
 nub install
 ```
 
-Expected: `nub.lock` contains `effect`, `typescript`, `vue-tsc`, `@types/node`, `oxlint`, and `oxfmt` resolutions matching `package.json`.
+Expected: `nub.lock` contains the latest `effect@rc` v4 resolution plus latest `typescript`, `vue-tsc`, `@types/node`, `oxlint`, and `oxfmt` resolutions matching `package.json`.
 
 ---
 
 ### Task 3: Apply Nuxt-native TypeScript rules from `docpenny`
 
 **Files:**
+
 - Modify: `nuxt.config.ts`.
 - Verify without rewriting: `tsconfig.json` and `.nuxt/tsconfig.*`.
 
 **Interfaces:**
+
 - Nuxt generates the four context configurations and continues to provide aliases such as `~`, `#imports`, and `#build`.
 - The generated configurations receive the compatible `docpenny` compiler checks through Nuxt configuration.
 
@@ -252,10 +261,12 @@ Expected: `vue-tsc` completes with no errors for the generated app and Effect en
 ### Task 4: Copy and adapt Oxlint/Oxfmt policy
 
 **Files:**
+
 - Create: `.oxlintrc.json`.
 - Create: `.oxfmtrc.json`.
 
 **Interfaces:**
+
 - `nub run lint:check` runs Oxlint in type-aware mode with the copied `docpenny` rule set.
 - `nub run format:check` runs Oxfmt with the copied formatting policy and no write side effects.
 
@@ -332,7 +343,7 @@ Create `.oxfmtrc.json` with the `docpenny` formatter settings:
 ```json
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["**/.*/**", "node_modules", ".nuxt", ".output", ".nitro", "dist"],
+  "ignorePatterns": ["**/.*/**", "node_modules", ".nuxt", ".output", ".nitro", "dist", "docs/superpowers"],
   "sortImports": true,
   "printWidth": 120,
   "semi": true,
@@ -364,10 +375,12 @@ Expected: both commands pass without changing files. If Oxlint reports a genuine
 ### Task 5: Verify the complete setup through Nuxt and the live endpoint
 
 **Files:**
+
 - Verify: `package.json`, `nub.lock`, `nuxt.config.ts`, `server/api/health.get.ts`, `.oxlintrc.json`, `.oxfmtrc.json`.
 - No permanent test file required; this task uses the real application smoke path.
 
 **Interfaces:**
+
 - The project installs from its Nub manifest/lockfile.
 - The Nuxt build, type checker, lint, and formatter all pass.
 - The running server returns the Effect-produced health response.
@@ -387,17 +400,17 @@ nub run prepare
 nub run type-check
 nub run lint:check
 nub run format:check
-nub run build
+nub run --node build
 ```
 
-Expected: every command exits successfully; Nuxt generated types, strict TypeScript, copied Oxlint policy, copied Oxfmt policy, and production compilation all work together.
+Expected: every command exits successfully; Nuxt generated types, strict TypeScript, copied Oxlint policy, copied Oxfmt policy, and production compilation all work together. The `--node` flag keeps Nub as the package/script runner while disabling Nub's worker-runtime augmentation, which otherwise emits `worker-polyfill.mjs` errors from Nuxt's type-check build workers.
 
 - [ ] **Step 3: Start Nuxt through Nub**
 
 Start a supervised process with the project script:
 
 ```text
-nub run dev -- --host 127.0.0.1 --port 3000
+nub run --node dev -- --host 127.0.0.1 --port 3000
 ```
 
 Wait for Nuxt’s ready message before making the request.
@@ -411,7 +424,7 @@ curl --fail --silent --show-error http://127.0.0.1:3000/api/health
 Expected output:
 
 ```json
-{"status":"ok"}
+{ "status": "ok" }
 ```
 
 This proves the request reaches Nuxt’s server route and that the route executes the imported Effect runtime.
