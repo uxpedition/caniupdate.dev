@@ -271,7 +271,7 @@ html.dark {
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
+  --destructive-foreground: oklch(0.145 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
@@ -309,7 +309,7 @@ html.dark {
     --accent: oklch(0.269 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
-    --destructive-foreground: oklch(0.985 0 0);
+    --destructive-foreground: oklch(0.145 0 0);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
@@ -643,20 +643,12 @@ Expected: all commands exit successfully. Nuxt preserves generated project refer
 The uncommitted `app/pages/design-system-smoke.vue` fixture created in Task 3 is the browser surface for this task. Start a supervised process with the project runner:
 
 ```text
-nub run --node dev -- --host 127.0.0.1 --port 3000
+nub run --node dev --host 127.0.0.1 --port 3000
 ```
 
 Use the process supervisor and wait for Nuxt’s ready message before browser access. Do not run the dev server as an unmanaged background shell process.
 
-Start a supervised process with the project runner:
-
-```text
-nub run --node dev -- --host 127.0.0.1 --port 3000
-```
-
-Use the process supervisor and wait for Nuxt’s ready message before browser access. Do not run the dev server as an unmanaged background shell process.
-
-- [ ] **Step 5: Verify the Button in Chromium**
+- [ ] **Step 4: Verify the Button in Chromium**
 
 Open `http://127.0.0.1:3000/design-system-smoke` in a browser tab and confirm:
 
@@ -671,7 +663,7 @@ Open `http://127.0.0.1:3000/design-system-smoke` in a browser tab and confirm:
 
 Capture a screenshot as the visual verification evidence.
 
-- [ ] **Step 6: Verify the existing health route**
+- [ ] **Step 5: Verify the existing health route**
 
 While the supervised server is running, run:
 
@@ -679,21 +671,17 @@ While the supervised server is running, run:
 curl --fail --silent --show-error http://127.0.0.1:3000/api/health
 ```
 
-Expected output is the existing response:
+Expected: an `application/json` response whose parsed body is semantically equal to `{ status: 'ok' }`. Compare the parsed JSON for semantic equality, not exact compact bytes; the development server may pretty-print the same object.
 
-```json
-{"status":"ok"}
-```
-
-- [ ] **Step 7: Stop the supervised development server**
+- [ ] **Step 6: Stop the supervised development server**
 
 Stop the named process through the process supervisor after the browser and HTTP checks complete.
 
-- [ ] **Step 8: Remove the temporary fixture**
+- [ ] **Step 7: Remove the temporary fixture**
 
 Delete `app/pages/design-system-smoke.vue` and remove the empty `app/pages` directory when no other file remains. Do not replace the fixture with a permanent page or test.
 
-- [ ] **Step 9: Verify cleanup and final static state**
+- [ ] **Step 8: Verify cleanup and final static state**
 
 Run:
 

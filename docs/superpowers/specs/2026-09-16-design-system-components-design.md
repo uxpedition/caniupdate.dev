@@ -57,6 +57,8 @@ The semantic variables are the stable design-system contract. Component styles c
 
 The explicit `.dark` class is the contract for future theme state. The `.light` class prevents the system fallback from switching a user-selected light theme. The initial slice does not implement a theme toggle or persistence layer.
 
+**Contrast adjustment:** both dark blocks set `--destructive-foreground` to the dark neutral foreground `oklch(0.145 0 0)` (the official shadcn dark `--foreground`) rather than upstream's `oklch(0.985 0 0)`. Upstream's pairing measures 2.77:1 on `--destructive: oklch(0.704 0.191 22.216)`, below WCAG AA for normal text; the neutral foreground keeps the official palette foundation while making destructive Button labels readable in dark mode. All other dark token values remain the official neutral palette, and the light destructive pairing is unchanged.
+
 ### Import boundaries
 
 `imports.autoImport: false` disables Nuxt's implicit Vue, composable, utility, and Nuxt helper imports. `components.dirs: []` disables scanning of application component directories. No module in this slice registers additional component auto-imports.
@@ -125,7 +127,7 @@ Create `app/components/element/Button.vue` as a local, source-owned shadcn-style
 - Use Reka's `Primitive` so callers can select another element with `as` or compose a child element with `asChild`.
 - Forward native attributes, event listeners, and arbitrary attributes through `$attrs`.
 - Preserve explicit caller attributes when they conflict with defaults.
-- Use `data-slot="button"` for predictable styling and inspection.
+- Use `data-slot="button"` as Button-owned metadata: the component emits it itself as part of its public contract for predictable styling and inspection. It is not a CVA variant or caller-supplied attribute, and callers are not expected to override it.
 - Default native button behavior to `type="button"`; callers can explicitly provide `type="submit"` or another valid native value. Do not emit a button-only attribute when the primitive renders a non-button element.
 - Render the default slot exactly once; loading, icons, and special slot contracts are out of scope.
 
