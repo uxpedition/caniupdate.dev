@@ -41,7 +41,7 @@
 - Create `app/components/element/Button.vue`: implement the explicit CVA/Reka Button contract.
 - Modify `app/app.vue`: replace the welcome starter with an explicit `NuxtPage`/`NuxtRouteAnnouncer` shell.
 - Modify `server/api/health.get.ts`: import `defineEventHandler` explicitly from `h3` without changing the response.
-- Temporarily create and remove `app/pages/design-system-smoke.vue`: browser-only Button verification fixture.
+- Temporarily create and remove `app/pages/design-system-smoke.vue`: red-green and browser-only Button verification fixture.
 
 ### Task 1: Install UI dependencies and wire Nuxt explicitly
 
@@ -385,7 +385,53 @@ git commit -m "feat: add shadcn theme tokens and cn utility"
 - `as` selects a Reka primitive element; `asChild` composes styles onto the slot child.
 - Native attributes/events are forwarded; caller classes are merged last with `cn`.
 
-- [ ] **Step 1: Create the Button component with explicit imports and CVA styles**
+- [ ] **Step 1: Write the temporary consumer fixture first**
+
+Create `app/pages/design-system-smoke.vue` before creating the Button implementation:
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import Button from '~/components/element/Button.vue'
+
+const clicks = ref(0)
+</script>
+
+<template>
+  <main class="min-h-screen bg-background p-8 text-foreground">
+    <h1 class="mb-6 text-2xl font-semibold">Design system smoke</h1>
+    <div class="flex flex-wrap items-center gap-3">
+      <Button data-testid="default" @click="clicks += 1">Default</Button>
+      <Button data-testid="outline" variant="outline">Outline</Button>
+      <Button data-testid="destructive" variant="destructive">Destructive</Button>
+      <Button data-testid="secondary" variant="secondary">Secondary</Button>
+      <Button data-testid="ghost" variant="ghost">Ghost</Button>
+      <Button data-testid="link" variant="link">Link</Button>
+      <Button data-testid="small" size="sm">Small</Button>
+      <Button data-testid="large" size="lg">Large</Button>
+      <Button data-testid="disabled" disabled>Disabled</Button>
+      <Button data-testid="as-child" as-child>
+        <a href="/design-system-smoke#link">Composed link</a>
+      </Button>
+    </div>
+    <p data-testid="click-count" class="mt-6">Clicks: {{ clicks }}</p>
+  </main>
+</template>
+```
+
+This fixture is the consumer contract for the Button. Keep it uncommitted.
+
+- [ ] **Step 2: Run the red type-check**
+
+Run:
+
+```bash
+nub run type-check
+```
+
+Expected: the command fails because `~/components/element/Button.vue` does not exist yet. The failure must identify the missing Button module rather than a malformed fixture.
+
+- [ ] **Step 3: Create the Button component with explicit imports and CVA styles**
 
 Create `app/components/element/Button.vue`:
 
@@ -471,7 +517,7 @@ const buttonType = computed(() => {
 
 The CVA output is the first `cn` argument and `props.class` is the second, so a caller can override conflicting utility classes. Keep the class contract typed with `HTMLAttributes['class']`; do not widen it to `any`.
 
-- [ ] **Step 2: Check the component’s generated type surface**
+- [ ] **Step 4: Run the green type-check**
 
 Run:
 
@@ -482,7 +528,7 @@ nub run type-check
 
 Expected: TypeScript accepts the Reka `PrimitiveProps`, CVA `VariantProps`, Vue class type, explicit `cn` import, and native attribute forwarding. Nuxt must not report an auto-imported component or missing generated component registration for `Button.vue`.
 
-- [ ] **Step 3: Commit the Button component**
+- [ ] **Step 5: Commit the Button component**
 
 Run:
 
@@ -557,7 +603,7 @@ git commit -m "refactor: make Nuxt runtime imports explicit"
 
 **Files:**
 
-- Temporary create/remove: `app/pages/design-system-smoke.vue`
+- Temporary remove: `app/pages/design-system-smoke.vue` (created in Task 3)
 - Verify: `package.json`, `nub.lock`, `nuxt.config.ts`, `app/assets/css/main.css`, `app/utils/cn.ts`, `app/components/element/Button.vue`, `app/app.vue`, `server/api/health.get.ts`
 
 **Interfaces:**
@@ -592,43 +638,15 @@ nub run --node build
 
 Expected: all commands exit successfully. Nuxt preserves generated project references, Tailwind compiles the global CSS, explicit imports type-check, Oxlint accepts the source, Oxfmt reports no changes, and the production build completes.
 
-- [ ] **Step 3: Add the temporary explicit-import browser fixture**
+- [ ] **Step 3: Start the real Nuxt development server using the fixture**
 
-Create `app/pages/design-system-smoke.vue`:
+The uncommitted `app/pages/design-system-smoke.vue` fixture created in Task 3 is the browser surface for this task. Start a supervised process with the project runner:
 
-```vue
-<script setup lang="ts">
-import { ref } from 'vue'
-import Button from '~/components/element/Button.vue'
-
-const clicks = ref(0)
-</script>
-
-<template>
-  <main class="min-h-screen bg-background p-8 text-foreground">
-    <h1 class="mb-6 text-2xl font-semibold">Design system smoke</h1>
-    <div class="flex flex-wrap items-center gap-3">
-      <Button data-testid="default" @click="clicks += 1">Default</Button>
-      <Button data-testid="outline" variant="outline">Outline</Button>
-      <Button data-testid="destructive" variant="destructive">Destructive</Button>
-      <Button data-testid="secondary" variant="secondary">Secondary</Button>
-      <Button data-testid="ghost" variant="ghost">Ghost</Button>
-      <Button data-testid="link" variant="link">Link</Button>
-      <Button data-testid="small" size="sm">Small</Button>
-      <Button data-testid="large" size="lg">Large</Button>
-      <Button data-testid="disabled" disabled>Disabled</Button>
-      <Button data-testid="as-child" as-child>
-        <a href="/design-system-smoke#link">Composed link</a>
-      </Button>
-    </div>
-    <p data-testid="click-count" class="mt-6">Clicks: {{ clicks }}</p>
-  </main>
-</template>
+```text
+nub run --node dev -- --host 127.0.0.1 --port 3000
 ```
 
-This route is a verification fixture only. Do not commit it.
-
-- [ ] **Step 4: Start the real Nuxt development server**
+Use the process supervisor and wait for Nuxt’s ready message before browser access. Do not run the dev server as an unmanaged background shell process.
 
 Start a supervised process with the project runner:
 
