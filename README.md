@@ -12,11 +12,13 @@ nub ci
 
 ## Development
 
-Start the Nuxt development server on `http://localhost:3000`:
+Start the Nuxt development server on port `5173`, exposed on all network interfaces including Tailscale:
 
 ```bash
 nub run --node dev
 ```
+
+Open `http://<tailscale-ip>:5173` from another device. Get this device's current Tailscale IPv4 address with `tailscale ip -4`.
 
 Nub's `--node` mode keeps Nub as the package/script runner while disabling its runtime augmentation for Nuxt worker processes.
 
