@@ -1,75 +1,43 @@
-# Nuxt Minimal Starter
+# Can I npm update?
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+A Nuxt starter using Nub, Effect v4 RC, Oxlint, and Oxfmt.
 
 ## Setup
 
-Make sure to install dependencies:
+Install the locked dependency graph with Nub:
 
 ```bash
-# npm
-npm install
-
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
+nub ci
 ```
 
-## Development Server
+## Development
 
-Start the development server on `http://localhost:3000`:
+Start the Nuxt development server on `http://localhost:3000`:
 
 ```bash
-# npm
-npm run dev
+nub run --node dev
+```
 
-# pnpm
-pnpm dev
+Nub's `--node` mode keeps Nub as the package/script runner while disabling its runtime augmentation for Nuxt worker processes.
 
-# yarn
-yarn dev
+The setup includes an Effect-backed health endpoint at `/api/health`.
 
-# bun
-bun run dev
+## Checks
+
+```bash
+nub run prepare
+nub run type-check
+nub run lint:check
+nub run format:check
 ```
 
 ## Production
 
-Build the application for production:
+Build and preview the application through Nub without runtime augmentation:
 
 ```bash
-# npm
-npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
+nub run --node build
+nub run --node preview
 ```
 
-Locally preview production build:
-
-```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
-```
-
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+See the [Nuxt deployment documentation](https://nuxt.com/docs/getting-started/deployment) for deployment options.
