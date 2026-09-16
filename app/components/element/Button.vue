@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import type { HTMLAttributes } from 'vue'
-import { computed } from 'vue'
-import { cva, type VariantProps } from 'class-variance-authority'
-import { Primitive, type PrimitiveProps } from 'reka-ui'
-import { cn } from '~/utils/cn'
+import { cva, type VariantProps } from 'class-variance-authority';
+import { Primitive, type PrimitiveProps } from 'reka-ui';
+import type { HTMLAttributes } from 'vue';
+import { computed } from 'vue';
 
-defineOptions({ inheritAttrs: false })
+import { cn } from '~/utils/cn';
+
+defineOptions({ inheritAttrs: false });
 
 const buttonVariants = cva(
   'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium outline-none transition-all focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*="size-"])]:size-4',
@@ -34,16 +35,16 @@ const buttonVariants = cva(
       size: 'default',
     },
   },
-)
+);
 
-type ButtonVariantProps = VariantProps<typeof buttonVariants>
-type ButtonType = 'button' | 'submit' | 'reset'
+type ButtonVariantProps = VariantProps<typeof buttonVariants>;
+type ButtonType = 'button' | 'submit' | 'reset';
 
 interface ButtonProps extends PrimitiveProps {
-  variant?: ButtonVariantProps['variant']
-  size?: ButtonVariantProps['size']
-  type?: ButtonType
-  class?: HTMLAttributes['class']
+  variant?: ButtonVariantProps['variant'];
+  size?: ButtonVariantProps['size'];
+  type?: ButtonType;
+  class?: HTMLAttributes['class'];
 }
 
 const props = withDefaults(defineProps<ButtonProps>(), {
@@ -52,15 +53,15 @@ const props = withDefaults(defineProps<ButtonProps>(), {
   variant: 'default',
   size: 'default',
   type: 'button',
-})
+});
 
 const buttonType = computed(() => {
   if (props.asChild || props.as !== 'button') {
-    return undefined
+    return undefined;
   }
 
-  return props.type
-})
+  return props.type;
+});
 </script>
 
 <template>
