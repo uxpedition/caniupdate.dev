@@ -5,6 +5,18 @@ export default defineNuxtConfig({
   compatibilityDate: '2026-09-16',
   devtools: { enabled: true },
   css: ['~/assets/css/main.css'],
+  modules: ['@nuxt/fonts'],
+  fonts: {
+    families: [
+      { name: 'DM Sans', provider: 'fontsource' },
+      { name: 'Newsreader', provider: 'fontsource' },
+    ],
+    defaults: {
+      weights: ['400 700'],
+      styles: ['normal'],
+      subsets: ['latin'],
+    },
+  },
   vite: {
     plugins: [tailwindcss()],
   },

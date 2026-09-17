@@ -1,66 +1,95 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 
-import Button from '~/components/element/Button.vue';
+import Combobox, { type ComboboxOption } from '~/components/form/Combobox.vue';
+import Select, { type SelectOption } from '~/components/form/Select.vue';
+import { usePackageSearchQuery } from '~/composables/usePackageSearchQuery';
 
-const count = ref(0);
-const colorScheme = ref<'light' | 'dark'>('light');
-
-let mediaQuery: MediaQueryList | undefined;
-let colorSchemeObserver: MutationObserver | undefined;
-
-const syncColorScheme = () => {
-  const scheme = getComputedStyle(document.documentElement).colorScheme;
-  colorScheme.value = scheme === 'dark' ? 'dark' : 'light';
-};
-
-onMounted(() => {
-  syncColorScheme();
-
-  mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  mediaQuery.addEventListener('change', syncColorScheme);
-
-  colorSchemeObserver = new MutationObserver(syncColorScheme);
-  colorSchemeObserver.observe(document.documentElement, {
-    attributeFilter: ['class'],
-    attributes: true,
-  });
-});
-
-onBeforeUnmount(() => {
-  mediaQuery?.removeEventListener('change', syncColorScheme);
-  colorSchemeObserver?.disconnect();
-});
+const searchTerm = ref('');
+const selectedPackage = ref<string | null>(null);
+const { data: searchResult, error, isError, isFetching } = usePackageSearchQuery(searchTerm);
+const packageOptions = computed<readonly ComboboxOption[]>(
+  () =>
+    searchResult.value?.data.map(({ name, version, description }) => ({
+      value: name,
+      label: name,
+      meta: version,
+      ...(description === undefined ? {} : { description }),
+    })) ?? [],
+);
+const versionOptions: readonly SelectOption[] = [{ value: 'latest', label: 'latest' }];
+const fromVersion = ref<string | null>(null);
+const toVersion = ref('latest');
 </script>
 
 <template>
-  <main class="min-h-svh bg-background px-6 py-16 text-foreground">
-    <div class="mx-auto flex max-w-2xl flex-col gap-8">
-      <header class="space-y-3">
-        <p class="text-sm font-medium text-muted-foreground">Can I npm update?</p>
-        <h1 class="text-4xl font-semibold tracking-tight">A small design system check.</h1>
-        <p class="max-w-xl text-muted-foreground">
-          This page uses the semantic theme tokens and Button primitive wired into the app.
-        </p>
+  <main class="min-h-svh bg-background px-4 py-6 text-foreground sm:px-6">
+    <div class="mx-auto flex min-h-[calc(100svh-3rem)] w-full max-w-6xl flex-col justify-center">
+      <header class="mx-auto max-w-2xl space-y-4 text-center">
+        <p class="text-base italic leading-7 text-muted-foreground sm:text-lg">Can I npm update?</p>
+        <h1 class="text-4xl italic font-medium tracking-tight sm:text-6xl">Know before you update.</h1>
       </header>
 
-      <section class="grid gap-4 sm:grid-cols-2">
-        <article class="rounded-lg border bg-card p-6 text-card-foreground shadow-xs">
-          <p class="text-sm font-medium text-muted-foreground">Current color scheme</p>
-          <p data-testid="color-scheme" class="mt-3 text-3xl font-semibold capitalize">
-            {{ colorScheme }}
-          </p>
-          <p class="mt-2 text-sm text-muted-foreground">Resolved from the browser's active color scheme.</p>
-        </article>
+      <section class="mx-auto mt-10 w-full max-w-5xl">
+        <div role="search" aria-label="Search npm packages">
+          <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_12rem_12rem] lg:items-start">
+            <div class="min-w-0">
+              <div class="space-y-2">
+                <label
+                  for="package-search"
+                  class="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                >
+                  Package name
+                </label>
+                <Combobox
+                  input-id="package-search"
+                  data-testid="package-search"
+                  :options="packageOptions"
+                  :loading="isFetching"
+                  v-model="selectedPackage"
+                  v-model:search-term="searchTerm"
+                />
+              </div>
+              <p v-if="isError" class="mt-2 text-sm text-destructive" aria-live="polite">
+                {{ error?.message ?? 'Unable to search npm packages.' }}
+              </p>
+              <p v-else class="mt-2 text-sm text-faded-foreground" aria-live="polite">
+                Instant search, start typing to search package. Minimum 2 characters.
+              </p>
+            </div>
 
-        <article class="rounded-lg border bg-card p-6 text-card-foreground shadow-xs">
-          <p class="text-sm font-medium text-muted-foreground">Counter</p>
-          <p data-testid="counter" class="mt-3 text-3xl font-semibold">{{ count }}</p>
-          <div class="mt-4 flex gap-2">
-            <Button data-testid="increment" @click="count += 1">Increment</Button>
-            <Button data-testid="reset" variant="outline" @click="count = 0">Reset</Button>
+            <div class="space-y-2">
+              <label for="from-version" class="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                From version
+              </label>
+              <Select
+                trigger-id="from-version"
+                data-testid="from-version"
+                aria-label="From version"
+                placeholder="—"
+                size="lg"
+                :options="versionOptions"
+                :model-value="fromVersion"
+                disabled
+              />
+            </div>
+
+            <div class="space-y-2">
+              <label for="to-version" class="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                To version
+              </label>
+              <Select
+                trigger-id="to-version"
+                data-testid="to-version"
+                aria-label="To version"
+                size="lg"
+                :options="versionOptions"
+                :model-value="toVersion"
+                disabled
+              />
+            </div>
           </div>
-        </article>
+        </div>
       </section>
     </div>
   </main>
