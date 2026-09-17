@@ -16,18 +16,10 @@ import { computed, nextTick, ref, watch } from 'vue';
 
 import { cn } from '~/utils/cn';
 
+import type { SelectOption, SelectSearch } from './select.defs';
+
 defineOptions({ inheritAttrs: false });
 
-export interface SelectOption {
-  value: string;
-  label: string;
-  description?: string;
-  disabled?: boolean;
-  separatorBefore?: boolean;
-}
-
-const NUMERIC_TERM_PATTERN = /^[\d.]+$/;
-const NUMERIC_SEGMENT_PATTERN = /^\d+$/;
 const ROW_HEIGHT = 36;
 
 const selectTriggerVariants = cva(
@@ -49,6 +41,7 @@ type SelectTriggerVariantProps = VariantProps<typeof selectTriggerVariants>;
 
 interface SelectProps {
   options?: readonly SelectOption[];
+  search?: SelectSearch;
   modelValue?: string | null;
   placeholder?: string;
   disabled?: boolean;
@@ -100,75 +93,15 @@ watch(open, (isOpen) => {
 });
 
 const optionsByValue = computed(() => new Map(props.options.map((option) => [option.value, option])));
-const numericSkeleton = (text: string) =>
-  text
-    .split(/[.-]/)
-    .filter((segment) => NUMERIC_SEGMENT_PATTERN.test(segment))
-    .join('.');
-const termRank = (text: string, term: string): number | null => {
-  const target = NUMERIC_TERM_PATTERN.test(term) ? numericSkeleton(text) : text;
-
-  if (target.startsWith(term)) {
-    return 0;
-  }
-
-  let index = target.indexOf(term, 1);
-
-  while (index !== -1) {
-    const boundary = target[index - 1];
-
-    if (boundary === '.' || boundary === '-') {
-      return 1;
-    }
-
-    index = target.indexOf(term, index + 1);
-  }
-
-  return text.includes(term) ? 2 : null;
-};
-const optionTermRank = (option: SelectOption, term: string): number | null => {
-  const labelRank = termRank(option.label.toLowerCase(), term);
-
-  if (option.description === undefined) {
-    return labelRank;
-  }
-
-  const descriptionRank = termRank(option.description.toLowerCase(), term);
-
-  if (labelRank === null || descriptionRank === null) {
-    return labelRank ?? descriptionRank;
-  }
-
-  return Math.min(labelRank, descriptionRank);
-};
+const searchPlaceholder = computed(() => props.search?.placeholder ?? 'Search options');
 const visibleOptions = computed(() => {
-  const term = searchTerm.value.trim().toLowerCase();
+  const search = props.search;
 
-  if (term.length === 0) {
+  if (search === undefined) {
     return props.options;
   }
 
-  const prefixMatches: SelectOption[] = [];
-  const segmentMatches: SelectOption[] = [];
-  const otherMatches: SelectOption[] = [];
-
-  for (const option of props.options) {
-    const rank = optionTermRank(option, term);
-
-    if (rank === null) {
-      continue;
-    }
-
-    if (rank === 0) {
-      prefixMatches.push(option);
-    } else if (rank === 1) {
-      segmentMatches.push(option);
-    } else {
-      otherMatches.push(option);
-    }
-  }
-
-  return [...prefixMatches, ...segmentMatches, ...otherMatches];
+  return search.filter(props.options, searchTerm.value);
 });
 const visibleOptionValues = computed(() => visibleOptions.value.map((option) => option.value));
 const hasSeparator = (index: number) =>
@@ -229,15 +162,15 @@ const selectedOption = computed(() => props.options.find((option) => option.valu
             )
           "
         >
-          <div class="p-1 pb-2">
+          <div v-if="props.search !== undefined" class="p-1 pb-2">
             <input
               ref="searchInputRef"
               v-model="searchTerm"
               type="search"
               autocomplete="off"
               spellcheck="false"
-              aria-label="Search versions"
-              placeholder="Search versions"
+              :aria-label="searchPlaceholder"
+              :placeholder="searchPlaceholder"
               class="w-full rounded-sm border border-input bg-card/60 px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               @keydown.down.prevent="focusListbox"
               @keydown.up.prevent="focusListbox"
@@ -301,7 +234,7 @@ const selectedOption = computed(() => props.options.find((option) => option.valu
                 </ListboxVirtualizer>
               </ListboxContent>
               <p v-if="visibleOptions.length === 0" class="px-2 py-6 text-center text-sm text-muted-foreground">
-                No matching versions
+                {{ props.search?.emptyMessage ?? 'No matching options' }}
               </p>
             </ListboxRoot>
           </div>

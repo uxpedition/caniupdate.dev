@@ -4,6 +4,13 @@ import { defineNuxtConfig } from 'nuxt/config';
 export default defineNuxtConfig({
   compatibilityDate: '2026-09-16',
   devtools: { enabled: true },
+  ignore: ['**/*.unit.ts'],
+  pages: {
+    pattern: ['**/*.vue'],
+  },
+  nitro: {
+    ignore: ['**/*.unit.ts'],
+  },
   css: ['~/assets/css/main.css'],
   modules: ['@nuxt/fonts'],
   fonts: {

@@ -3,12 +3,21 @@ import { computed, ref, watch } from 'vue';
 
 import { compareSemver } from '#shared/compareSemver';
 import Combobox, { type ComboboxOption } from '~/components/form/Combobox.vue';
-import Select, { type SelectOption } from '~/components/form/Select.vue';
+import type { SelectOption, SelectSearch } from '~/components/form/select.defs';
+import Select from '~/components/form/Select.vue';
 import { usePackageMetadataQuery } from '~/composables/usePackageMetadataQuery';
 import { usePackageSearchQuery } from '~/composables/usePackageSearchQuery';
 
+import { filterVersionOptions } from './versionSearch';
+
 const TAG_OPTION_PREFIX = 'tag:';
 const VERSION_OPTION_PREFIX = 'version:';
+
+const versionSearch: SelectSearch = {
+  filter: filterVersionOptions,
+  placeholder: 'Search versions',
+  emptyMessage: 'No matching versions',
+};
 
 const searchTerm = ref('');
 const versionSelectAnchor = ref<HTMLElement | null>(null);
@@ -194,6 +203,7 @@ watch(selectedFromVersion, () => {
                   :placeholder="versionPlaceholder"
                   size="lg"
                   :options="versionOptions"
+                  :search="versionSearch"
                   :model-value="fromVersionSelection"
                   :disabled="versionSelectDisabled"
                   @update:model-value="fromVersionSelection = $event"
@@ -212,6 +222,7 @@ watch(selectedFromVersion, () => {
                   :placeholder="versionPlaceholder"
                   size="lg"
                   :options="toVersionOptions"
+                  :search="versionSearch"
                   :model-value="toVersionSelection"
                   :disabled="versionSelectDisabled"
                   @update:model-value="toVersionSelection = $event"

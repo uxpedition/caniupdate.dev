@@ -10,6 +10,8 @@
     "prepare": "nuxt prepare",
     "postinstall": "nuxt prepare",
     "type-check": "nuxt typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "oxlint . --fix",
     "lint:check": "oxlint .",
     "format": "oxfmt . --write",
@@ -37,6 +39,7 @@
     "oxlint-tsgolint": "^7.0.2001",
     "tailwindcss": "^4.3.3",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^5.0.1",
     "vue-tsc": "^3.3.11"
   },
   "devEngines": {
