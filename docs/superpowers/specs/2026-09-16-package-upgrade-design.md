@@ -1,7 +1,7 @@
 # Can I npm update? — Product plan
 
 **Date:** 2026-09-16
-**Status:** Written proposal for review. This document records what to build, how to present it, and where the evidence comes from. It does not authorize implementation.
+**Status:** Product proposal with the SLC data flow agreed on 2026-09-17 (see §5). This document records what to build, how to present it, and where the evidence comes from. It does not authorize implementation.
 
 ## 1. Product promise
 
@@ -38,7 +38,7 @@ These make the plan concrete without pretending that every detail has already be
 | Release-note coverage | GitHub releases and version-matched published/repository changelogs initially | Other repository providers can be supported explicitly rather than silently guessed |
 | Summary | A short evidence-backed briefing, not a safety score | Avoids implying compatibility knowledge we do not have |
 
-**Main product choice still requiring confirmation:** whether “just that package” means a standalone import including bundled runtime dependencies, or strictly the package's own files. This plan recommends the former for the bundle estimate and always distinguishes the latter as published package size. Excluding dependencies from a custom build would be a separate measurement, not an interchangeable fallback.
+**SLC decision (2026-09-17):** use Bundlephobia's standalone package bundle estimate, including dependencies incorporated by its build, alongside the package's own unpacked published size. These remain separate metrics. Include OSV known-advisory comparison for the two selected versions; this is not project-wide security scanning. See §5 for the agreed call order, API contracts and initial-release exclusions.
 
 ### Outside this scope
 
@@ -47,7 +47,7 @@ These make the plan concrete without pretending that every detail has already be
 - Predicting the user's resolved dependency tree or actual application bundle delta.
 - Automatically editing dependencies, generating pull requests, or applying migrations.
 - Exhaustive semantic API compatibility analysis or proof that an upgrade is safe.
-- Accounts, billing, dashboards, security scanning, or package popularity scoring.
+- Accounts, billing, dashboards, project-wide security scanning, or package popularity scoring. Direct-package known-advisory comparison is included in the SLC.
 
 Framework, hosting, and AI-provider selection belong to subsequent implementation planning. No choice of Nuxt or any other framework is implied by using npmx as inspiration.
 
@@ -116,7 +116,11 @@ Group breaking changes, deprecations, fixes, and features across the relevant re
 
 List added, removed, and modified files. Allow inspection of text diffs and the shipped manifest. Label binary or oversized files instead of pretending to produce a meaningful text diff. Keep raw/minified output below the briefing rather than sending the user through it first.
 
-Show calculated results as soon as they are ready. Release evidence, bundle estimates, and the AI review have independent loading and failure states; none should hide already available facts.
+**7. Known advisories**
+
+Show advisories matching the old version only, both versions, or the target only, with source links, severity and documented fixes where available. Label this as direct-package coverage, not an application scan. No matches and unavailable/incomplete evidence are distinct states.
+
+Show calculated results as soon as they are ready. Advisory data, release evidence, bundle estimates, and the AI review have independent loading and failure states; none should hide already available facts.
 
 ## 5. Data sources and what each proves
 
@@ -128,8 +132,79 @@ Show calculated results as soon as they are ready. Release evidence, bundle esti
 | Own published size | Registry `dist.unpackedSize`; inspect the published tarball if absent | Bytes of unpacked archive files, not browser bundle size or a dependency-tree install size |
 | Published files | Archives identified by each version's `dist.tarball` | What was shipped, which may differ from source-control contents |
 | Bundle estimate | Bundlephobia for the two exact versions, where supported | A standardized estimate under the provider's methodology, not the user's application |
+| Known advisories | OSV queries for the two exact package versions | Direct-package matches only; deduplicate aliases, preserve source attribution, and never equate no matches with safety |
 | Maintainer explanations | Package-specific release notes, migration guides, published changelogs, and version-matched repository changelogs | Report mapping and coverage; notes can be incomplete or change over time |
 | Supplementary source changes | Repository comparison at identified release tags or commits | Supporting context, not a substitute for the published-package diff |
+
+### SLC call sequence and API guide — agreed 2026-09-17
+
+The initial **Simple, Lovable, Complete (SLC)** experience uses four external data sources (npm, OSV, GitHub/changelogs, Bundlephobia), local comparison code, and one AI briefing call. No runtime requests go to npmx.dev. This records the agreed product/data flow, not authorization to implement it.
+
+#### Call order
+
+1. **Resolve inputs through npm:** search, fetch full package metadata, and resolve the chosen current/target versions to exact published versions. Capture publication dates, version-specific manifests and tarball URLs.
+2. **Fetch independent evidence in parallel:** both npm tarballs; OSV matches for both versions followed by advisory details; GitHub releases/version-matched repository changelogs; Bundlephobia measurements for both versions. Published changelogs become available when the tarballs are inspected. Parallel means independent branches, not literally four HTTP requests: pagination and advisory-detail requests may be needed.
+3. **Compare locally as evidence arrives:** unpacked size, published files, runtime/peer/optional requirements, Node requirements, ESM/CJS, exports, types, licenses, install scripts, deduplicated advisory differences, and comparable bundle measurements. Do not execute package code or lifecycle scripts. AI does not calculate these facts.
+4. **Render factual sections immediately:** each branch has independent loading, available, partial or unavailable state. A source failure must not hide completed sections or become a fabricated zero.
+5. **Make one AI briefing call:** once evidence branches have completed or reached their bounded failure/timeout states, send the exact version pair, calculated facts, matched release excerpts, coverage gaps and source references. Return 3–5 cited bullets about changes, migration actions and uncertainty. Do not repeatedly call the model for each arriving section. If AI fails, retain the factual report.
+
+#### npm registry and published archives
+
+- Search: `GET https://registry.npmjs.org/-/v1/search?text={query}&size=20`.
+- Full package metadata: `GET https://registry.npmjs.org/{encodedPackage}` with `Accept: application/json`. Use `versions[version]`, `time[version]` and `dist-tags`; do not use latest-only top-level fields for historical versions. The abbreviated `application/vnd.npm.install-v1+json` response omits fields needed for this comparison.
+- If a separate exact manifest is needed: `GET https://registry.npmjs.org/{encodedPackage}/{exactVersion}`. Do not refetch it when the full metadata already supplies it.
+- Download the two `dist.tarball` URLs; verify `dist.integrity` where supplied and inspect archives with the safety limits in §8. Compare shipped files and `package.json`; no install/build is necessary.
+- URL-encode package path parameters (including scoped names) and query values independently. Do not construct tarball URLs by guessing their names.
+- Public package reads need no token. Respect service limits and cache rather than repeatedly downloading full metadata/archives.
+
+Learn: [registry endpoints and search](https://github.com/npm/registry/blob/main/docs/REGISTRY-API.md), [full versus abbreviated metadata](https://github.com/npm/registry/blob/main/docs/responses/package-metadata.md), [manifest fields](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/), [published-package diff semantics](https://docs.npmjs.com/cli/v11/commands/npm-diff/).
+
+#### OSV — known advisories for the selected package versions
+
+Call `POST https://api.osv.dev/v1/querybatch` with `Content-Type: application/json`. Example request:
+
+```json
+{
+  "queries": [
+    { "package": { "name": "chalk", "ecosystem": "npm" }, "version": "4.1.2" },
+    { "package": { "name": "chalk", "ecosystem": "npm" }, "version": "5.3.0" }
+  ]
+}
+```
+
+- Results correspond to input order and contain advisory IDs/modified timestamps, not full details. Follow each result's `next_page_token` where present, then fetch the union of IDs via `GET https://api.osv.dev/v1/vulns/{id}`.
+- Group records through `aliases` (GHSA/CVE/etc.), retaining their underlying ranges and sources; do not treat `related` records as duplicates. Exclude withdrawn findings and expose conflicting evidence.
+- Show advisories matching only the old version, both versions, or only the target; include severity and explicitly documented fixed versions when available. Distinguish malware reports from ordinary vulnerabilities if returned.
+- Scope is the selected package itself, **not its dependency tree or the user's application**. Empty successful results mean “No known advisories found”; failed/incomplete lookups mean unavailable/partial, never “safe.”
+- The API needs no key and currently documents no rate limit. Preserve source attribution: aggregated records retain their upstream data licenses. Refresh advisory data independently of immutable artifact comparisons.
+- Do not add a separate GitHub advisory feed or npm audit backend to the SLC. OSV already aggregates GitHub advisories; npm security-data redistribution also has separate restrictions.
+
+Learn: [API/access](https://google.github.io/osv.dev/api/), [batch queries and pagination](https://google.github.io/osv.dev/post-v1-querybatch/), [advisory detail lookup](https://google.github.io/osv.dev/get-v1-vulns/), [record schema, aliases and affected ranges](https://ossf.github.io/osv-schema/), [data sources and licenses](https://google.github.io/osv.dev/data/), [npm security-data terms](https://docs.npmjs.com/policies/open-source-terms/#conditions).
+
+#### GitHub releases and version-matched changelogs
+
+- Derive repository and monorepo subdirectory from the selected-version metadata; do not assume a package name equals its repository name.
+- Releases: `GET https://api.github.com/repos/{owner}/{repo}/releases?per_page=100`; follow pagination as needed. Match package-specific tags/releases to the interval `(current, target]`, not merely publication dates. The API omits tags without GitHub release records.
+- Repository changelog: `GET https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={identifiedTagOrCommit}`. Use an explicit version-matched ref, preferably a resolved commit, rather than the default branch. Published changelogs from the npm tarballs are another source and need no extra provider.
+- Retain release bodies, version labels, migration links and source URLs. Monorepo ambiguity, unsupported repository hosts and missing notes produce explicit partial/unavailable coverage, not guessed release mappings.
+- Public reads work without authentication, but the normal GitHub limit is 60 requests/hour per IP versus 5,000/hour with a free authenticated token; secondary limits also apply. Keep any token server-side.
+
+Learn: [releases API](https://docs.github.com/en/rest/releases/releases#list-releases), [repository contents and ref parameter](https://docs.github.com/en/rest/repos/contents#get-repository-content), [Git references](https://docs.github.com/en/rest/git/refs), [pagination](https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api), [rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+
+#### Bundlephobia — standalone bundle estimates
+
+- Call `GET https://bundlephobia.com/api/size?package={encodedNameAtExactVersion}` once per selected version, e.g. `package=react%4018.2.0`.
+- Check the returned package name/version. Use `size` (minified bytes) and `gzip` (minified + gzip bytes), keeping both separate from `dist.unpackedSize`.
+- No authentication is required. Requests are rate-limited per IP; uncached builds take longer and have tighter limits. Handle `422` build failures, `429` rate limits and timeouts as measurement unavailability.
+- Show a delta only for comparable measurements under the provider's methodology. Record provider, retrieval time and available build/import assumptions. Do not substitute unpacked/install size or claim the user's application bundle delta. No self-hosted bundling fallback in the SLC.
+
+Learn: [upstream OpenAPI contract](https://github.com/pastelsky/bundlephobia/blob/bundlephobia/client/assets/public/openapi.json), [project and build-failure FAQ](https://github.com/pastelsky/bundlephobia/tree/bundlephobia#readme), [package-build-stats measurement tooling](https://github.com/pastelsky/package-build-stats).
+
+#### AI and initial-release boundary
+
+The AI provider/model is not chosen by this data-source decision; there is no provider endpoint to prescribe yet. The contract is one evidence-constrained briefing call, with credentials on the server and citations validated against our evidence index (§7). AI inference is a separate operating cost, not part of the free public-data claim.
+
+Outside the initial SLC: extra advisory providers (GitHub advisory API, EPSS, KEV), popularity metrics, Scorecard, deps.dev, provenance verification, publint, ATTW, Node lifecycle enrichment and generated transitive dependency-tree analysis. These are potential additions, not prerequisites for completing the agreed flow.
 
 ### Source precedence and traceability
 
@@ -230,7 +305,8 @@ These describe observable product increments, not permission to start implementa
 - [ ] Runtime, peer, and optional requirements remain distinct, without double-counting overrides.
 - [ ] Compatibility-relevant manifest changes and published-file diffs can be inspected.
 - [ ] Missing data, binary files, and truncated analyses are represented honestly.
-- [ ] Every displayed fact is traceable to selected-version metadata or artifacts.
+- [ ] Every displayed package fact is traceable to selected-version metadata or artifacts; advisory findings cite their source records and retrieval time.
+- [ ] OSV findings are compared for both exact versions, aliases are deduplicated, and no matches are distinct from unavailable/incomplete evidence; no application-safety claim is made.
 
 ### Milestone 3 — Add comparable bundle estimates
 
@@ -285,4 +361,4 @@ Borrow useful interaction and data-model ideas; do not depend on npmx's internal
 
 ## 12. Review boundary
 
-Review this product plan and confirm or adjust the proposed defaults, especially the bundle-size definition. A subsequent implementation plan can then choose the stack and provider, define concrete files and interfaces, and sequence implementation work. No application implementation is included in this planning task.
+The SLC data flow and bundle-size definition in §5 were agreed on 2026-09-17. Review remaining product details separately. A subsequent implementation plan can choose the AI provider, reconcile the current project stack, define concrete files and interfaces, and sequence implementation work. No application implementation is included in this documentation task.

@@ -10,6 +10,9 @@ type ParsedSemver = {
 const SEMVER_PATTERN =
   /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
+/** Full version inputs can be queried directly; tags and v-prefixed inputs need registry resolution. */
+export const isExactSemver = (value: string): boolean => !value.startsWith('v') && SEMVER_PATTERN.test(value);
+
 const parseSemver = (value: string): ParsedSemver | null => {
   const match = value.trim().match(SEMVER_PATTERN);
 
