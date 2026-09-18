@@ -198,6 +198,8 @@ Learn: [releases API](https://docs.github.com/en/rest/releases/releases#list-rel
 - No authentication is required. Requests are rate-limited per IP; uncached builds take longer and have tighter limits. Handle `422` build failures, `429` rate limits and timeouts as measurement unavailability.
 - Show a delta only for comparable measurements under the provider's methodology. Record provider, retrieval time and available build/import assumptions. Do not substitute unpacked/install size or claim the user's application bundle delta. No self-hosted bundling fallback in the SLC.
 
+The comparison endpoint exposes `from.bundleSize` and `to.bundleSize`. Each includes `provider: 'bundlephobia'`, a source URL, and an independent `available`/`unavailable` status. Available results include verified package identity, nonnegative integer `size`/`gzip` bytes, `retrievedAt` (retrieval time, not build time), and returned module/side-effect/dependency metadata. Unavailable results use `size: null` and `gzip: null`. Each request, including body decoding, has a 30-second deadline with no retries. Exact inputs start alongside npm/OSV; tags and ranges wait for npm resolution. This backend evidence integration does not calculate a delta or establish reproducible build methodology.
+
 Learn: [upstream OpenAPI contract](https://github.com/pastelsky/bundlephobia/blob/bundlephobia/client/assets/public/openapi.json), [project and build-failure FAQ](https://github.com/pastelsky/bundlephobia/tree/bundlephobia#readme), [package-build-stats measurement tooling](https://github.com/pastelsky/package-build-stats).
 
 #### AI and initial-release boundary

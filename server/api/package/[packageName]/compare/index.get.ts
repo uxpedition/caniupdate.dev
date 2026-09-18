@@ -6,6 +6,7 @@ import npmFetch from 'npm-registry-fetch';
 import { isExactSemver } from '#shared/compareSemver';
 import { PackageNameSchema, RegistryVersionManifestSchema, toPackageVersion } from '#shared/package.defs';
 
+import { getPackageBundleSize } from '../../../../utils/packageBundleSize';
 import { getPackageReleaseNotes } from '../../../../utils/packageReleaseNotes';
 import { getPackageVulnerabilities } from '../../../../utils/packageVulnerabilities';
 
@@ -55,7 +56,7 @@ function getComparisonEvidence(packageName: string, from: string, to: string) {
     { concurrency: 2 },
   );
 
-  // GitHub needs repository metadata, but never waits for OSV. Exact inputs let OSV start before npm resolves.
+  // GitHub needs repository metadata; exact inputs let OSV and Bundlephobia start before npm resolves.
   return isExactSemver(from) && isExactSemver(to)
     ? Effect.all(
         {
@@ -67,17 +68,19 @@ function getComparisonEvidence(packageName: string, from: string, to: string) {
             ),
           ),
           vulnerabilities: getPackageVulnerabilities(packageName, from, to),
+          bundleSize: getPackageBundleSize(packageName, from, to),
         },
-        { concurrency: 2 },
-      ).pipe(Effect.map(({ enriched, vulnerabilities }) => ({ ...enriched, vulnerabilities })))
+        { concurrency: 3 },
+      ).pipe(Effect.map(({ enriched, vulnerabilities, bundleSize }) => ({ ...enriched, vulnerabilities, bundleSize })))
     : versionManifests.pipe(
         Effect.flatMap((manifests) =>
           Effect.all(
             {
               releaseNotes: getPackageReleaseNotes(packageName, manifests.from, manifests.to, process.env.GITHUB_TOKEN),
               vulnerabilities: getPackageVulnerabilities(packageName, manifests.from.version, manifests.to.version),
+              bundleSize: getPackageBundleSize(packageName, manifests.from.version, manifests.to.version),
             },
-            { concurrency: 2 },
+            { concurrency: 3 },
           ).pipe(Effect.map((result) => ({ manifests, ...result }))),
         ),
       );
@@ -88,11 +91,15 @@ export default defineEventHandler(async (event) => {
   const { from, to } = await getValidatedQuery(event, decodeQueryParams);
   return Effect.runPromise(
     getComparisonEvidence(packageName, from, to).pipe(
-      Effect.map(({ manifests, vulnerabilities, releaseNotes }) => ({
+      Effect.map(({ manifests, vulnerabilities, releaseNotes, bundleSize }) => ({
         packageName,
         releaseNotes,
-        from: { ...toPackageVersion(manifests.from), vulnerabilities: vulnerabilities.from },
-        to: { ...toPackageVersion(manifests.to), vulnerabilities: vulnerabilities.to },
+        from: {
+          ...toPackageVersion(manifests.from),
+          vulnerabilities: vulnerabilities.from,
+          bundleSize: bundleSize.from,
+        },
+        to: { ...toPackageVersion(manifests.to), vulnerabilities: vulnerabilities.to, bundleSize: bundleSize.to },
       })),
       Effect.provide(FetchHttpClient.layer),
     ),
