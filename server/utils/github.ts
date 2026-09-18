@@ -1,4 +1,4 @@
-import { Data, Duration, Effect, Option, Result, Schema } from 'effect';
+import { Cache, Data, Duration, Effect, Exit, Option, Result, Schema } from 'effect';
 import { FetchHttpClient, Headers, HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/unstable/http';
 
 const API_ORIGIN = 'https://api.github.com';
@@ -151,7 +151,7 @@ const fetchReleasePage = (
     return { releases, hasNext: hasNextPage(response) };
   }).pipe(Effect.timeout(REQUEST_TIMEOUT));
 
-export const listGithubReleases = Effect.fn('Github.listGithubReleases')(function* (
+const fetchGithubReleases = Effect.fn('Github.fetchGithubReleases')(function* (
   repository: GithubRepository,
   token?: string,
 ) {
@@ -180,7 +180,7 @@ export const listGithubReleases = Effect.fn('Github.listGithubReleases')(functio
   return { releases, complete: false };
 });
 
-export const listGithubDirectory = Effect.fn('Github.listGithubDirectory')(function* (
+const fetchGithubDirectory = Effect.fn('Github.fetchGithubDirectory')(function* (
   repository: GithubRepository,
   path: string,
   ref: string,
@@ -195,7 +195,7 @@ export const listGithubDirectory = Effect.fn('Github.listGithubDirectory')(funct
   return yield* Schema.decodeUnknownEffect(GithubDirectorySchema)(body, { errors: 'all' });
 }, Effect.timeout(REQUEST_TIMEOUT));
 
-export const getGithubFile = Effect.fn('Github.getGithubFile')(function* (
+const fetchGithubFile = Effect.fn('Github.fetchGithubFile')(function* (
   repository: GithubRepository,
   path: string,
   ref: string,
@@ -207,4 +207,118 @@ export const getGithubFile = Effect.fn('Github.getGithubFile')(function* (
     githubRequest(contentsUrl(repository, path, ref), 'application/vnd.github.raw+json', token),
   );
   return yield* readResponseText(response);
+}, Effect.timeout(REQUEST_TIMEOUT));
+
+class GithubReleasesCacheKey extends Data.Class<{
+  readonly owner: string;
+  readonly repo: string;
+  readonly credential: string;
+}> {}
+
+class GithubContentCacheKey extends Data.Class<{
+  readonly owner: string;
+  readonly repo: string;
+  readonly path: string;
+  readonly ref: string;
+  readonly credential: string;
+}> {}
+
+const credentialIdentity = (token?: string): string => token ?? '';
+
+const tokenFromCredential = (credential: string): string | undefined =>
+  credential.length === 0 ? undefined : credential;
+
+const isCommitRef = (ref: string): boolean => /^[a-f0-9]{40}$/i.test(ref);
+
+const githubReleasesCache = Effect.runSync(
+  Cache.makeWith(
+    (key: GithubReleasesCacheKey) =>
+      fetchGithubReleases({ owner: key.owner, repo: key.repo }, tokenFromCredential(key.credential)),
+    {
+      capacity: 16,
+      timeToLive: (exit) => (Exit.isSuccess(exit) && exit.value.complete ? Duration.minutes(5) : Duration.zero),
+      requireServicesAt: 'lookup',
+    },
+  ),
+);
+
+const githubDirectoryCache = Effect.runSync(
+  Cache.makeWith(
+    (key: GithubContentCacheKey) =>
+      fetchGithubDirectory(
+        { owner: key.owner, repo: key.repo },
+        key.path,
+        key.ref,
+        tokenFromCredential(key.credential),
+      ),
+    {
+      capacity: 32,
+      timeToLive: (exit, key) =>
+        Exit.isSuccess(exit) ? (isCommitRef(key.ref) ? Duration.hours(24) : Duration.minutes(5)) : Duration.zero,
+      requireServicesAt: 'lookup',
+    },
+  ),
+);
+
+const githubFileCache = Effect.runSync(
+  Cache.makeWith(
+    (key: GithubContentCacheKey) =>
+      fetchGithubFile({ owner: key.owner, repo: key.repo }, key.path, key.ref, tokenFromCredential(key.credential)),
+    {
+      capacity: 16,
+      timeToLive: (exit, key) =>
+        Exit.isSuccess(exit) ? (isCommitRef(key.ref) ? Duration.hours(24) : Duration.minutes(5)) : Duration.zero,
+      requireServicesAt: 'lookup',
+    },
+  ),
+);
+
+export const listGithubReleases = Effect.fn('Github.listGithubReleases')(function* (
+  repository: GithubRepository,
+  token?: string,
+) {
+  return yield* Cache.get(
+    githubReleasesCache,
+    new GithubReleasesCacheKey({
+      owner: repository.owner,
+      repo: repository.repo,
+      credential: credentialIdentity(token),
+    }),
+  );
+});
+
+export const listGithubDirectory = Effect.fn('Github.listGithubDirectory')(function* (
+  repository: GithubRepository,
+  path: string,
+  ref: string,
+  token?: string,
+) {
+  return yield* Cache.get(
+    githubDirectoryCache,
+    new GithubContentCacheKey({
+      owner: repository.owner,
+      repo: repository.repo,
+      path,
+      ref,
+      credential: credentialIdentity(token),
+    }),
+  );
+}, Effect.timeout(REQUEST_TIMEOUT));
+
+export const getGithubFile = Effect.fn('Github.getGithubFile')(function* (
+  repository: GithubRepository,
+  path: string,
+  ref: string,
+  token?: string,
+) {
+  return yield* Cache.get(
+    githubFileCache,
+    new GithubContentCacheKey({
+      owner: repository.owner,
+      repo: repository.repo,
+      path,
+      ref,
+      credential: credentialIdentity(token),
+    }),
+  );
 }, Effect.timeout(REQUEST_TIMEOUT));

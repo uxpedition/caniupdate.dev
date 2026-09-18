@@ -28,7 +28,7 @@ The setup includes an Effect-backed health endpoint at `/api/health`.
 
 `GET /api/package/{encodedPackageName}/compare?from={versionOrTag}&to={versionOrTag}` returns registry metadata and a `vulnerabilities` object on each version. Tags resolve to published versions before OSV is queried.
 
-Both npm manifest requests start concurrently. When both inputs are full, unprefixed versions, OSV starts alongside npm; tags and noncanonical inputs wait for registry resolution before OSV is queried. Each comparison makes one OSV batch request for both versions, then one detail request per unique returned ID, shared across versions. Detail requests run concurrently with a limit of five. No automatic retries or pagination are performed.
+Both npm manifest requests start concurrently. When both inputs are full, unprefixed versions, OSV starts alongside npm; tags and noncanonical inputs wait for registry resolution before OSV is queried. On an OSV cache miss, the comparison makes one batch request for both versions, then one detail request per unique returned ID, shared across versions. Detail requests run concurrently with a limit of five. No automatic retries or pagination are performed.
 
 - `status`: `available`, `partial`, or `unavailable`.
 - `count`: unique OSV IDs for that version, excluding confirmed withdrawn records. A successful empty result is `0`; a failed or missing batch result is `null`. Counts are by OSV ID, not merged by CVE aliases.
@@ -50,9 +50,45 @@ Non-GitHub hosts, missing/malformed repository metadata, and repository/director
 
 Optionally set `GITHUB_TOKEN` in the server environment to increase GitHub's authenticated rate allowance. It is sent only to `api.github.com`, never included in the response, and redirects are rejected. Public requests work without a token but are subject to GitHub's lower unauthenticated limits.
 
+### Process-local evidence caches
+
+The comparison server uses the existing Effect `Cache` API in memory—no Redis, database, new dependency, or cache service is required. Caches are created once per loaded server module, share pending same-key lookups, and evict least-recently-used entries when their entry capacities are exceeded. Cancelling one caller does not cancel a shared lookup while another caller is still waiting.
+
+| Evidence                 | Key                                                                             | Successful lifetime                                     | Maximum entries |
+| ------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------- | --------------- |
+| npm manifest             | Package + requested exact version                                               | 5 minutes                                               | 128             |
+| OSV comparison           | Package + ordered resolved version pair                                         | 5 minutes, only when both sides are complete            | 128             |
+| Bundlephobia measurement | Package + exact version                                                         | 1 hour                                                  | 128             |
+| GitHub release listing   | Repository + credential identity                                                | 5 minutes, only when pagination is complete             | 16              |
+| GitHub directory listing | Repository + path + ref + credential identity                                   | 24 hours for full commit SHAs; 5 minutes for other refs | 32              |
+| GitHub changelog text    | Repository + path + ref + credential identity                                   | 24 hours for full commit SHAs; 5 minutes for other refs | 16              |
+| Tarball inspection       | Validated normalized URL + integrity/shasum mode and value + inspection version | 24 hours                                                | 16              |
+
+Tags and ranges resolve afresh on each request; they are only shared while a lookup is in flight or within that request. Expiration is measured from lookup completion. Successful empty results can be cached. Failed lookups, unavailable measurements, and incomplete OSV/release-list results have zero lifetime, so the next request can recover without waiting for a success TTL. Deterministic partial tarball evidence (for example, truncated changelog text with a complete inventory) is cacheable.
+
+Caches retain parsed evidence, not HTTP response objects or raw archives. Tarball URL validation still runs before cache lookup, and changed integrity metadata cannot reuse a previously verified entry. GitHub caches are isolated by credential identity; credentials never appear in the API response. Bundlephobia cache hits retain the original `retrievedAt`, rather than presenting cached measurements as newly fetched.
+
+The response shape is unchanged. Warm and overlapping comparisons reuse cached provider evidence, but an uncached comparison still waits for upstream services. OSV and other mutable evidence can lag by their configured TTL. Cache entries are local to each server process, disappear on restart/module reload, and are not shared across multiple instances. This caches evidence, not the complete HTTP response, and does not introduce retries, stale-while-revalidate behavior, or streaming.
+
+### Local comparison
+
+The top-level `comparison` object calculates facts from the two resolved versions and their collected evidence. It adds no network calls and never executes package code. Existing `from`, `to`, and `releaseNotes` evidence remains available.
+
+- `dependencies`: sorted added/removed/changed declarations, each with `name`, `kind`, and nullable `from`/`to` values containing `category` (`runtime` or `optional`) and `range`. Optional requirements override same-name runtime requirements. Category moves are one change, not two dependencies. Dev dependencies are excluded.
+- `peers`: separate requirement changes, including optional/required transitions. Before/after values contain `range` and `optional`.
+- `node`: changes to the declared Node engine range. Missing means unspecified, not unrestricted support. This is not semver range-containment analysis or a Node lifecycle check.
+- `moduleFormat`, `exports`, and `types`: before/after declarations with `changed`. Module metadata contains `type`, `main`, and `module`; it does not prove that loading the package with `require` or `import` succeeds. Type metadata includes `types`, legacy `typings`, `typesVersions`, and the full export map when it contains nested `types` or versioned `types@…` conditions. Export condition and type-version mapping order is preserved, since precedence can matter. Presence flags (`fromDeclared`, `toDeclared`) distinguish an absent field from an explicit JSON `null`; nullable before/after values alone cannot do so. Composite declaration objects can be empty.
+- `licenses`: unique sorted declarations with `added`/`removed`, without legal compatibility advice.
+- `installScripts`: added, removed, and changed explicit `preinstall`, `install`, and `postinstall` commands. Per-version `installScriptCommands` retains their bodies alongside the existing `installScripts` names. This does not infer implicit npm lifecycle behavior such as a default native build.
+- `sizes.unpacked`: before/after bytes, `delta` (`to - from`), `percent`, coverage status/reasons, and per-version `sources`. Uses valid registry `unpackedSize`, falling back to the verified tarball's regular-file bytes. Partial changelog text does not invalidate the complete tarball inventory. Missing measurements are `null`, never zero; a zero baseline has `percent: null`.
+- `sizes.bundle.minified` and `.gzip`: separate Bundlephobia estimate comparisons with the same numeric fields and coverage states. Builds reporting ignored missing dependencies retain values but have no calculated delta. These are provider estimates, not reproducible application bundle measurements; retrieval times and returned build metadata remain under each version's `bundleSize`.
+- `advisories`: groups records transitively by shared OSV IDs/aliases, retaining the original records under each group's `from`/`to`, plus sorted `ids` and `aliases`. `related` IDs are not duplicates. With complete evidence, groups are `fromOnly`, `both`, or `toOnly`. Under incomplete evidence, one-sided groups go to `uncertain` rather than implying a fix or a newly introduced vulnerability. `coverage`, `status`, and `reasons` retain lookup limitations. Per-version counts remain counts of OSV IDs; grouped comparison entries are not interchangeable with those counts.
+
+Declaration change lists contain only differences. Scalar/composite comparisons retain unchanged values with `changed: false`. Comparison direction follows the requested version pair, including identical versions and downgrades; this endpoint does not generate upgrade advice. Missing provider evidence affects only its comparison sections. No published-file diff, AI briefing, dependency-tree resolution, or consumer compatibility verdict is implied.
+
 ### Published npm tarballs
 
-Each version also includes a `tarball` object. Both tarballs are fetched concurrently after npm resolves the manifests, alongside GitHub enrichment and without waiting for OSV or Bundlephobia.
+Each version also includes a `tarball` object. Each tarball lookup starts as soon as its own npm manifest resolves, without waiting for the other manifest, GitHub, OSV, or Bundlephobia. The downloads can overlap; verified cache hits skip download and inspection entirely. GitHub still waits for both manifests to validate repository agreement, but does not wait for either tarball.
 
 - `status`: `available`, `partial`, or `unavailable`; `reasons` explains incomplete inspection. Failure for one version preserves the other version and all unrelated evidence.
 - `url`: the manifest's published tarball URL.

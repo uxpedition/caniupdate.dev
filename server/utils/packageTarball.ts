@@ -3,7 +3,7 @@ import { posix } from 'node:path';
 import { promisify } from 'node:util';
 import { gunzip } from 'node:zlib';
 
-import { Effect } from 'effect';
+import { Cache, Data, Duration, Effect, Exit } from 'effect';
 import { extract, type Header } from 'tar-stream';
 
 import type { RegistryVersionManifest } from '../../shared/package.defs';
@@ -16,9 +16,21 @@ const MAX_ENTRIES = 10_000;
 const MAX_CHANGELOG_BYTES = 256 * 1024;
 const MAX_CHANGELOG_TOTAL_BYTES = 1024 * 1024;
 const TIMEOUT_MS = 10_000;
+const INSPECTION_VERSION = 'tarball-inspection-v1';
 const CHANGELOG_NAME = /^(changelog|changes|history)(\.(md|markdown|txt|rst))?$/i;
 
-function verifyIntegrity(body: Buffer, dist: RegistryVersionManifest['dist']) {
+type CachedTarball = Omit<PackageTarball, 'url'>;
+
+type TarballCacheKeyFields = {
+  readonly url: string;
+  readonly verification: string;
+  readonly verificationKind: 'integrity' | 'shasum';
+  readonly inspectionVersion: string;
+};
+
+class TarballCacheKey extends Data.Class<TarballCacheKeyFields> {}
+
+function verifyIntegrity(body: Buffer, dist: Pick<RegistryVersionManifest['dist'], 'integrity' | 'shasum'>) {
   if (dist.integrity !== undefined) {
     // SRI requires the strongest supported algorithm; never downgrade to shasum on failure.
     const tokens = dist.integrity.trim().split(/\s+/);
@@ -47,12 +59,16 @@ function verifyIntegrity(body: Buffer, dist: RegistryVersionManifest['dist']) {
   }
 }
 
-async function downloadTarball(url: string, signal: AbortSignal): Promise<Buffer> {
+function normalizeSafeTarballUrl(url: string): string {
   const parsed = new URL(url);
   if (parsed.origin !== 'https://registry.npmjs.org' || parsed.username || parsed.password || parsed.hash) {
     throw new Error('Tarball URL must use the public npm HTTPS registry');
   }
-  const response = await fetch(parsed.href, { signal, redirect: 'error' });
+  return parsed.href;
+}
+
+async function downloadTarball(url: string, signal: AbortSignal): Promise<Buffer> {
+  const response = await fetch(normalizeSafeTarballUrl(url), { signal, redirect: 'error' });
   if (!response.ok || !response.body) {
     await response.body?.cancel();
     throw new Error('Tarball request failed');
@@ -218,29 +234,55 @@ async function inspectTarball(body: Buffer, signal: AbortSignal) {
   }
 }
 
-const getVersionTarball = (manifest: RegistryVersionManifest) => {
-  const url = manifest.dist.tarball;
-  return Effect.tryPromise({
-    try: async (signal): Promise<PackageTarball> => {
-      const body = await downloadTarball(url, signal);
-      verifyIntegrity(body, manifest.dist);
+const unavailableTarball = (url: string, cause: unknown): PackageTarball => ({
+  url,
+  status: 'unavailable',
+  reasons: [cause instanceof Error ? cause.message : 'Tarball inspection failed'],
+  files: [],
+  changelogs: [],
+});
+
+const inspectCachedTarball = (key: TarballCacheKey) =>
+  Effect.tryPromise({
+    try: async (signal): Promise<CachedTarball> => {
+      const body = await downloadTarball(key.url, signal);
+      verifyIntegrity(
+        body,
+        key.verificationKind === 'integrity'
+          ? { integrity: key.verification, shasum: '' }
+          : { shasum: key.verification },
+      );
       const result = await inspectTarball(body, signal);
-      return { url, status: result.reasons.length ? 'partial' : 'available', ...result };
+      return { status: result.reasons.length ? 'partial' : 'available', ...result };
     },
     catch: (cause) => cause,
-  }).pipe(
-    Effect.timeout(TIMEOUT_MS),
-    Effect.catch((cause) =>
-      Effect.succeed<PackageTarball>({
-        url,
-        status: 'unavailable',
-        reasons: [cause instanceof Error ? cause.message : 'Tarball inspection failed'],
-        files: [],
-        changelogs: [],
-      }),
-    ),
+  }).pipe(Effect.timeout(TIMEOUT_MS));
+
+const tarballCache = Effect.runSync(
+  Cache.makeWith<TarballCacheKey, CachedTarball, unknown>(inspectCachedTarball, {
+    capacity: 16,
+    timeToLive: (exit) =>
+      Exit.isSuccess(exit) && exit.value.status !== 'unavailable' ? Duration.hours(24) : Duration.zero,
+  }),
+);
+
+export const getPackageTarball = (manifest: RegistryVersionManifest): Effect.Effect<PackageTarball> => {
+  const url = manifest.dist.tarball;
+  let normalizedUrl: string;
+  try {
+    normalizedUrl = normalizeSafeTarballUrl(url);
+  } catch (cause) {
+    return Effect.succeed(unavailableTarball(url, cause));
+  }
+  const verificationKind = manifest.dist.integrity === undefined ? 'shasum' : 'integrity';
+  const key = new TarballCacheKey({
+    url: normalizedUrl,
+    verification: manifest.dist.integrity ?? manifest.dist.shasum,
+    verificationKind,
+    inspectionVersion: INSPECTION_VERSION,
+  });
+  return Cache.get(tarballCache, key).pipe(
+    Effect.map((result) => ({ ...result, url })),
+    Effect.catch((cause) => Effect.succeed(unavailableTarball(url, cause))),
   );
 };
-
-export const getPackageTarballs = (from: RegistryVersionManifest, to: RegistryVersionManifest) =>
-  Effect.all({ from: getVersionTarball(from), to: getVersionTarball(to) }, { concurrency: 2 });

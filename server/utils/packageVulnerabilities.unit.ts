@@ -1,8 +1,16 @@
 import { Effect } from 'effect';
 import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/unstable/http';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getPackageVulnerabilities } from './packageVulnerabilities';
+import type { getPackageVulnerabilities as lookupVulnerabilities } from './packageVulnerabilities';
+
+let getPackageVulnerabilities: typeof lookupVulnerabilities;
+beforeEach(async () => {
+  // Reload the module boundary so each test owns fresh process-local caches.
+  vi.resetModules();
+  ({ getPackageVulnerabilities } = await import('./packageVulnerabilities'));
+});
+afterEach(() => vi.useRealTimers());
 
 const modified = '2026-03-13T22:11:31.390433Z';
 const match = (id: string) => ({ id, modified });
@@ -38,6 +46,27 @@ function run(batch: unknown, details: Record<string, unknown> = {}, batchStatus 
 }
 
 describe('getPackageVulnerabilities', () => {
+  it('refreshes advisory membership at the five-minute boundary', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
+    expect(await run({ results: [{}, {}] }).result).toMatchObject({ from: { count: 0 } });
+    vi.setSystemTime(299_999);
+    const beforeExpiry = run({ results: [{ vulns: [match('NEW')] }, {}] }, { NEW: { id: 'NEW', modified } });
+    expect(await beforeExpiry.result).toMatchObject({ from: { count: 0 } });
+    expect(beforeExpiry.calls).toEqual([]);
+    vi.setSystemTime(300_000);
+    const expired = run({ results: [{ vulns: [match('NEW')] }, {}] }, { NEW: { id: 'NEW', modified } });
+    expect(await expired.result).toMatchObject({ from: { count: 1, advisories: [{ id: 'NEW' }] } });
+  });
+
+  it('does not retain failed or incomplete advisory coverage', async () => {
+    expect(await run({}, {}, 503).result).toMatchObject({ from: { status: 'unavailable' } });
+    expect(await run({ results: [{ vulns: [match('A')] }, {}] }).result).toMatchObject({ from: { status: 'partial' } });
+    expect(await run({ results: [{ vulns: [match('A')] }, {}] }, { A: { id: 'A', modified } }).result).toMatchObject({
+      from: { status: 'available', count: 1, advisories: [{ id: 'A', detailsStatus: 'available' }] },
+    });
+  });
+
   it('queries both versions once and shares unique detail requests without mixing version membership', async () => {
     const { calls, result } = run(
       { results: [{ vulns: [match('A'), match('B'), match('B')] }, { vulns: [match('B'), match('C')] }] },

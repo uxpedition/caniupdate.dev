@@ -89,6 +89,8 @@ export const RegistryVersionManifestSchema = Schema.Struct({
   module: Schema.optionalKey(Schema.String),
   exports: Schema.optionalKey(Schema.Json),
   types: Schema.optionalKey(Schema.String),
+  typings: Schema.optionalKey(Schema.String),
+  typesVersions: Schema.optionalKey(Schema.Json),
 });
 
 export type RegistryVersionManifest = typeof RegistryVersionManifestSchema.Type;
@@ -108,6 +110,8 @@ const ParsedPackageModuleFormatSchema = Schema.Struct({
   module: Schema.optionalKey(Schema.String),
   exports: Schema.optionalKey(Schema.Json),
   types: Schema.optionalKey(Schema.String),
+  typings: Schema.optionalKey(Schema.String),
+  typesVersions: Schema.optionalKey(Schema.Json),
 });
 
 const ParsedPackageVersionSchema = Schema.Struct({
@@ -123,6 +127,7 @@ const ParsedPackageVersionSchema = Schema.Struct({
   optionalDependencies: Schema.Record(Schema.String, Schema.String),
   optionalPeers: Schema.Array(Schema.String),
   installScripts: Schema.Array(Schema.String),
+  installScriptCommands: Schema.Record(Schema.String, Schema.String),
   moduleFormat: ParsedPackageModuleFormatSchema,
 });
 
@@ -188,6 +193,8 @@ const toModuleFormat = (manifest: RegistryVersionManifest): ParsedPackageVersion
   ...(manifest.module === undefined ? {} : { module: manifest.module }),
   ...(manifest.exports === undefined ? {} : { exports: manifest.exports }),
   ...(manifest.types === undefined ? {} : { types: manifest.types }),
+  ...(manifest.typings === undefined ? {} : { typings: manifest.typings }),
+  ...(manifest.typesVersions === undefined ? {} : { typesVersions: manifest.typesVersions }),
 });
 
 export function toPackageVersion(manifest: RegistryVersionManifest): ParsedPackageVersion {
@@ -206,6 +213,12 @@ export function toPackageVersion(manifest: RegistryVersionManifest): ParsedPacka
     optionalDependencies: manifest.optionalDependencies ?? {},
     optionalPeers: toOptionalPeers(manifest.peerDependenciesMeta),
     installScripts: INSTALL_SCRIPT_NAMES.filter((name) => manifest.scripts?.[name] !== undefined),
+    installScriptCommands: Object.fromEntries(
+      INSTALL_SCRIPT_NAMES.flatMap((name) => {
+        const command = manifest.scripts?.[name];
+        return command === undefined ? [] : [[name, command]];
+      }),
+    ),
     moduleFormat: toModuleFormat(manifest),
   };
 }

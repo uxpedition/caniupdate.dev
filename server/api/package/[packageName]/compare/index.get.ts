@@ -1,19 +1,15 @@
-import { Data, Effect, Schema } from 'effect';
+import { Cache, Data, Effect, Exit, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { defineEventHandler, getValidatedQuery, getValidatedRouterParams } from 'h3';
 import npmFetch from 'npm-registry-fetch';
 
 import { isExactSemver } from '#shared/compareSemver';
-import {
-  PackageNameSchema,
-  RegistryVersionManifestSchema,
-  toPackageVersion,
-  type RegistryVersionManifest,
-} from '#shared/package.defs';
+import { PackageNameSchema, RegistryVersionManifestSchema, toPackageVersion } from '#shared/package.defs';
 
 import { getPackageBundleSize } from '../../../../utils/packageBundleSize';
+import { comparePackages } from '../../../../utils/packageComparison';
 import { getPackageReleaseNotes } from '../../../../utils/packageReleaseNotes';
-import { getPackageTarballs } from '../../../../utils/packageTarball';
+import { getPackageTarball } from '../../../../utils/packageTarball';
 import { getPackageVulnerabilities } from '../../../../utils/packageVulnerabilities';
 
 const VERSION_MAX_LENGTH = 256;
@@ -53,52 +49,52 @@ const registryVersionManifestRequest = (packageName: string, version: string) =>
     ),
   );
 
-function getManifestEvidence(
-  packageName: string,
-  manifests: { from: RegistryVersionManifest; to: RegistryVersionManifest },
-) {
-  return Effect.all(
-    {
-      releaseNotes: getPackageReleaseNotes(packageName, manifests.from, manifests.to, process.env.GITHUB_TOKEN),
-      tarballs: getPackageTarballs(manifests.from, manifests.to),
-    },
-    { concurrency: 2 },
-  ).pipe(Effect.map((result) => ({ manifests, ...result })));
-}
+class ManifestKey extends Data.Class<{ packageName: string; version: string }> {}
+
+const manifestCache = Effect.runSync(
+  Cache.makeWith(({ packageName, version }: ManifestKey) => registryVersionManifestRequest(packageName, version), {
+    capacity: 128,
+    // Tags/ranges must resolve afresh; only exact-version successes survive the current lookup.
+    timeToLive: (exit, key) => (Exit.isSuccess(exit) && isExactSemver(key.version) ? '5 minutes' : 0),
+  }),
+);
 
 function getComparisonEvidence(packageName: string, from: string, to: string) {
-  const versionManifests = Effect.all(
-    {
-      from: registryVersionManifestRequest(packageName, from),
-      to: registryVersionManifestRequest(packageName, to),
-    },
-    { concurrency: 2 },
-  );
-
-  // GitHub and tarballs need manifest metadata; exact inputs let OSV and Bundlephobia start before npm resolves.
-  return isExactSemver(from) && isExactSemver(to)
-    ? Effect.all(
-        {
-          enriched: versionManifests.pipe(Effect.flatMap((manifests) => getManifestEvidence(packageName, manifests))),
-          vulnerabilities: getPackageVulnerabilities(packageName, from, to),
-          bundleSize: getPackageBundleSize(packageName, from, to),
-        },
-        { concurrency: 3 },
-      ).pipe(Effect.map(({ enriched, vulnerabilities, bundleSize }) => ({ ...enriched, vulnerabilities, bundleSize })))
-    : versionManifests.pipe(
-        Effect.flatMap((manifests) =>
-          Effect.all(
-            {
-              enriched: getManifestEvidence(packageName, manifests),
-              vulnerabilities: getPackageVulnerabilities(packageName, manifests.from.version, manifests.to.version),
-              bundleSize: getPackageBundleSize(packageName, manifests.from.version, manifests.to.version),
-            },
-            { concurrency: 3 },
-          ).pipe(
-            Effect.map(({ enriched, vulnerabilities, bundleSize }) => ({ ...enriched, vulnerabilities, bundleSize })),
-          ),
+  return Effect.gen(function* () {
+    // Request-scoped sharing is also needed for tags, whose process-cache lifetime is zero.
+    const fromManifest = yield* Effect.cached(
+      Cache.get(manifestCache, new ManifestKey({ packageName, version: from })),
+    );
+    const toManifest = yield* Effect.cached(Cache.get(manifestCache, new ManifestKey({ packageName, version: to })));
+    const manifests = yield* Effect.cached(Effect.all({ from: fromManifest, to: toManifest }, { concurrency: 2 }));
+    const exact = isExactSemver(from) && isExactSemver(to);
+    return yield* Effect.all(
+      {
+        manifests,
+        releaseNotes: manifests.pipe(
+          Effect.flatMap((pair) => getPackageReleaseNotes(packageName, pair.from, pair.to, process.env.GITHUB_TOKEN)),
         ),
-      );
+        tarballs: Effect.all(
+          {
+            from: fromManifest.pipe(Effect.flatMap(getPackageTarball)),
+            to: toManifest.pipe(Effect.flatMap(getPackageTarball)),
+          },
+          { concurrency: 2 },
+        ),
+        vulnerabilities: exact
+          ? getPackageVulnerabilities(packageName, from, to)
+          : manifests.pipe(
+              Effect.flatMap((pair) => getPackageVulnerabilities(packageName, pair.from.version, pair.to.version)),
+            ),
+        bundleSize: exact
+          ? getPackageBundleSize(packageName, from, to)
+          : manifests.pipe(
+              Effect.flatMap((pair) => getPackageBundleSize(packageName, pair.from.version, pair.to.version)),
+            ),
+      },
+      { concurrency: 5 },
+    );
+  });
 }
 
 export default defineEventHandler(async (event) => {
@@ -106,22 +102,27 @@ export default defineEventHandler(async (event) => {
   const { from, to } = await getValidatedQuery(event, decodeQueryParams);
   return Effect.runPromise(
     getComparisonEvidence(packageName, from, to).pipe(
-      Effect.map(({ manifests, vulnerabilities, releaseNotes, bundleSize, tarballs }) => ({
-        packageName,
-        releaseNotes,
-        from: {
+      Effect.map(({ manifests, vulnerabilities, releaseNotes, bundleSize, tarballs }) => {
+        const fromVersion = {
           ...toPackageVersion(manifests.from),
           vulnerabilities: vulnerabilities.from,
           bundleSize: bundleSize.from,
           tarball: tarballs.from,
-        },
-        to: {
+        };
+        const toVersion = {
           ...toPackageVersion(manifests.to),
           vulnerabilities: vulnerabilities.to,
           bundleSize: bundleSize.to,
           tarball: tarballs.to,
-        },
-      })),
+        };
+        return {
+          packageName,
+          releaseNotes,
+          from: fromVersion,
+          to: toVersion,
+          comparison: comparePackages(fromVersion, toVersion),
+        };
+      }),
       Effect.provide(FetchHttpClient.layer),
     ),
   );

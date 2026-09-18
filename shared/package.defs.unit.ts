@@ -137,6 +137,7 @@ describe('toPackageVersion', () => {
       optionalDependencies: {},
       optionalPeers: ['typescript'],
       installScripts: [],
+      installScriptCommands: {},
       moduleFormat: {
         main: 'index.js',
         module: 'dist/vue.runtime.esm-bundler.js',
@@ -169,6 +170,7 @@ describe('toPackageVersion', () => {
       optionalDependencies: {},
       optionalPeers: [],
       installScripts: [],
+      installScriptCommands: {},
       moduleFormat: { main: './lib/coffee-script/coffee-script' },
     });
   });
@@ -195,6 +197,7 @@ describe('toPackageVersion', () => {
       },
       optionalPeers: [],
       installScripts: ['postinstall'],
+      installScriptCommands: { postinstall: 'node install.js' },
       moduleFormat: { main: 'lib/main.js', types: 'lib/main.d.ts' },
     });
   });
