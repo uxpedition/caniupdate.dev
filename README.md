@@ -46,9 +46,24 @@ The response also includes a comparison-level `releaseNotes` object:
 
 GitHub starts after both npm manifests resolve their repository metadata, without waiting for OSV. Release pagination and the entire commit-pinned changelog lookup run concurrently. Only dependent requests—later release pages, reading a discovered changelog file, or discovering a fallback release tag—wait for their prerequisites. GitHub requests have a five-second timeout including the body, a 1 MiB response limit, and no retries. Release pagination stops after ten pages, preserving earlier results as partial evidence if later pages fail or the bound is reached.
 
-Non-GitHub hosts, missing/malformed repository metadata, and repository/directory changes return unavailable release evidence without GitHub requests; npm and OSV results remain intact. GitHub failures, missing notes, and rate limits also preserve the rest of the comparison. This does not fetch GitLab/Bitbucket notes or inspect published tarballs.
+Non-GitHub hosts, missing/malformed repository metadata, and repository/directory changes return unavailable release evidence without GitHub requests; npm and OSV results remain intact. GitHub failures, missing notes, and rate limits also preserve the rest of the comparison. This does not fetch GitLab/Bitbucket notes. Published tarball evidence is returned separately, as described below.
 
 Optionally set `GITHUB_TOKEN` in the server environment to increase GitHub's authenticated rate allowance. It is sent only to `api.github.com`, never included in the response, and redirects are rejected. Public requests work without a token but are subject to GitHub's lower unauthenticated limits.
+
+### Published npm tarballs
+
+Each version also includes a `tarball` object. Both tarballs are fetched concurrently after npm resolves the manifests, alongside GitHub enrichment and without waiting for OSV or Bundlephobia.
+
+- `status`: `available`, `partial`, or `unavailable`; `reasons` explains incomplete inspection. Failure for one version preserves the other version and all unrelated evidence.
+- `url`: the manifest's published tarball URL.
+- `files`: sorted package-relative paths, entry `type`, declared byte `size`, and a hex `sha256` of regular-file contents. Directories and links have `sha256: null`; links include their original `linkTarget` and are never followed. The `package/` root directory itself is omitted.
+- `changelogs`: shipped `CHANGELOG`, `CHANGES`, and `HISTORY` files, case-insensitive, with no extension or `.md`, `.markdown`, `.txt`, or `.rst`, at any depth. Each includes `path`, UTF-8 `body`, and `truncated`. These are artifact contents, not version-filtered release notes or source diffs; they remain separate from GitHub `releaseNotes`.
+
+A complete archive with no matching changelog is `available` with `changelogs: []`; that does not mean there were no changes. Truncated text or invalid UTF-8 marks inspection `partial` while preserving the file inventory. Integrity, transport, archive, and hard resource-limit failures return `unavailable` with empty evidence arrays, never a misleading partial inventory.
+
+Inspection accepts only `https://registry.npmjs.org` URLs without credentials or fragments, rejects redirects, sends no registry/GitHub credentials, and performs no retries. It verifies the strongest supported manifest integrity digest (SHA-512, SHA-384, SHA-256), or the legacy SHA-1 `shasum` only when integrity is absent. A present but unsupported or invalid integrity value never falls back to SHA-1.
+
+Limits per version: ten seconds, 10 MiB downloaded, 32 MiB decompressed archive, 10,000 entries, 4,096 characters per archive path/link target, 256 KiB captured per changelog, and 1 MiB total captured changelog text. Archives must use npm's `package/` root; malformed/truncated archives, duplicate paths, unsafe paths or link targets, and unsupported entry types are rejected. Parsing uses in-memory archive data only: no filesystem extraction, package installation, lifecycle scripts, or package imports. This is artifact evidence, not a claim that the package is safe to execute.
 
 ## Checks
 

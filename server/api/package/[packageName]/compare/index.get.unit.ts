@@ -1,4 +1,8 @@
+import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
+
 import { mockEvent } from 'h3';
+import { pack } from 'tar-stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import handler from './index.get';
@@ -31,6 +35,55 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+describe('tarball evidence', () => {
+  it.each(['1.2.8', 'latest'])('inspects both resolved tarballs while OSV is pending for %s', async (target) => {
+    const output = pack();
+    const chunks: Buffer[] = [];
+    const reading = (async () => {
+      for await (const chunk of output) {
+        if (!Buffer.isBuffer(chunk)) throw new Error('Invalid fixture chunk');
+        chunks.push(chunk);
+      }
+    })();
+    output.entry({ name: 'package/CHANGES.md' }, 'Published fixes');
+    output.finalize();
+    await reading;
+    const tarball = gzipSync(Buffer.concat(chunks));
+    const osvGate = Promise.withResolvers<Response>();
+    const tarballGate = Promise.withResolvers<void>();
+    const downloads: string[] = [];
+    registry.json.mockImplementation(async (path) => {
+      const result = manifest(path.endsWith('/0.0.8') ? '0.0.8' : '1.2.8');
+      result.dist.shasum = createHash('sha1').update(tarball).digest('hex');
+      return result;
+    });
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = new URL(new Request(input, init).url);
+      if (url.hostname === 'api.osv.dev') return osvGate.promise;
+      if (url.hostname === 'registry.npmjs.org') {
+        downloads.push(url.pathname);
+        await tarballGate.promise;
+        return new Response(new Uint8Array(tarball));
+      }
+      return new Response(null, { status: 404 });
+    });
+    const pending = startRequest('0.0.8', target);
+    try {
+      await vi.waitFor(() =>
+        expect(downloads.sort()).toEqual(['/minimist/-/minimist-0.0.8.tgz', '/minimist/-/minimist-1.2.8.tgz']),
+      );
+    } finally {
+      tarballGate.resolve();
+      osvGate.resolve(Response.json({ results: [{}, {}] }));
+    }
+    const evidence = { status: 'available', changelogs: [{ path: 'CHANGES.md', body: 'Published fixes' }] };
+    expect(await pending).toMatchObject({
+      from: { tarball: evidence, vulnerabilities: { count: 0 } },
+      to: { version: '1.2.8', tarball: evidence, vulnerabilities: { count: 0 } },
+    });
+  });
 });
 
 describe('Bundlephobia evidence', () => {
