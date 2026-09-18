@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@effect/ai-openai-compat':
+        specifier: 4.0.0-rc.115
+        version: 4.0.0-rc.115(effect@4.0.0-rc.115)
       '@nuxt/fonts':
         specifier: ^0.14.0
         version: 0.14.0(esbuild@0.28.2)(jiti@2.7.0)(magic-string@1.4.1)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2))
@@ -234,6 +237,11 @@ packages:
 
   '@dxup/unimport@0.1.2':
     resolution: {integrity: sha512-/B8YJGPzaYq1NbsQmwgP8EZqg40NpTw4ZB3suuI0TplbxKHeK94jeaawLmVhCv+YwUnOpiWEz9U6SeThku/8JQ==}
+
+  '@effect/ai-openai-compat@4.0.0-rc.115':
+    resolution: {integrity: sha512-P2BdD2CbajJR3cmnnHMlhG8p9sAM+1zzB9rl4PH/3BjyJw7wkUDjSTgDOvpuYX788aLZkhzgcW2f0NBsyVs4OQ==}
+    peerDependencies:
+      effect: ^4.0.0-rc.115
 
   '@esbuild/aix-ppc64@0.27.7':
     resolution: {integrity: sha512-EKX3Qwmhz1eMdEJokhALr0YiD0lhQNwDqkPYyPhiSwKrh7/4KRjQc04sZ8db+5DVVnZ1LmbNDI1uAMPEUBnQPg==}
@@ -4529,6 +4537,10 @@ snapshots:
       - webpack
 
   '@dxup/unimport@0.1.2': {}
+
+  '@effect/ai-openai-compat@4.0.0-rc.115(effect@4.0.0-rc.115)':
+    dependencies:
+      effect: 4.0.0-rc.115
 
   '@esbuild/aix-ppc64@0.27.7':
     optional: true

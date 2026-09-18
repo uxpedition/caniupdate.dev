@@ -18,6 +18,7 @@
     "format:check": "oxfmt ."
   },
   "dependencies": {
+    "@effect/ai-openai-compat": "4.0.0-rc.115",
     "@nuxt/fonts": "^0.14.0",
     "@tanstack/vue-query": "^5.102.8",
     "class-variance-authority": "^0.7.1",

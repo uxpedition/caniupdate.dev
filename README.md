@@ -28,6 +28,8 @@ The setup includes an Effect-backed health endpoint at `/api/health`.
 
 `GET /api/package/{encodedPackageName}/compare?from={versionOrTag}&to={versionOrTag}` returns registry metadata and a `vulnerabilities` object on each version. Tags resolve to published versions before OSV is queried.
 
+`GET /api/package/{encodedPackageName}/compare/briefing?from={versionOrTag}&to={versionOrTag}` returns the AI briefing for the same pair as `{ packageName, from, to, briefing }`, where `from` and `to` are the resolved versions. It accepts the same parameters and validation as the comparison route, collects evidence server-side through the same providers and caches, and never trusts browser-supplied facts. Keeping it separate lets clients render the factual comparison without waiting for inference.
+
 Both npm manifest requests start concurrently. When both inputs are full, unprefixed versions, OSV starts alongside npm; tags and noncanonical inputs wait for registry resolution before OSV is queried. On an OSV cache miss, the comparison makes one batch request for both versions, then one detail request per unique returned ID, shared across versions. Detail requests run concurrently with a limit of five. No automatic retries or pagination are performed.
 
 - `status`: `available`, `partial`, or `unavailable`.
@@ -84,7 +86,31 @@ The top-level `comparison` object calculates facts from the two resolved version
 - `sizes.bundle.minified` and `.gzip`: separate Bundlephobia estimate comparisons with the same numeric fields and coverage states. Builds reporting ignored missing dependencies retain values but have no calculated delta. These are provider estimates, not reproducible application bundle measurements; retrieval times and returned build metadata remain under each version's `bundleSize`.
 - `advisories`: groups records transitively by shared OSV IDs/aliases, retaining the original records under each group's `from`/`to`, plus sorted `ids` and `aliases`. `related` IDs are not duplicates. With complete evidence, groups are `fromOnly`, `both`, or `toOnly`. Under incomplete evidence, one-sided groups go to `uncertain` rather than implying a fix or a newly introduced vulnerability. `coverage`, `status`, and `reasons` retain lookup limitations. Per-version counts remain counts of OSV IDs; grouped comparison entries are not interchangeable with those counts.
 
-Declaration change lists contain only differences. Scalar/composite comparisons retain unchanged values with `changed: false`. Comparison direction follows the requested version pair, including identical versions and downgrades; this endpoint does not generate upgrade advice. Missing provider evidence affects only its comparison sections. No published-file diff, AI briefing, dependency-tree resolution, or consumer compatibility verdict is implied.
+Declaration change lists contain only differences. Scalar/composite comparisons retain unchanged values with `changed: false`. Comparison direction follows the requested version pair, including identical versions and downgrades; the factual comparison itself does not generate upgrade advice. Missing provider evidence affects only its comparison sections. No published-file diff, dependency-tree resolution, or consumer compatibility verdict is implied. The AI briefing is served by its own endpoint, described below.
+
+### Optional AI briefing
+
+Set these server-only environment variables (see `.env.example`):
+
+```dotenv
+AI_BRIEFING_ENDPOINT=https://opencode.ai/zen/go/v1/chat/completions
+AI_BRIEFING_API_KEY=your-development-key
+AI_BRIEFING_MODEL=deepseek-v4-flash
+```
+
+For OpenRouter, replace the endpoint with `https://openrouter.ai/api/v1/chat/completions`, the key with your OpenRouter key, and the model with `deepseek/deepseek-v4-flash`. The endpoint is the complete OpenAI-compatible Chat Completions URL: its path must end with `/chat/completions`, and query parameters are rejected. Production deployments must set the environment explicitly; do not expose these settings in public runtime configuration. Restart the server after changing its environment.
+
+Model choice matters for latency. Measured against OpenCode Go with a real comparison payload: `glm-5.3-flash` answered in 7–11 s (three of three requests produced a valid briefing), `mimo-v2.5` in 13–75 s, and the reasoning models `deepseek-v4-flash` and `qwen3.8-flash` spent 2.3–4.5k tokens on hidden reasoning and needed 37–50 s. `minimax-m2.7` returned HTTP 500 from the gateway. Prefer a fast model such as `glm-5.3-flash`; requests that exceed the deadline come back as `timeout`.
+
+After evidence collection and local comparison finish, one non-streaming AI request summarizes the evidence. The request is issued through Effect's OpenAI-compatible provider (`@effect/ai-openai-compat` over `effect/unstable/ai`). There are no retries, repair calls, browsing, tools, or Jev calls. The request uses ordinary Chat Completions fields rather than requiring provider-specific structured-output support, and the answer is validated locally. Provider reasoning may consume part of the 4,096-token output allowance.
+
+An available `briefing` contains `status`, `model`, three to five `bullets`, and collected `sources`. Each bullet has `kind` (`change`, `migration`, or `coverage`), `basis` (`fact`, `maintainer`, or `inference`), text, and `evidenceIds`. A coverage bullet is required. Source records contain IDs, labels, provenance URLs, and evidence text. Internal coverage evidence has no external URL. The model cannot supply new citation URLs or inline links. Local validation checks structure and reference membership, not whether every interpretation is semantically correct; this is not a verified safety or compatibility verdict.
+
+Unavailable briefings have empty bullets/sources and a sanitized reason: `not-configured`, `invalid-config`, `provider-error`, `timeout`, or `invalid-response`. All three settings absent disables AI; incomplete configuration is invalid. A failed briefing changes only the briefing endpoint's response; the factual comparison route never calls the provider and is unaffected.
+
+Evidence packaging is bounded to 48 KiB and 64 sources, with maintainer excerpts capped at 4 KiB. Omitted or truncated evidence becomes an explicit coverage limitation. Conservative Markdown version-heading matching excludes unversioned, unreleased, and out-of-range changelog sections. Requests have a 75-second deadline including body decoding, a 128 KiB response limit enforced while reading, and no redirects. HTTPS is required except for HTTP loopback development endpoints.
+
+Successful briefings use a process-local, 128-entry, one-hour cache that shares identical in-flight lookups. Evidence snapshots, endpoint, model, credential identity, and prompt version participate in cache identity; raw credentials are not exposed. Failures are not retained as successful cache entries. Credentials and raw provider error bodies never enter either endpoint's response.
 
 ### Published npm tarballs
 

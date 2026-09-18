@@ -29,6 +29,32 @@ function startRequest(from: string, to: string, packageName = 'minimist') {
 
 const fetchMock = vi.fn<typeof fetch>();
 
+describe('factual comparison', () => {
+  it('never calls the AI provider and omits the briefing field', async () => {
+    // AI configuration is present, so the factual route must ignore it rather than generate inline.
+    vi.stubEnv('AI_BRIEFING_ENDPOINT', 'https://briefing.example/chat/completions');
+    vi.stubEnv('AI_BRIEFING_API_KEY', 'test-only-key');
+    vi.stubEnv('AI_BRIEFING_MODEL', 'test-model');
+    registry.json.mockImplementation(async (path) => {
+      const old = path.endsWith('/1.0.0');
+      return { ...manifest(old ? '1.0.0' : '2.0.0'), engines: { node: old ? '>=18' : '>=20' } };
+    });
+    const providerCalls: string[] = [];
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = new URL(new Request(input, init).url);
+      if (url.hostname === 'briefing.example') providerCalls.push(url.href);
+      return new Response(null, { status: 503 });
+    });
+
+    const response = await startRequest('1.0.0', '2.0.0');
+    expect(response).toMatchObject({
+      comparison: { node: { changed: true, from: '>=18', to: '>=20' } },
+    });
+    expect(response).not.toHaveProperty('briefing');
+    expect(providerCalls).toEqual([]);
+  });
+});
+
 beforeEach(async () => {
   // Reload the module boundary so each test owns fresh process-local caches.
   vi.resetModules();
@@ -39,6 +65,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.useRealTimers();
 });
 
