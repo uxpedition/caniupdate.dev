@@ -69,6 +69,9 @@ const RegistryPackageLicenseSchema = Schema.Struct({
 export const RegistryVersionManifestSchema = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
+  // Enrichment validates optional source metadata independently; malformed values must not discard npm/OSV facts.
+  repository: Schema.optionalKey(Schema.Unknown),
+  gitHead: Schema.optionalKey(Schema.Unknown),
   dist: RegistryPackageDistSchema,
   license: Schema.optionalKey(Schema.String),
   licenses: Schema.optionalKey(Schema.Array(RegistryPackageLicenseSchema)),

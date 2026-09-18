@@ -38,6 +38,18 @@ A failed detail lookup retains its batch match and count with `detailsStatus: 'u
 
 For example, `minimist` versions `1.2.5` and `1.2.8` currently return counts of `1` and `0`, respectively. Advisory data can change over time.
 
+The response also includes a comparison-level `releaseNotes` object:
+
+- `status`: `available`, `partial`, or `unavailable`, with `reasons` explaining coverage gaps. Missing evidence does not mean there were no changes.
+- `releases`: GitHub release version, tag, name, full body, and source URL for `(from, to]`. Drafts are excluded; prereleases follow semver ordering. Packages with a repository subdirectory require package-specific tags such as `@scope/package@1.2.3`; ambiguous bare monorepo tags are not guessed.
+- `changelog`: the target package directory's `CHANGELOG`, `CHANGES`, or `HISTORY` document (plain text, Markdown, or reStructuredText), including its body, path, explicit ref, and source URL; otherwise `null`. It is pinned to the target npm `gitHead` commit, or a unique matching target release tag when no usable commit is available. The default branch is never used.
+
+GitHub starts after both npm manifests resolve their repository metadata, without waiting for OSV. Release pagination and the entire commit-pinned changelog lookup run concurrently. Only dependent requests—later release pages, reading a discovered changelog file, or discovering a fallback release tag—wait for their prerequisites. GitHub requests have a five-second timeout including the body, a 1 MiB response limit, and no retries. Release pagination stops after ten pages, preserving earlier results as partial evidence if later pages fail or the bound is reached.
+
+Non-GitHub hosts, missing/malformed repository metadata, and repository/directory changes return unavailable release evidence without GitHub requests; npm and OSV results remain intact. GitHub failures, missing notes, and rate limits also preserve the rest of the comparison. This does not fetch GitLab/Bitbucket notes or inspect published tarballs.
+
+Optionally set `GITHUB_TOKEN` in the server environment to increase GitHub's authenticated rate allowance. It is sent only to `api.github.com`, never included in the response, and redirects are rejected. Public requests work without a token but are subject to GitHub's lower unauthenticated limits.
+
 ## Checks
 
 Always pass `--node` so Nuxt processes run on plain Node without Nub's runtime augmentation, matching the dev, build, and preview commands:

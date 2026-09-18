@@ -6,6 +6,7 @@ import npmFetch from 'npm-registry-fetch';
 import { isExactSemver } from '#shared/compareSemver';
 import { PackageNameSchema, RegistryVersionManifestSchema, toPackageVersion } from '#shared/package.defs';
 
+import { getPackageReleaseNotes } from '../../../../utils/packageReleaseNotes';
 import { getPackageVulnerabilities } from '../../../../utils/packageVulnerabilities';
 
 const VERSION_MAX_LENGTH = 256;
@@ -45,11 +46,7 @@ const registryVersionManifestRequest = (packageName: string, version: string) =>
     ),
   );
 
-export default defineEventHandler(async (event) => {
-  const { packageName } = await getValidatedRouterParams(event, decodeRouterParams);
-
-  const { from, to } = await getValidatedQuery(event, decodeQueryParams);
-
+function getComparisonEvidence(packageName: string, from: string, to: string) {
   const versionManifests = Effect.all(
     {
       from: registryVersionManifestRequest(packageName, from),
@@ -58,25 +55,42 @@ export default defineEventHandler(async (event) => {
     { concurrency: 2 },
   );
 
-  // Only tags and noncanonical inputs need to wait for registry version resolution.
-  const evidence =
-    isExactSemver(from) && isExactSemver(to)
-      ? Effect.all(
-          { manifests: versionManifests, vulnerabilities: getPackageVulnerabilities(packageName, from, to) },
-          { concurrency: 2 },
-        )
-      : versionManifests.pipe(
-          Effect.flatMap((manifests) =>
-            getPackageVulnerabilities(packageName, manifests.from.version, manifests.to.version).pipe(
-              Effect.map((vulnerabilities) => ({ manifests, vulnerabilities })),
+  // GitHub needs repository metadata, but never waits for OSV. Exact inputs let OSV start before npm resolves.
+  return isExactSemver(from) && isExactSemver(to)
+    ? Effect.all(
+        {
+          enriched: versionManifests.pipe(
+            Effect.flatMap((manifests) =>
+              getPackageReleaseNotes(packageName, manifests.from, manifests.to, process.env.GITHUB_TOKEN).pipe(
+                Effect.map((releaseNotes) => ({ manifests, releaseNotes })),
+              ),
             ),
           ),
-        );
+          vulnerabilities: getPackageVulnerabilities(packageName, from, to),
+        },
+        { concurrency: 2 },
+      ).pipe(Effect.map(({ enriched, vulnerabilities }) => ({ ...enriched, vulnerabilities })))
+    : versionManifests.pipe(
+        Effect.flatMap((manifests) =>
+          Effect.all(
+            {
+              releaseNotes: getPackageReleaseNotes(packageName, manifests.from, manifests.to, process.env.GITHUB_TOKEN),
+              vulnerabilities: getPackageVulnerabilities(packageName, manifests.from.version, manifests.to.version),
+            },
+            { concurrency: 2 },
+          ).pipe(Effect.map((result) => ({ manifests, ...result }))),
+        ),
+      );
+}
 
+export default defineEventHandler(async (event) => {
+  const { packageName } = await getValidatedRouterParams(event, decodeRouterParams);
+  const { from, to } = await getValidatedQuery(event, decodeQueryParams);
   return Effect.runPromise(
-    evidence.pipe(
-      Effect.map(({ manifests, vulnerabilities }) => ({
+    getComparisonEvidence(packageName, from, to).pipe(
+      Effect.map(({ manifests, vulnerabilities, releaseNotes }) => ({
         packageName,
+        releaseNotes,
         from: { ...toPackageVersion(manifests.from), vulnerabilities: vulnerabilities.from },
         to: { ...toPackageVersion(manifests.to), vulnerabilities: vulnerabilities.to },
       })),
