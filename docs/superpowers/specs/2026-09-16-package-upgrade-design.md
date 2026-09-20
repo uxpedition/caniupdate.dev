@@ -91,7 +91,7 @@ Package, current version, target version, publication dates, and source coverage
 
 **2. Upgrade briefing**
 
-Three to five short bullets, prioritizing:
+One to five short, distinct insights, preferring fewer useful points over padding and prioritizing:
 
 - Compatibility changes and documented breaking changes.
 - Important fixes and new capabilities.
@@ -146,7 +146,7 @@ The initial **Simple, Lovable, Complete (SLC)** experience uses four external da
 2. **Fetch independent evidence in parallel:** both npm tarballs; OSV matches for both versions followed by advisory details; GitHub releases/version-matched repository changelogs; Bundlephobia measurements for both versions. Published changelogs become available when the tarballs are inspected. Parallel means independent branches, not literally four HTTP requests: pagination and advisory-detail requests may be needed.
 3. **Compare locally as evidence arrives:** unpacked size, published files, runtime/peer/optional requirements, Node requirements, ESM/CJS, exports, types, licenses, install scripts, deduplicated advisory differences, and comparable bundle measurements. Do not execute package code or lifecycle scripts. AI does not calculate these facts.
 4. **Render factual sections immediately:** each branch has independent loading, available, partial or unavailable state. A source failure must not hide completed sections or become a fabricated zero.
-5. **Make one AI briefing call:** once evidence branches have completed or reached their bounded failure/timeout states, send the exact version pair, calculated facts, matched release excerpts, coverage gaps and source references. Return 3–5 cited bullets about changes, migration actions and uncertainty. Do not repeatedly call the model for each arriving section. If AI fails, retain the factual report.
+5. **Make one AI briefing call:** once evidence branches have completed or reached their bounded failure/timeout states, send the exact version pair, calculated facts, matched release excerpts, coverage gaps and source references. Return 1–5 distinct cited insights about consequential changes and specific migration actions, without generated disclaimers or coverage summaries. Do not repeatedly call the model for each arriving section. If AI fails, retain the factual report.
 
 #### npm registry and published archives
 
@@ -204,7 +204,7 @@ Learn: [upstream OpenAPI contract](https://github.com/pastelsky/bundlephobia/blo
 
 #### AI and initial-release boundary
 
-The AI provider/model is not chosen by this data-source decision; there is no provider endpoint to prescribe yet. The contract is one evidence-constrained briefing call, with credentials on the server and citations validated against our evidence index (§7). AI inference is a separate operating cost, not part of the free public-data claim.
+The AI provider/model is not chosen by this data-source decision; there is no provider endpoint to prescribe yet. The contract is one evidence-constrained briefing operation, with credentials on the server and citations validated against our evidence index (§7). As revised on 2026-09-19, invalid provider output permits one fresh generation (at most two attempts within one 75-second AI deadline), using the same evidence packet without refetching factual data. Successful responses are retained indefinitely in local libSQL under the SHA-256 of that exact evidence packet; changed evidence generates a new snapshot, while configuration and credential changes do not invalidate a matching snapshot. HTTP/transport failures and timeouts are not retried. AI inference, including the optional second attempt, is a separate operating cost, not part of the free public-data claim.
 
 Outside the initial SLC: extra advisory providers (GitHub advisory API, EPSS, KEV), popularity metrics, Scorecard, deps.dev, provenance verification, publint, ATTW, Node lifecycle enrichment and generated transitive dependency-tree analysis. These are potential additions, not prerequisites for completing the agreed flow.
 
@@ -256,11 +256,11 @@ The model receives the exact version pair, structured comparison facts, relevant
 
 The briefing must:
 
-- Stay concise: three to five prioritized bullets, with detail available on expansion.
+- Stay concise: one to five distinct, prioritized insights, with no quota-driven padding or repeated change/action bullets.
 - Cite evidence for each substantive claim.
 - Distinguish measured facts, maintainer statements, and inferred implications.
 - Use conditional wording when impact depends on user behavior: “If you use this API…”
-- Surface missing or conflicting evidence rather than turn absence into reassurance.
+- Keep source availability and truncation in structured coverage metadata, not generated disclaimers or standalone coverage bullets. Missing evidence must still constrain claims rather than become reassurance.
 - Suggest specific checks or maintainer-documented migration steps, not generic “test thoroughly” filler.
 
 Repository files and release text are untrusted data, never instructions to the model. The summarization step has no authority to execute package code or follow instructions embedded in evidence. Only citations present in the collected evidence may be exposed as supporting references.

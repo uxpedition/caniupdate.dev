@@ -1,9 +1,15 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { mockEvent } from 'h3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type endpointHandler from './briefing.get';
 
 let handler: typeof endpointHandler;
+let databaseDirectory: string;
+let closeStore: () => void;
 
 const registry = vi.hoisted(() => ({ json: vi.fn<(path: string) => Promise<unknown>>() }));
 vi.mock('npm-registry-fetch', () => ({ default: registry }));
@@ -25,11 +31,7 @@ function startRequest(from: string, to: string, packageName = 'minimist') {
 const fetchMock = vi.fn<typeof fetch>();
 
 const bullets = (evidenceIds: string) => ({
-  bullets: [
-    { kind: 'change', basis: 'fact', text: 'Node requirements changed.', evidenceIds: [evidenceIds] },
-    { kind: 'migration', basis: 'inference', text: 'Check your Node runtime.', evidenceIds: ['comparison.node'] },
-    { kind: 'coverage', basis: 'fact', text: 'Application compatibility was not tested.', evidenceIds: ['coverage'] },
-  ],
+  bullets: [{ kind: 'change', basis: 'fact', text: 'Node requirements changed.', evidenceIds: [evidenceIds] }],
 });
 
 const providerEnvelope = (content: string) =>
@@ -43,20 +45,25 @@ const providerEnvelope = (content: string) =>
 
 describe('AI briefing endpoint', () => {
   beforeEach(async () => {
+    databaseDirectory = await mkdtemp(join(tmpdir(), 'briefing-route-'));
+    vi.stubEnv('AI_BRIEFING_CACHE_PATH', join(databaseDirectory, 'briefings.db'));
     vi.stubEnv('AI_BRIEFING_ENDPOINT', 'https://briefing.example/v1/chat/completions');
     vi.stubEnv('AI_BRIEFING_API_KEY', 'test-only-key');
     vi.stubEnv('AI_BRIEFING_MODEL', 'test-model');
     // Reload the module boundary so each test owns fresh process-local caches.
     vi.resetModules();
     handler = (await import('./briefing.get')).default;
+    ({ closeBriefingStore: closeStore } = await import('../../../../utils/packageBriefingStore'));
     registry.json.mockReset();
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+    closeStore();
+    await rm(databaseDirectory, { recursive: true, force: true });
   });
 
   it('returns a cited briefing for the resolved pair', async () => {
@@ -79,11 +86,9 @@ describe('AI briefing endpoint', () => {
     if (briefing.status !== 'available') throw new Error('Expected an available briefing');
     expect(briefing.bullets.map(({ kind, basis, evidenceIds }) => ({ kind, basis, evidenceIds }))).toEqual([
       { kind: 'change', basis: 'fact', evidenceIds: ['comparison.node'] },
-      { kind: 'migration', basis: 'inference', evidenceIds: ['comparison.node'] },
-      { kind: 'coverage', basis: 'fact', evidenceIds: ['coverage'] },
     ]);
-    // Only sources the bullets reference are returned.
-    expect([...briefing.sources.map((source) => source.id)].sort()).toEqual(['comparison.node', 'coverage']);
+    // Coverage remains metadata even when no insight cites it.
+    expect(briefing.sources.map((source) => source.id).sort()).toEqual(['comparison.node', 'coverage']);
   });
 
   it.each(['provider-error', 'invalid-response'])('reports %s without leaking provider text', async (failure) => {

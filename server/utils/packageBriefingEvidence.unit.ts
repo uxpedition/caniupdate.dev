@@ -202,6 +202,74 @@ describe('buildBriefingEvidence', () => {
     expect(JSON.stringify(evidenceInput)).toBe(before);
   });
 
+  it('retains advisory matches and summaries when provider detail records exceed the packet budget', () => {
+    const advisory: PackageAdvisory = {
+      id: 'GHSA-example',
+      url: 'https://osv.dev/vulnerability/GHSA-example',
+      detailsStatus: 'available',
+      modified: '2026-01-01T00:00:00Z',
+      summary: 'Development server can expose files outside its root.',
+      severity: [{ type: 'CVSS_V3', score: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:N/A:N' }],
+      references: Array.from({ length: 1_000 }, (_, index) => ({
+        type: 'WEB',
+        url: `https://example.com/security/references/${index}`,
+      })),
+      affected: [{ package: { ecosystem: 'npm', name: 'widget' }, versions: ['1.0.0', '2.0.0'] }],
+    };
+    const vulnerabilities = { status: 'available' as const, count: 1, advisories: [advisory] };
+    const result = buildBriefingEvidence(
+      input(version('1.0.0', { vulnerabilities }), version('2.0.0', { vulnerabilities })),
+    );
+    const source = result.sources.find(({ id }) => id === 'comparison.advisories');
+
+    expect(JSON.parse(source?.text ?? 'null')).toMatchObject({
+      status: 'available',
+      fromOnly: [],
+      toOnly: [],
+      both: [
+        {
+          ids: ['GHSA-example'],
+          from: [{ id: 'GHSA-example', summary: 'Development server can expose files outside its root.' }],
+          to: [
+            {
+              id: 'GHSA-example',
+              severity: [{ type: 'CVSS_V3', score: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:N/A:N' }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(source?.urls).toEqual(['https://osv.dev/vulnerability/GHSA-example']);
+    expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThanOrEqual(48 * 1024);
+  });
+
+  it('keeps smaller compatibility facts when a high-priority source cannot fit even by itself', () => {
+    const advisory: PackageAdvisory = {
+      id: 'GHSA-oversized',
+      url: 'https://osv.dev/vulnerability/GHSA-oversized',
+      detailsStatus: 'available',
+      modified: '2026-01-01T00:00:00Z',
+      summary: 'Oversized provider summary. '.repeat(3_000),
+    };
+    const result = buildBriefingEvidence(
+      input(
+        version('1.0.0', { engines: { node: '>=18' } }),
+        version('2.0.0', {
+          engines: { node: '>=20' },
+          vulnerabilities: { status: 'available', count: 1, advisories: [advisory] },
+        }),
+      ),
+    );
+    const node = result.sources.find(({ id }) => id === 'comparison.node');
+    const coverage = result.sources.find(({ id }) => id === 'coverage');
+
+    expect(JSON.parse(node?.text ?? 'null')).toMatchObject({ changed: true, from: '>=18', to: '>=20' });
+    expect(JSON.parse(coverage?.text ?? 'null')).toMatchObject({
+      omitted: { sourceIds: ['comparison.advisories'], count: 1 },
+    });
+    expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThanOrEqual(48 * 1024);
+  });
+
   it('rejects malformed or oversized identity instead of exceeding the packet bound', () => {
     const from = version('1.0.0');
     const to = version('2.0.0');

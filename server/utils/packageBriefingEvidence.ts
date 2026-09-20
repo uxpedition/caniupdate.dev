@@ -1,5 +1,6 @@
 import type { BriefingEvidence, BriefingInput, BriefingSource } from '../../shared/briefing.defs';
 import type { AdvisoryGroup, PackageComparison } from '../../shared/comparison.defs';
+import type { PackageAdvisory } from '../../shared/osv.defs';
 import { buildMaintainerCandidates } from './packageBriefingEvidenceChangelog';
 import { packBriefingEvidence, type BriefingEvidenceCandidate } from './packageBriefingEvidencePacking';
 
@@ -40,6 +41,34 @@ function advisoryUrls(comparison: PackageComparison): string[] {
   return unique(groups.flatMap((group) => [...group.from, ...group.to].map(({ url }) => url)));
 }
 
+function advisorySummary(advisory: PackageAdvisory) {
+  if (advisory.detailsStatus !== 'available') return advisory;
+  const { id, url, detailsStatus, summary, severity } = advisory;
+  return { id, url, detailsStatus, summary, severity };
+}
+
+function advisoryEvidence(comparison: PackageComparison) {
+  const summarizeGroups = (groups: readonly AdvisoryGroup[]) =>
+    groups.map(({ ids, aliases, from, to }) => ({
+      ids,
+      aliases,
+      from: from.map(advisorySummary),
+      to: to.map(advisorySummary),
+    }));
+  const { status, coverage, reasons, fromOnly, both, toOnly, uncertain } = comparison.advisories;
+  return {
+    status,
+    coverage,
+    reasons,
+    detailScope:
+      'Match groups, identifiers, summaries and severity only; affected-version ranges and reference lists are not included.',
+    fromOnly: summarizeGroups(fromOnly),
+    both: summarizeGroups(both),
+    toOnly: summarizeGroups(toOnly),
+    uncertain: summarizeGroups(uncertain),
+  };
+}
+
 function structuredSource(
   id: string,
   label: string,
@@ -56,7 +85,7 @@ function compatibilityCandidates(input: BriefingInput, versions: readonly string
     structuredSource(
       'comparison.advisories',
       'Computed advisory comparison',
-      input.comparison.advisories,
+      advisoryEvidence(input.comparison),
       advisoryUrls(input.comparison),
       0,
     ),

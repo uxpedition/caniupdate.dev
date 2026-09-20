@@ -191,6 +191,32 @@ const fetchChangelog = Effect.fn('Github.fetchChangelog')(function* (source: Sou
   };
 });
 
+const PackageIdentitySchema = Schema.Struct({ name: Schema.String, version: Schema.String });
+
+const verifyPackageTag = Effect.fn('Github.verifyPackageTag')(function* (
+  source: Source,
+  tag: string,
+  packageName: string,
+  targetVersion: string,
+  token?: string,
+) {
+  const identity = yield* getGithubFile(source.repository, `${source.directory}/package.json`, tag, token).pipe(
+    Effect.flatMap((text) => Effect.try((): unknown => JSON.parse(text))),
+    Effect.flatMap(Schema.decodeUnknownEffect(PackageIdentitySchema)),
+    Effect.result,
+  );
+  return (
+    Result.isSuccess(identity) && identity.success.name === packageName && identity.success.version === targetVersion
+  );
+});
+
+function targetReleaseMatches(listing: ReleaseListing, packageName: string, targetVersion: string) {
+  if (Result.isFailure(listing) || !listing.success.complete) return [];
+  return matchedVersions(listing.success.releases, packageName, false).filter(
+    ({ version }) => compareSemver(version, targetVersion) === 0,
+  );
+}
+
 const fallbackChangelog = Effect.fn('Github.fallbackChangelog')(function* (
   listing: ReleaseListing,
   source: Source,
@@ -198,15 +224,21 @@ const fallbackChangelog = Effect.fn('Github.fallbackChangelog')(function* (
   targetVersion: string,
   token?: string,
 ) {
-  const matches =
-    Result.isSuccess(listing) && listing.success.complete
-      ? matchedVersions(listing.success.releases, packageName, source.directory !== '').filter(
-          ({ version }) => compareSemver(version, targetVersion) === 0,
-        )
-      : [];
-  const tag = matches.length === 1 ? matches[0]?.release.tag_name : undefined;
+  const matches = targetReleaseMatches(listing, packageName, targetVersion);
+  const monorepo = source.directory !== '';
+  const packageMatches = matches.filter(({ release }) => release.tag_name.startsWith(`${packageName}@`));
+  const eligible = monorepo && packageMatches.length > 0 ? packageMatches : matches;
+  const tag = eligible.length === 1 ? eligible[0]?.release.tag_name : undefined;
   if (tag === undefined || !isSafeRef(tag))
     return { changelog: null, reason: 'no unambiguous pinned target ref is available for the changelog' };
+  // A repository-wide tag does not establish package ownership. Verify the target package
+  // at that same ref, and use only its changelog, not potentially unrelated release prose.
+  if (
+    monorepo &&
+    packageMatches.length === 0 &&
+    !(yield* verifyPackageTag(source, tag, packageName, targetVersion, token))
+  )
+    return { changelog: null, reason: 'the target tag does not provide a verified package name and version' };
   return yield* fetchChangelog(source, tag, token);
 });
 

@@ -11,6 +11,9 @@ importers:
       '@effect/ai-openai-compat':
         specifier: 4.0.0-rc.115
         version: 4.0.0-rc.115(effect@4.0.0-rc.115)
+      '@libsql/client':
+        specifier: ^0.18.0
+        version: 0.18.0
       '@nuxt/fonts':
         specifier: ^0.14.0
         version: 0.14.0(esbuild@0.28.2)(jiti@2.7.0)(magic-string@1.4.1)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2))
@@ -613,6 +616,63 @@ packages:
   '@kwsites/promise-deferred@1.1.1':
     resolution: {integrity: sha512-GaHYm+c0O9MjZRu0ongGBRbinu8gVAMd2UZjji6jVmqKtZluZnptXGWhz1E8j8D2HJ3f/yMxKAUC0b+57wncIw==}
 
+  '@libsql/client@0.18.0':
+    resolution: {integrity: sha512-zMCCo58vv7w27j7+cnt/GW+X6/Rih6cHZ86PKi0AxCMOqMfrVgG9OZ5lW2bDMJhSeOjsv2szH2nJF3A9l36UmA==}
+
+  '@libsql/core@0.18.0':
+    resolution: {integrity: sha512-N8RR2CIpcgtbKZnXs2KVpw2lJQfinUj3I56e7qRDRpK18Hty0Rr8nr00VmFb4R/DsqOanPB/TaP3+QAQLZeXMg==}
+
+  '@libsql/darwin-arm64@0.5.29':
+    resolution: {integrity: sha512-K+2RIB1OGFPYQbfay48GakLhqf3ArcbHqPFu7EZiaUcRgFcdw8RoltsMyvbj5ix2fY0HV3Q3Ioa/ByvQdaSM0A==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@libsql/darwin-x64@0.5.29':
+    resolution: {integrity: sha512-OtT+KFHsKFy1R5FVadr8FJ2Bb1mghtXTyJkxv0trocq7NuHntSki1eUbxpO5ezJesDvBlqFjnWaYYY516QNLhQ==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@libsql/hrana-client@0.10.0':
+    resolution: {integrity: sha512-OoA4EMqRAC7kn7V2P6EQqRcpZf2W+AjsNIyCizBg339Tq/aMC7sRnzs3SklderhmQWAqEzvv8A2vhxVmWpkVvw==}
+
+  '@libsql/isomorphic-ws@0.1.5':
+    resolution: {integrity: sha512-DtLWIH29onUYR00i0GlQ3UdcTRC6EP4u9w/h9LxpUZJWRMARk6dQwZ6Jkd+QdwVpuAOrdxt18v0K2uIYR3fwFg==}
+
+  '@libsql/linux-arm-gnueabihf@0.5.29':
+    resolution: {integrity: sha512-CD4n4zj7SJTHso4nf5cuMoWoMSS7asn5hHygsDuhRl8jjjCTT3yE+xdUvI4J7zsyb53VO5ISh4cwwOtf6k2UhQ==}
+    cpu: [arm]
+    os: [linux]
+
+  '@libsql/linux-arm-musleabihf@0.5.29':
+    resolution: {integrity: sha512-2Z9qBVpEJV7OeflzIR3+l5yAd4uTOLxklScYTwpZnkm2vDSGlC1PRlueLaufc4EFITkLKXK2MWBpexuNJfMVcg==}
+    cpu: [arm]
+    os: [linux]
+
+  '@libsql/linux-arm64-gnu@0.5.29':
+    resolution: {integrity: sha512-gURBqaiXIGGwFNEaUj8Ldk7Hps4STtG+31aEidCk5evMMdtsdfL3HPCpvys+ZF/tkOs2MWlRWoSq7SOuCE9k3w==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@libsql/linux-arm64-musl@0.5.29':
+    resolution: {integrity: sha512-fwgYZ0H8mUkyVqXZHF3mT/92iIh1N94Owi/f66cPVNsk9BdGKq5gVpoKO+7UxaNzuEH1roJp2QEwsCZMvBLpqg==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@libsql/linux-x64-gnu@0.5.29':
+    resolution: {integrity: sha512-y14V0vY0nmMC6G0pHeJcEarcnGU2H6cm21ZceRkacWHvQAEhAG0latQkCtoS2njFOXiYIg+JYPfAoWKbi82rkg==}
+    cpu: [x64]
+    os: [linux]
+
+  '@libsql/linux-x64-musl@0.5.29':
+    resolution: {integrity: sha512-gquqwA/39tH4pFl+J9n3SOMSymjX+6kZ3kWgY3b94nXFTwac9bnFNMffIomgvlFaC4ArVqMnOZD3nuJ3H3VO1w==}
+    cpu: [x64]
+    os: [linux]
+
+  '@libsql/win32-x64-msvc@0.5.29':
+    resolution: {integrity: sha512-4/0CvEdhi6+KjMxMaVbFM2n2Z44escBRoEYpR+gZg64DdetzGnYm8mcNLcoySaDJZNaBd6wz5DNdgRmcI4hXcg==}
+    cpu: [x64]
+    os: [win32]
+
   '@mapbox/node-pre-gyp@2.0.3':
     resolution: {integrity: sha512-uwPAhccfFJlsfCxMYTwOdVfOz3xqyj8xYL3zJj8f0pb30tLohnnFPhLuqp4/qoEz8sNxe4SESZedcBojRefIzg==}
     engines: {node: '>=18'}
@@ -624,6 +684,9 @@ packages:
     cpu: [x64]
     os: [linux]
     libc: [glibc]
+
+  '@neon-rs/load@0.0.4':
+    resolution: {integrity: sha512-kTPhdZyTQxB+2wpiRcFWrDcejc4JI6tkPuS7UZCG4l6Zvc5kU/gGQ/ozvHTh1XR5tS+UlfAfGuPajjzQjCiHCw==}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -1505,6 +1568,9 @@ packages:
   '@types/web-bluetooth@0.0.21':
     resolution: {integrity: sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==}
 
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+
   '@typescript/old@6.0.3':
     resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
@@ -2138,6 +2204,10 @@ packages:
   destr@2.0.5:
     resolution: {integrity: sha512-ugFTXCtDZunbzasqBxrK93Ik/DRYsO6S/fedkWEMKqt04xZ4csmnmwGDBAb07QWNaGMAmnTIemsYZCksjATwsA==}
 
+  detect-libc@2.0.2:
+    resolution: {integrity: sha512-UX6sGumvvqSaXgdKGUsgZWqcUyIXZ/vZTrlRT/iobiKhGL0zL4d3osHj3uqllWJK+i+sixDS/3COVEOFbupFyw==}
+    engines: {node: '>=8'}
+
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
@@ -2634,6 +2704,9 @@ packages:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
 
+  js-base64@3.9.3:
+    resolution: {integrity: sha512-uwYQp+VJ38FVvtim6qNbit6e9uT6dwWQ4Y1+H9TxhW5hcHjpHwoxlR0nMpqUmIFOmu4VqMxwdJA88gIVuZJQ/g==}
+
   js-tokens@10.0.0:
     resolution: {integrity: sha512-lM/UBzQmfJRo9ABXbPWemivdCW8V2G8FHaHdypQaIy523snUjog0W71ayWXTjiR+ixeMyVHN2XcpnTd/liPg/Q==}
 
@@ -2670,6 +2743,11 @@ packages:
   lazystream@1.0.1:
     resolution: {integrity: sha512-b94GiNHQNy6JNTrt5w6zNyffMrNkXZb3KTkCZJb2V1xaEGCk093vkZ2jk3tpaeP33/OiXC+WvK9AxUebnf5nbw==}
     engines: {node: '>= 0.6.3'}
+
+  libsql@0.5.29:
+    resolution: {integrity: sha512-8lMP8iMgiBzzoNbAPQ59qdVcj6UaE/Vnm+fiwX4doX4Narook0a4GPKWBEv+CR8a1OwbfkgL18uBfBjWdF0Fzg==}
+    cpu: [x64, arm64, wasm32, arm]
+    os: [darwin, linux, win32]
 
   lightningcss-android-arm64@1.32.0:
     resolution: {integrity: sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg==}
@@ -3402,6 +3480,9 @@ packages:
   process@0.11.10:
     resolution: {integrity: sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==}
     engines: {node: '>= 0.6.0'}
+
+  promise-limit@2.7.0:
+    resolution: {integrity: sha512-7nJ6v5lnJsXwGprnGXga4wx6d1POjvi5Qmf1ivTRxTjH4Z/9Czja/UCMLVmB9N93GeWOU93XaFaEt6jbuoagNw==}
 
   proper-lockfile@4.1.2:
     resolution: {integrity: sha512-TjNPblN4BwAWMXU8s9AEz4JmQxnD1NNL7bNOY/AKUzyamc379FWASUhc/K1pL2noVb+XmZKLL68cjzLsiOAMaA==}
@@ -4774,6 +4855,64 @@ snapshots:
 
   '@kwsites/promise-deferred@1.1.1': {}
 
+  '@libsql/client@0.18.0':
+    dependencies:
+      '@libsql/core': 0.18.0
+      '@libsql/hrana-client': 0.10.0
+      js-base64: 3.9.3
+      libsql: 0.5.29
+      promise-limit: 2.7.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@libsql/core@0.18.0':
+    dependencies:
+      js-base64: 3.9.3
+
+  '@libsql/darwin-arm64@0.5.29':
+    optional: true
+
+  '@libsql/darwin-x64@0.5.29':
+    optional: true
+
+  '@libsql/hrana-client@0.10.0':
+    dependencies:
+      '@libsql/isomorphic-ws': 0.1.5
+      js-base64: 3.9.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@libsql/isomorphic-ws@0.1.5':
+    dependencies:
+      '@types/ws': 8.18.1
+      ws: 8.21.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@libsql/linux-arm-gnueabihf@0.5.29':
+    optional: true
+
+  '@libsql/linux-arm-musleabihf@0.5.29':
+    optional: true
+
+  '@libsql/linux-arm64-gnu@0.5.29':
+    optional: true
+
+  '@libsql/linux-arm64-musl@0.5.29':
+    optional: true
+
+  '@libsql/linux-x64-gnu@0.5.29':
+    optional: true
+
+  '@libsql/linux-x64-musl@0.5.29':
+    optional: true
+
+  '@libsql/win32-x64-msvc@0.5.29':
+    optional: true
+
   '@mapbox/node-pre-gyp@2.0.3':
     dependencies:
       consola: 3.4.2
@@ -4789,6 +4928,8 @@ snapshots:
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
+
+  '@neon-rs/load@0.0.4': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
@@ -5013,7 +5154,7 @@ snapshots:
       - magicast
       - oxc-parser
 
-  '@nuxt/nitro-server@4.5.2(@vue/compiler-sfc@3.5.42)(esbuild@0.28.2)(jiti@2.7.0)(magic-string@1.4.1)(nuxt@4.5.2(@types/node@22.20.2)(rolldown@1.2.8))(oxlint@1.83.0(oxlint-tsgolint@7.0.2001))(rollup@4.63.3)(srvx@0.11.22)(typescript@6.0.2)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2)))(vite@8.3.0(@types/node@22.20.2))(vue-tsc@3.3.11(typescript@6.0.2))':
+  '@nuxt/nitro-server@4.5.2(@libsql/client@0.18.0)(@vue/compiler-sfc@3.5.42)(esbuild@0.28.2)(jiti@2.7.0)(magic-string@1.4.1)(nuxt@4.5.2(@types/node@22.20.2)(rolldown@1.2.8))(oxlint@1.83.0(oxlint-tsgolint@7.0.2001))(rollup@4.63.3)(srvx@0.11.22)(typescript@6.0.2)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2)))(vite@8.3.0(@types/node@22.20.2))(vue-tsc@3.3.11(typescript@6.0.2))':
     dependencies:
       '@nuxt/devalue': 2.0.2
       '@nuxt/kit': 4.5.2(magic-string@1.4.1)(rolldown@1.2.8)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2)))
@@ -5030,7 +5171,7 @@ snapshots:
       impound: 1.2.0(esbuild@0.28.2)(jiti@2.7.0)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2))
       klona: 2.0.6
       mocked-exports: 0.1.1
-      nitropack: 2.13.4(rolldown@1.2.8)(srvx@0.11.22)(vite@8.3.0(@types/node@22.20.2))
+      nitropack: 2.13.4(@libsql/client@0.18.0)(rolldown@1.2.8)(srvx@0.11.22)(vite@8.3.0(@types/node@22.20.2))
       nostics: 1.2.0
       nuxt: 4.5.2(@types/node@22.20.2)(@vue/compiler-sfc@3.5.42)(esbuild@0.28.2)(oxlint@1.83.0(oxlint-tsgolint@7.0.2001))(rolldown@1.2.8)(rollup@4.63.3)(typescript@6.0.2)(vite@8.3.0(@types/node@22.20.2))(vue-tsc@3.3.11(typescript@6.0.2))
       nypm: 0.6.10
@@ -5055,7 +5196,6 @@ snapshots:
       - '@deno/kv'
       - '@electric-sql/pglite'
       - '@farmfe/core'
-      - '@libsql/client'
       - '@netlify/blobs'
       - '@oxc-project/types'
       - '@parcel/watcher'
@@ -5650,6 +5790,10 @@ snapshots:
       '@types/node': 22.20.2
 
   '@types/web-bluetooth@0.0.21': {}
+
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 22.20.2
 
   '@typescript/old@6.0.3': {}
 
@@ -6290,7 +6434,9 @@ snapshots:
 
   csstype@3.2.3: {}
 
-  db0@0.3.4: {}
+  db0@0.3.4(@libsql/client@0.18.0):
+    dependencies:
+      '@libsql/client': 0.18.0
 
   debug@4.4.3:
     dependencies:
@@ -6316,6 +6462,8 @@ snapshots:
   depd@2.0.0: {}
 
   destr@2.0.5: {}
+
+  detect-libc@2.0.2: {}
 
   detect-libc@2.1.2: {}
 
@@ -6876,6 +7024,8 @@ snapshots:
 
   jiti@2.7.0: {}
 
+  js-base64@3.9.3: {}
+
   js-tokens@10.0.0: {}
 
   js-tokens@4.0.0: {}
@@ -6900,6 +7050,21 @@ snapshots:
   lazystream@1.0.1:
     dependencies:
       readable-stream: 2.3.8
+
+  libsql@0.5.29:
+    dependencies:
+      '@neon-rs/load': 0.0.4
+      detect-libc: 2.0.2
+    optionalDependencies:
+      '@libsql/darwin-arm64': 0.5.29
+      '@libsql/darwin-x64': 0.5.29
+      '@libsql/linux-arm-gnueabihf': 0.5.29
+      '@libsql/linux-arm-musleabihf': 0.5.29
+      '@libsql/linux-arm64-gnu': 0.5.29
+      '@libsql/linux-arm64-musl': 0.5.29
+      '@libsql/linux-x64-gnu': 0.5.29
+      '@libsql/linux-x64-musl': 0.5.29
+      '@libsql/win32-x64-msvc': 0.5.29
 
   lightningcss-android-arm64@1.32.0:
     optional: true
@@ -7184,7 +7349,7 @@ snapshots:
     dependencies:
       content-type: 2.1.0
 
-  nitropack@2.13.4(rolldown@1.2.8)(srvx@0.11.22)(vite@8.3.0(@types/node@22.20.2)):
+  nitropack@2.13.4(@libsql/client@0.18.0)(rolldown@1.2.8)(srvx@0.11.22)(vite@8.3.0(@types/node@22.20.2)):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.4.2
       '@rollup/plugin-alias': 6.0.0(rollup@4.63.3)
@@ -7205,7 +7370,7 @@ snapshots:
       cookie-es: 2.0.1
       croner: 10.0.1
       crossws: 0.3.5
-      db0: 0.3.4
+      db0: 0.3.4(@libsql/client@0.18.0)
       defu: 6.1.7
       destr: 2.0.5
       dot-prop: 10.2.0
@@ -7251,7 +7416,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       unimport: 6.5.0(esbuild@0.28.2)(jiti@2.7.0)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2))
       unplugin-utils: 0.3.2
-      unstorage: 1.17.5(db0@0.3.4)(ioredis@5.11.1)
+      unstorage: 1.17.5(db0@0.3.4(@libsql/client@0.18.0))(ioredis@5.11.1)
       untyped: 2.0.0
       unwasm: 0.5.3
       youch: 4.1.1
@@ -7267,7 +7432,6 @@ snapshots:
       - '@deno/kv'
       - '@electric-sql/pglite'
       - '@farmfe/core'
-      - '@libsql/client'
       - '@netlify/blobs'
       - '@parcel/watcher'
       - '@planetscale/database'
@@ -7355,7 +7519,7 @@ snapshots:
       '@nuxt/cli': 3.37.0(@nuxt/schema@4.5.2)
       '@nuxt/devtools': 3.4.2(jiti@2.7.0)(magic-string@1.4.1)(rolldown@1.2.8)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2)))(vite@8.3.0(@types/node@22.20.2))(vue@3.5.42(typescript@6.0.2))
       '@nuxt/kit': 4.5.2(magic-string@1.4.1)(rolldown@1.2.8)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2)))
-      '@nuxt/nitro-server': 4.5.2(@vue/compiler-sfc@3.5.42)(esbuild@0.28.2)(jiti@2.7.0)(magic-string@1.4.1)(nuxt@4.5.2(@types/node@22.20.2)(rolldown@1.2.8))(oxlint@1.83.0(oxlint-tsgolint@7.0.2001))(rollup@4.63.3)(srvx@0.11.22)(typescript@6.0.2)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2)))(vite@8.3.0(@types/node@22.20.2))(vue-tsc@3.3.11(typescript@6.0.2))
+      '@nuxt/nitro-server': 4.5.2(@libsql/client@0.18.0)(@vue/compiler-sfc@3.5.42)(esbuild@0.28.2)(jiti@2.7.0)(magic-string@1.4.1)(nuxt@4.5.2(@types/node@22.20.2)(rolldown@1.2.8))(oxlint@1.83.0(oxlint-tsgolint@7.0.2001))(rollup@4.63.3)(srvx@0.11.22)(typescript@6.0.2)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2)))(vite@8.3.0(@types/node@22.20.2))(vue-tsc@3.3.11(typescript@6.0.2))
       '@nuxt/schema': 4.5.2
       '@nuxt/telemetry': 2.9.1(@nuxt/kit@4.5.2)(magic-string@1.4.1)(rolldown@1.2.8)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2)))
       '@nuxt/vite-builder': 4.5.2(magic-string@1.4.1)(nuxt@4.5.2(@types/node@22.20.2)(rolldown@1.2.8))(oxlint@1.83.0(oxlint-tsgolint@7.0.2001))(rolldown@1.2.8)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.8)(rollup@4.63.3)(vite@8.3.0(@types/node@22.20.2)))(vue@3.5.42(typescript@6.0.2))(vue-tsc@3.3.11(typescript@6.0.2))
@@ -7427,7 +7591,6 @@ snapshots:
       - '@deno/kv'
       - '@electric-sql/pglite'
       - '@farmfe/core'
-      - '@libsql/client'
       - '@netlify/blobs'
       - '@oxc-project/types'
       - '@parcel/watcher'
@@ -7802,6 +7965,8 @@ snapshots:
   process-nextick-args@2.0.1: {}
 
   process@0.11.10: {}
+
+  promise-limit@2.7.0: {}
 
   proper-lockfile@4.1.2:
     dependencies:
@@ -8375,11 +8540,11 @@ snapshots:
       ofetch: 1.5.1
       ufo: 1.6.4
 
-  unstorage@1.17.5(db0@0.3.4)(ioredis@5.11.1):
+  unstorage@1.17.5(db0@0.3.4(@libsql/client@0.18.0))(ioredis@5.11.1):
     dependencies:
       anymatch: 3.1.3
       chokidar: 5.0.0
-      db0: 0.3.4
+      db0: 0.3.4(@libsql/client@0.18.0)
       destr: 2.0.5
       h3: 1.15.11
       ioredis: 5.11.1

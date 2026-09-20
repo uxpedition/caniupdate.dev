@@ -4,6 +4,7 @@ import { Cache, Cause, Data, Duration, Effect, Exit, Layer, Result, Schema } fro
 import { LanguageModel, Prompt } from 'effect/unstable/ai';
 import { FetchHttpClient, HttpClient } from 'effect/unstable/http';
 
+import { BriefingBulletSchema } from '../../shared/briefing.defs';
 import type {
   BriefingBullet,
   BriefingEvidence,
@@ -11,8 +12,7 @@ import type {
   BriefingSource,
   BriefingUnavailableReason,
   PackageBriefing,
-} from '#shared/briefing.defs';
-
+} from '../../shared/briefing.defs';
 import { buildBriefingEvidence } from './packageBriefingEvidence';
 import { PROMPT_VERSION, SYSTEM_PROMPT, USER_PROMPT_LINES } from './packageBriefingPrompt';
 import {
@@ -21,23 +21,17 @@ import {
   providerLayer,
   type BriefingProviderTarget,
 } from './packageBriefingProvider';
+import { readStoredBriefing, saveBriefing } from './packageBriefingStore';
 
 const MAX_BULLET_TEXT = 600;
 const MAX_BULLETS = 5;
-const MIN_BULLETS = 3;
+const MIN_BULLETS = 1;
 const MAX_EVIDENCE_IDS = 8;
 const INLINE_URL_PATTERN = /(?:^|[^A-Za-z0-9_])(?:[a-z][a-z0-9+.-]*:(?=\S)|\/\/|www\.)/i;
 const CHAT_COMPLETIONS_SUFFIX = '/chat/completions';
 
 const BriefingContentSchema = Schema.Struct({
-  bullets: Schema.Array(
-    Schema.Struct({
-      kind: Schema.Literals(['change', 'migration', 'coverage']),
-      basis: Schema.Literals(['fact', 'maintainer', 'inference']),
-      text: Schema.String,
-      evidenceIds: Schema.Array(Schema.String),
-    }),
-  ),
+  bullets: Schema.Array(BriefingBulletSchema),
 });
 
 type ConfiguredBriefing = BriefingProviderTarget & {
@@ -157,7 +151,9 @@ const sourceIds = (sources: readonly BriefingSource[]): Set<string> | undefined 
 };
 
 const isValidBullet = (bullet: BriefingBullet, ids: ReadonlySet<string>): boolean => {
+  // Stored snapshots retain their original kinds; fresh generations contain comparison insights only.
   if (
+    bullet.kind === 'coverage' ||
     bullet.text.trim() === '' ||
     Array.from(bullet.text).length > MAX_BULLET_TEXT ||
     INLINE_URL_PATTERN.test(bullet.text)
@@ -171,9 +167,6 @@ const isValidBullet = (bullet: BriefingBullet, ids: ReadonlySet<string>): boolea
     bullet.evidenceIds.every((id) => ids.has(id))
   );
 };
-
-const hasCoverageBullet = (bullets: readonly BriefingBullet[]): boolean =>
-  bullets.some((bullet) => bullet.kind === 'coverage' && bullet.evidenceIds.includes('coverage'));
 
 const decodeContent = (
   content: string,
@@ -190,16 +183,15 @@ const decodeContent = (
     if (ids === undefined || !decoded.bullets.every((bullet) => isValidBullet(bullet, ids))) {
       return yield* Effect.fail(invalidResponse());
     }
-    if (!hasCoverageBullet(decoded.bullets)) return yield* Effect.fail(invalidResponse());
     return decoded.bullets;
   });
 
-const collectReferencedSources = (
+const collectResponseSources = (
   bullets: readonly BriefingBullet[],
   sources: readonly BriefingSource[],
 ): readonly BriefingSource[] => {
   const referenced = new Set(bullets.flatMap((bullet) => bullet.evidenceIds));
-  return sources.filter((source) => referenced.has(source.id));
+  return sources.filter((source) => source.kind === 'coverage' || referenced.has(source.id));
 };
 
 // Provider decoding failures surface as `AiError` with an `InvalidOutputError` reason; local citation and shape
@@ -250,10 +242,7 @@ const requestBriefing = (request: BriefingRequest): Effect.Effect<PackageBriefin
   Effect.gen(function* () {
     const prompt = Prompt.make([
       { role: 'system', content: SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [{ type: 'text', text: [...USER_PROMPT_LINES, JSON.stringify(request.evidence)].join('\n\n') }],
-      },
+      { role: 'user', content: [...USER_PROMPT_LINES, JSON.stringify(request.evidence)].join('\n\n') },
     ]);
 
     const client = yield* HttpClient.HttpClient;
@@ -266,20 +255,23 @@ const requestBriefing = (request: BriefingRequest): Effect.Effect<PackageBriefin
       Layer.provide(Layer.succeed(HttpClient.HttpClient, boundedClient)),
     );
 
-    const response = yield* LanguageModel.generateText({ prompt }).pipe(
-      Effect.provide(provider),
-      Effect.provideService(FetchHttpClient.RequestInit, { redirect: 'error' }),
-    );
-    if (response.finishReason !== 'stop') return yield* Effect.fail(invalidResponse());
+    // Regenerate once on invalid output; reuse the evidence and prompt, never feed rejected text back to the model.
+    return yield* Effect.gen(function* () {
+      const response = yield* LanguageModel.generateText({ prompt }).pipe(
+        Effect.provide(provider),
+        Effect.provideService(FetchHttpClient.RequestInit, { redirect: 'error' }),
+      );
+      if (response.finishReason !== 'stop') return yield* Effect.fail(invalidResponse());
 
-    const bullets = yield* decodeContent(response.text, request.evidence);
+      const bullets = yield* decodeContent(response.text, request.evidence);
 
-    return {
-      status: 'available',
-      model: request.config.model,
-      bullets,
-      sources: collectReferencedSources(bullets, request.evidence.sources),
-    } satisfies PackageBriefing;
+      return {
+        status: 'available',
+        model: request.config.model,
+        bullets,
+        sources: collectResponseSources(bullets, request.evidence.sources),
+      } satisfies PackageBriefing;
+    }).pipe(Effect.retry({ times: 1, while: isInvalidProviderOutput }));
   }).pipe(
     Effect.timeout(REQUEST_TIMEOUT),
     Effect.result,
@@ -295,7 +287,15 @@ const briefingCache = Effect.runSync(
   Cache.makeWith(
     (key: BriefingCacheKey) => {
       const request = requestRecords.get(briefingCacheIdentity(key));
-      return request === undefined ? Effect.succeed(unavailable('provider-error')) : requestBriefing(request);
+      if (request === undefined) return Effect.succeed(unavailable('provider-error'));
+      return requestBriefing(request).pipe(
+        Effect.flatMap((briefing) =>
+          briefing.status === 'available'
+            ? Effect.tryPromise<PackageBriefing>(() => saveBriefing(key.evidenceHash, briefing))
+            : Effect.succeed(briefing),
+        ),
+        Effect.catch(() => Effect.succeed(unavailable('cache-error'))),
+      );
     },
     {
       capacity: 128,
@@ -307,29 +307,35 @@ const briefingCache = Effect.runSync(
 );
 
 export function getPackageBriefing(input: BriefingInput): Effect.Effect<PackageBriefing, never, HttpClient.HttpClient> {
-  const config = readBriefingConfig();
-  if (config.status === 'not-configured') return Effect.succeed(unavailable('not-configured'));
-  if (config.status === 'invalid-config') return Effect.succeed(unavailable('invalid-config'));
+  return Effect.gen(function* () {
+    let evidence: BriefingEvidence;
+    try {
+      evidence = buildBriefingEvidence(input);
+    } catch {
+      return unavailable('invalid-response');
+    }
 
-  let evidence: BriefingEvidence;
-  try {
-    evidence = buildBriefingEvidence(input);
-  } catch {
-    return Effect.succeed(unavailable('invalid-response'));
-  }
+    // Hash exactly what the model sees. Retrieval timestamps are absent from this bounded evidence packet.
+    const evidenceHash = sha256(JSON.stringify(evidence));
+    const stored = yield* Effect.tryPromise(() => readStoredBriefing(evidenceHash));
+    if (stored !== undefined) return stored;
 
-  const key = new BriefingCacheKey({
-    evidenceHash: sha256(JSON.stringify(evidence)),
-    endpoint: config.value.endpoint,
-    model: config.value.model,
-    credentialIdentity: config.value.credentialIdentity,
-    promptVersion: PROMPT_VERSION,
-  });
-  rememberRequest(key, {
-    config: config.value,
-    evidence,
-    session: sha256(`${evidence.packageName}\n${evidence.from}\n${evidence.to}`),
-  });
-
-  return Cache.get(briefingCache, key);
+    // Credentials, model, and prompt changes do not invalidate a previously paid-for response.
+    const config = readBriefingConfig();
+    if (config.status === 'not-configured') return unavailable('not-configured');
+    if (config.status === 'invalid-config') return unavailable('invalid-config');
+    const key = new BriefingCacheKey({
+      evidenceHash,
+      endpoint: config.value.endpoint,
+      model: config.value.model,
+      credentialIdentity: config.value.credentialIdentity,
+      promptVersion: PROMPT_VERSION,
+    });
+    rememberRequest(key, {
+      config: config.value,
+      evidence,
+      session: sha256(`${evidence.packageName}\n${evidence.from}\n${evidence.to}`),
+    });
+    return yield* Cache.get(briefingCache, key);
+  }).pipe(Effect.catch(() => Effect.succeed(unavailable('cache-error'))));
 }

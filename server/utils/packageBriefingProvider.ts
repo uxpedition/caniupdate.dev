@@ -7,7 +7,8 @@ import { LanguageModel } from 'effect/unstable/ai';
 import { Headers, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from 'effect/unstable/http';
 
 // OpenCode Go completes the same request in 6-49 seconds depending on model and load, so the deadline bounds a
-// normal provider call rather than a fast one. It covers reading and decoding the response body.
+// normal provider call rather than a fast one. The briefing shares this deadline across both generation attempts,
+// including reading and decoding their response bodies.
 export const REQUEST_TIMEOUT = Duration.seconds(75);
 const MAX_RESPONSE_BYTES = 128 * 1024;
 const MAX_OUTPUT_TOKENS = 4096;

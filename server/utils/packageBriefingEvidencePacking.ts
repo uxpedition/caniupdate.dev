@@ -193,19 +193,6 @@ const packetGaps = (
     ]),
   );
 
-function removalIndex(candidates: readonly BriefingEvidenceCandidate[]): number {
-  let index = candidates.length - 1;
-  let priority = candidates[index]?.priority ?? -Infinity;
-  for (let candidateIndex = candidates.length - 2; candidateIndex >= 0; candidateIndex -= 1) {
-    const candidatePriority = candidates[candidateIndex]?.priority ?? -Infinity;
-    if (candidatePriority > priority) {
-      index = candidateIndex;
-      priority = candidatePriority;
-    }
-  }
-  return index;
-}
-
 function packetFits(
   input: BriefingInput,
   accepted: readonly BriefingEvidenceCandidate[],
@@ -244,14 +231,21 @@ export function packBriefingEvidence(
   baseGaps: readonly string[],
 ): BriefingEvidence {
   assertIdentityFits(input);
-  const omitted = new Set<string>();
-  let accepted = [...candidates];
+  const complete = packetResult(input, candidates, candidates, baseGaps, new Set<string>());
+  if (complete !== null) return complete;
 
-  while (accepted.length > 0) {
-    const result = packetResult(input, candidates, accepted, baseGaps, omitted);
-    if (result !== null) return result;
-    const [removed] = accepted.splice(removalIndex(accepted), 1);
-    if (removed !== undefined) omitted.add(removed.source.id);
+  // Budget coverage for every omission before accepting sources. A source that cannot fit
+  // must not evict smaller facts; admitting sources in priority order avoids that cascade.
+  const omitted = new Set(candidates.map(({ source }) => source.id));
+  const accepted: BriefingEvidenceCandidate[] = [];
+  for (const candidate of candidates.toSorted((left, right) => left.priority - right.priority)) {
+    if (accepted.length + 1 >= MAX_SOURCES) break;
+    omitted.delete(candidate.source.id);
+    accepted.push(candidate);
+    if (packetResult(input, candidates, accepted, baseGaps, omitted) === null) {
+      accepted.pop();
+      omitted.add(candidate.source.id);
+    }
   }
 
   const result = packetResult(input, candidates, accepted, baseGaps, omitted);

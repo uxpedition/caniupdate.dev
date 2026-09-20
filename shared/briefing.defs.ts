@@ -1,3 +1,5 @@
+import { Schema } from 'effect';
+
 import type { ComparisonVersion, PackageComparison } from './comparison.defs';
 import type { PackageReleaseNotes } from './github.defs';
 
@@ -9,13 +11,15 @@ export type BriefingInput = {
   releaseNotes: PackageReleaseNotes;
 };
 
-export type BriefingSource = {
-  id: string;
-  kind: 'fact' | 'maintainer' | 'coverage';
-  label: string;
-  urls: readonly string[];
-  text: string;
-};
+export const BriefingSourceSchema = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literals(['fact', 'maintainer', 'coverage']),
+  label: Schema.String,
+  urls: Schema.Array(Schema.String),
+  text: Schema.String,
+});
+
+export type BriefingSource = typeof BriefingSourceSchema.Type;
 
 export type BriefingEvidence = {
   packageName: string;
@@ -25,20 +29,32 @@ export type BriefingEvidence = {
   gaps: readonly string[];
 };
 
-export type BriefingBullet = {
-  kind: 'change' | 'migration' | 'coverage';
-  basis: 'fact' | 'maintainer' | 'inference';
-  text: string;
-  evidenceIds: readonly string[];
-};
+export const BriefingBulletSchema = Schema.Struct({
+  kind: Schema.Literals(['change', 'migration', 'coverage']),
+  basis: Schema.Literals(['fact', 'maintainer', 'inference']),
+  text: Schema.String,
+  evidenceIds: Schema.Array(Schema.String),
+});
+
+export type BriefingBullet = typeof BriefingBulletSchema.Type;
+
+export const AvailablePackageBriefingSchema = Schema.Struct({
+  status: Schema.Literal('available'),
+  model: Schema.String,
+  bullets: Schema.Array(BriefingBulletSchema),
+  sources: Schema.Array(BriefingSourceSchema),
+});
+
+export type AvailablePackageBriefing = typeof AvailablePackageBriefingSchema.Type;
 
 export type BriefingUnavailableReason =
   | 'not-configured'
   | 'invalid-config'
   | 'provider-error'
+  | 'cache-error'
   | 'timeout'
   | 'invalid-response';
 
 export type PackageBriefing =
-  | { status: 'available'; model: string; bullets: readonly BriefingBullet[]; sources: readonly BriefingSource[] }
+  | AvailablePackageBriefing
   | { status: 'unavailable'; reason: BriefingUnavailableReason; bullets: readonly []; sources: readonly [] };

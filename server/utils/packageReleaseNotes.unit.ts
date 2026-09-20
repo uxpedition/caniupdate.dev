@@ -200,6 +200,54 @@ describe('getPackageReleaseNotes', () => {
     expect(calls.some((url) => url.includes('/contents/CHANGELOG.md?ref=1.1.0'))).toBe(true);
   });
 
+  it('uses a bare monorepo target tag only for a changelog verified by the package manifest at that tag', async () => {
+    const repository = { url: 'https://github.com/acme/widgets', directory: 'packages/widget' };
+    const responses = releaseAndChangelogResponses([release('v1.1.0')], '## 1.1.0\nUse the new adapter.');
+    const { result } = run(manifest('1.0.0', { repository }), manifest('1.1.0', { repository }), (request) => {
+      const url = new URL(request.url);
+      if (url.pathname.includes('/contents/') && url.searchParams.get('ref') !== 'v1.1.0') {
+        return new Response('unpinned request', { status: 400 });
+      }
+      if (url.pathname.endsWith('/contents/packages/widget/package.json')) {
+        return Response.json({ name: 'widget', version: '1.1.0' });
+      }
+      return responses(request);
+    });
+
+    await expect(result).resolves.toMatchObject({
+      status: 'partial',
+      releases: [],
+      changelog: { path: 'packages/widget/CHANGELOG.md', ref: 'v1.1.0', body: '## 1.1.0\nUse the new adapter.' },
+    });
+  });
+
+  it.each([
+    ['another package', JSON.stringify({ name: 'other', version: '1.1.0' }), 200],
+    ['another version', JSON.stringify({ name: 'widget', version: '1.0.0' }), 200],
+    ['malformed JSON', '{', 200],
+    ['unavailable manifest', 'unavailable', 503],
+  ])('does not attribute a monorepo changelog with %s at the target tag', async (_label, body, status) => {
+    const repository = { url: 'https://github.com/acme/widgets', directory: 'packages/widget' };
+    const responses = releaseAndChangelogResponses([release('v1.1.0')], 'Unrelated changes.');
+    const { result } = run(manifest('1.0.0', { repository }), manifest('1.1.0', { repository }), (request) =>
+      new URL(request.url).pathname.endsWith('/package.json') ? new Response(body, { status }) : responses(request),
+    );
+
+    await expect(result).resolves.toMatchObject({ status: 'partial', releases: [], changelog: null });
+  });
+
+  it('does not choose between ambiguous bare target tags in a monorepo', async () => {
+    const repository = { url: 'https://github.com/acme/widgets', directory: 'packages/widget' };
+    const responses = releaseAndChangelogResponses([release('v1.1.0'), release('1.1.0')], 'Ambiguous changes.');
+    const { result } = run(manifest('1.0.0', { repository }), manifest('1.1.0', { repository }), (request) =>
+      new URL(request.url).pathname.endsWith('/package.json')
+        ? Response.json({ name: 'widget', version: '1.1.0' })
+        : responses(request),
+    );
+
+    await expect(result).resolves.toMatchObject({ status: 'partial', releases: [], changelog: null });
+  });
+
   it('returns unavailable without making GitHub calls for unsupported hosts or mismatched repositories', async () => {
     const noCalls = () => new Response('unexpected', { status: 500 });
     const unsupported = run(
