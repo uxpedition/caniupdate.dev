@@ -14,10 +14,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   modules: ['@nuxt/fonts'],
   fonts: {
-    families: [
-      { name: 'DM Sans', provider: 'fontsource' },
-      { name: 'Newsreader', provider: 'fontsource' },
-    ],
+    families: [{ name: 'DM Sans', provider: 'fontsource' }],
     defaults: {
       weights: ['400 700'],
       styles: ['normal'],

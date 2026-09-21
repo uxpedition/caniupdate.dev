@@ -24,6 +24,16 @@ Nub's `--node` mode keeps Nub as the package/script runner while disabling its r
 
 The setup includes an Effect-backed health endpoint at `/api/health`.
 
+### Comparison interface
+
+Search for a package on the homepage, choose versions, and open `/{encodedPackageName}/{from}...{to}`. For example, `/vue/3.4.38...3.5.13` compares Vue releases using the live comparison and AI briefing APIs. Scoped package names are URL-encoded.
+
+The comparison prioritizes dependency changes, estimated gzip impact, and advisory coverage. Expand individual categories for complete declarations and measurement notes; AI migration notes and source evidence are collapsed initially. Citation links reveal their referenced evidence.
+
+Row and evidence anchors deep-link: opening `#comparison-dependencies`, `#comparison-advisories`, or a citation anchor scrolls to that element once the comparison and briefing render. Because the comparison rows and evidence entries come from client-side queries, `app/router.options.ts` replaces Nuxt's default scroll behavior with one that waits for the anchor to exist — up to 30 seconds — and scrolls to the last reachable position when the anchor sits near the end of the page.
+
+The shared theme in `app/assets/css/main.css` defines neutral light/dark surfaces, DM Sans headings and body text, monospace package data, and a blue change/focus accent. Blue indicates a change, not a risk rating. Homepage controls retain their original responsive layout and dimensions.
+
 ## Package comparison API
 
 `GET /api/package/{encodedPackageName}/compare?from={versionOrTag}&to={versionOrTag}` returns registry metadata and a `vulnerabilities` object on each version. Tags resolve to published versions before OSV is queried.

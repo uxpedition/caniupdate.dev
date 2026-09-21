@@ -23,7 +23,7 @@ defineOptions({ inheritAttrs: false });
 const ROW_HEIGHT = 36;
 
 const selectTriggerVariants = cva(
-  'flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card/60 px-3 text-left text-sm text-foreground shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[placeholder]:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
+  'flex w-full items-center justify-between gap-2 rounded-md border border-input bg-muted px-3 text-left text-sm text-foreground shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[placeholder]:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
   {
     variants: {
       size: {
@@ -171,7 +171,7 @@ const selectedOption = computed(() => props.options.find((option) => option.valu
               spellcheck="false"
               :aria-label="searchPlaceholder"
               :placeholder="searchPlaceholder"
-              class="w-full rounded-sm border border-input bg-card/60 px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              class="w-full rounded-sm border border-input bg-muted px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               @keydown.down.prevent="focusListbox"
               @keydown.up.prevent="focusListbox"
             />

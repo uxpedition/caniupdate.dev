@@ -173,8 +173,8 @@ watch(selectedFromVersion, () => {
   <main class="min-h-svh bg-background px-4 py-6 text-foreground sm:px-6">
     <div class="mx-auto flex min-h-[calc(100svh-3rem)] w-full max-w-6xl flex-col justify-center pb-16">
       <header class="mx-auto max-w-2xl space-y-4 text-center">
-        <p class="text-base italic leading-7 text-muted-foreground sm:text-lg">Can I npm update?</p>
-        <h1 class="text-4xl italic font-medium tracking-tight sm:text-6xl">Know before you update.</h1>
+        <p class="text-base leading-7 text-muted-foreground sm:text-lg">Can I npm update?</p>
+        <h1 class="text-4xl font-medium tracking-tight sm:text-6xl">Know before you update.</h1>
       </header>
 
       <section class="mx-auto mt-10 w-full max-w-5xl">
