@@ -3,6 +3,10 @@ import { defineNuxtConfig } from 'nuxt/config';
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-09-16',
+  experimental: {
+    // Stream the shell before the awaited declarations prefetch resolves; Nuxt excludes crawler user agents.
+    ssrStreaming: true,
+  },
   devtools: { enabled: true },
   ignore: ['**/*.unit.ts'],
   pages: {
