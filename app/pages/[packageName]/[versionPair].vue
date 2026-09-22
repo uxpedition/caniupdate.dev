@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ChevronDown, Minus, Plus } from '@lucide/vue';
 import { computed, nextTick, ref } from 'vue';
 
 import BriefingPanel from '~/components/comparison/BriefingPanel.vue';
@@ -107,14 +108,14 @@ const revealCitation = async (event: MouseEvent) => {
     <div class="mx-auto max-w-[1040px] px-10 pt-14 pb-10 max-[700px]:px-5 max-[700px]:py-[30px]">
       <header class="mb-11 max-[700px]:mb-8">
         <p class="mb-2.5 text-xs leading-normal text-muted-foreground">Release comparison</p>
-        <h1 class="font-mono text-[clamp(28px,4vw,40px)] leading-[1.2] font-semibold tracking-[-0.06em] wrap-anywhere">
-          {{ packageName }}
-        </h1>
-        <p class="mt-4 flex flex-wrap items-center gap-3.5 font-mono text-[15px] leading-[1.5] text-muted-foreground">
+        <p class="mb-2.5 flex flex-wrap items-center gap-3.5 font-mono text-[15px] leading-[1.5] text-muted-foreground">
           <span>{{ displayFromVersion }}</span
           ><span aria-hidden="true">→</span><span class="sr-only">to</span
           ><strong class="font-medium text-foreground">{{ displayToVersion }}</strong>
         </p>
+        <h1 class="font-mono text-[clamp(28px,4vw,40px)] leading-[1.2] font-semibold tracking-[-0.06em] wrap-anywhere">
+          {{ packageName }}
+        </h1>
         <p class="mt-4 text-sm leading-[1.6] text-muted-foreground">
           {{ description ?? 'What changes when you update. The details when you need them.' }}
         </p>
@@ -202,13 +203,17 @@ const revealCitation = async (event: MouseEvent) => {
         </section>
 
         <details
-          class="group mt-8 rounded-[6px] bg-muted px-4.5 py-3.5 max-[700px]:p-3.5"
+          class="mt-8 rounded-[6px] bg-muted px-4.5 py-3.5 max-[700px]:p-3.5"
           :open="showBrief"
           @toggle="showBrief = ($event.target as HTMLDetailsElement).open"
         >
           <summary
-            class="flex cursor-pointer list-none flex-wrap items-baseline gap-x-4.5 gap-y-2 text-[13px] leading-normal before:font-mono before:text-sm before:leading-[normal] before:text-muted-foreground before:content-['+'] group-open:before:content-['−'] focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring [&::-webkit-details-marker]:hidden"
+            class="flex cursor-pointer list-none flex-wrap items-baseline gap-x-4.5 gap-y-2 text-[13px] leading-normal focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring [&::-webkit-details-marker]:hidden"
           >
+            <span aria-hidden="true" class="inline-flex shrink-0 self-center text-muted-foreground">
+              <Minus v-if="showBrief" :size="14" />
+              <Plus v-else :size="14" />
+            </span>
             <span>AI migration notes</span
             ><span class="ml-auto text-xs leading-normal text-muted-foreground max-[700px]:ml-6">{{
               briefingState
@@ -318,10 +323,11 @@ const revealCitation = async (event: MouseEvent) => {
                           {{ item.row.label
                           }}<span
                             aria-hidden="true"
-                            class="text-muted-foreground transition-transform duration-150 motion-reduce:transition-none max-[700px]:hidden"
+                            class="inline-flex shrink-0 self-center text-muted-foreground transition-transform duration-150 motion-reduce:transition-none max-[700px]:hidden"
                             :class="{ 'rotate-180': expanded.has(item.anchor) }"
-                            >⌄</span
                           >
+                            <ChevronDown :size="14" />
+                          </span>
                         </button>
                         <span v-else>{{ item.row.label }}</span>
                         <RowHelp :label="item.row.label" :explanation="item.row.explanation" />
@@ -391,13 +397,17 @@ const revealCitation = async (event: MouseEvent) => {
 
         <details
           v-if="sources.length"
-          class="group mt-9 border-t border-border pt-5.5"
+          class="mt-9 border-t border-border pt-5.5"
           :open="showSources"
           @toggle="showSources = ($event.target as HTMLDetailsElement).open"
         >
           <summary
-            class="flex cursor-pointer list-none flex-wrap items-baseline gap-x-4.5 gap-y-2 text-[13px] leading-normal before:font-mono before:text-sm before:leading-[normal] before:text-muted-foreground before:content-['+'] group-open:before:content-['−'] focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring [&::-webkit-details-marker]:hidden"
+            class="flex cursor-pointer list-none flex-wrap items-baseline gap-x-4.5 gap-y-2 text-[13px] leading-normal focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring [&::-webkit-details-marker]:hidden"
           >
+            <span aria-hidden="true" class="inline-flex shrink-0 self-center text-muted-foreground">
+              <Minus v-if="showSources" :size="14" />
+              <Plus v-else :size="14" />
+            </span>
             <span>Sources & evidence</span
             ><span class="ml-auto text-xs leading-normal text-muted-foreground max-[700px]:ml-6"
               >{{ sources.length }} sources</span

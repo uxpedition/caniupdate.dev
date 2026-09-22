@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Check, ChevronDown } from '@lucide/vue';
 import { cva, type VariantProps } from 'class-variance-authority';
 import {
   ListboxRoot,
@@ -138,16 +139,7 @@ const selectedOption = computed(() => props.options.find((option) => option.valu
           @keydown.up.prevent="open = true"
         >
           <span class="min-w-0 truncate">{{ selectedOption?.label ?? props.placeholder }}</span>
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.75"
-            class="size-4 shrink-0 text-muted-foreground"
-          >
-            <path d="m5 7.5 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+          <ChevronDown aria-hidden="true" class="size-4 shrink-0 text-muted-foreground" />
         </button>
       </PopoverTrigger>
       <PopoverPortal>
@@ -211,16 +203,7 @@ const selectedOption = computed(() => props.options.find((option) => option.valu
                       class="absolute inset-x-0 top-0 h-px bg-border"
                     />
                     <ListboxItemIndicator class="absolute left-2 top-1/2 -translate-y-1/2">
-                      <svg
-                        aria-hidden="true"
-                        viewBox="0 0 20 20"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        class="size-4"
-                      >
-                        <path d="m4 10 4 4 8-8" stroke-linecap="round" stroke-linejoin="round" />
-                      </svg>
+                      <Check aria-hidden="true" class="size-4" />
                     </ListboxItemIndicator>
                     <span class="flex min-w-0 flex-1 items-baseline gap-2">
                       <span class="truncate">{{ optionsByValue.get(option)?.label }}</span>

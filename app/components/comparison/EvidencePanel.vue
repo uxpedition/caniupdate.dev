@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ChevronDown } from '@lucide/vue';
+
 import type { BriefingSource } from '#shared/briefing.defs';
 import { citationAnchorId, type BriefingCitation } from '~/pages/[packageName]/comparisonView';
 
@@ -17,10 +19,16 @@ const props = defineProps<{
         :key="source.id"
         class="scroll-mt-16"
       >
-        <details>
+        <details class="group/source">
           <summary
-            class="cursor-pointer py-3 text-xs leading-[1.5] wrap-anywhere focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-ring"
+            class="cursor-pointer list-none py-3 text-xs leading-[1.5] wrap-anywhere focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-ring [&::-webkit-details-marker]:hidden"
           >
+            <span
+              aria-hidden="true"
+              class="mr-2 inline-flex align-middle text-muted-foreground transition-transform duration-150 motion-reduce:transition-none group-open/source:rotate-180"
+            >
+              <ChevronDown :size="12" />
+            </span>
             <span v-if="props.citations.find((citation) => citation.id === source.id)" class="font-mono"
               >[{{ props.citations.find((citation) => citation.id === source.id)?.number }}]</span
             >

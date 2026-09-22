@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Check, Search } from '@lucide/vue';
 import {
   ComboboxAnchor as RekaComboboxAnchor,
   ComboboxContent as RekaComboboxContent,
@@ -131,17 +132,10 @@ const handleSelectedValue = (value: string) => {
     @update:model-value="handleSelectedValue"
   >
     <RekaComboboxAnchor class="relative block w-full">
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.75"
-        class="pointer-events-none absolute left-4 top-1/2 z-10 size-5 -translate-y-1/2 text-muted-foreground"
+      <Search
         aria-hidden="true"
-      >
-        <circle cx="11" cy="11" r="6.5" />
-        <path d="m16 16 4 4" stroke-linecap="round" />
-      </svg>
+        class="pointer-events-none absolute left-4 top-1/2 z-10 size-5 -translate-y-1/2 text-muted-foreground"
+      />
 
       <RekaComboboxInput as-child v-model="searchTerm">
         <Input
@@ -179,9 +173,7 @@ const handleSelectedValue = (value: string) => {
           class="relative flex w-full cursor-default select-none items-start gap-3 rounded-lg px-3 py-3 text-left outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
         >
           <RekaComboboxItemIndicator class="mt-0.5 text-primary">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" class="size-4">
-              <path d="m4 10 4 4 8-8" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
+            <Check aria-hidden="true" class="size-4" />
           </RekaComboboxItemIndicator>
           <span class="min-w-0 flex-1">
             <span class="flex items-baseline gap-2">

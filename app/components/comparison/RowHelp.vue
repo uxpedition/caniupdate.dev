@@ -10,10 +10,11 @@ const open = ref(false);
 <template>
   <TooltipProvider :delay-duration="200">
     <TooltipRoot v-model:open="open" disable-closing-trigger>
+      <!-- The size-7 target centers on the label's line box: (28 - 21) / 2 = 3.5px, (28 - 18) / 2 = 5px at text-xs. -->
       <TooltipTrigger
         type="button"
         :aria-label="`About ${label.toLowerCase()}`"
-        class="ml-1 inline-flex size-7 shrink-0 cursor-help items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        class="relative -top-[3.5px] max-[700px]:-top-[5px] ml-1 inline-flex size-7 shrink-0 cursor-help items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         @click="open = !open"
       >
         <Info :size="14" aria-hidden="true" />

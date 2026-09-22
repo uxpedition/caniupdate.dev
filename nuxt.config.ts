@@ -3,6 +3,11 @@ import { defineNuxtConfig } from 'nuxt/config';
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-09-16',
+  app: {
+    head: {
+      link: [{ rel: 'icon', type: 'image/png', href: '/favicon.png' }],
+    },
+  },
   experimental: {
     // Stream the shell before the awaited declarations prefetch resolves; Nuxt excludes crawler user agents.
     ssrStreaming: true,
