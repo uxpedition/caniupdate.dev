@@ -7,7 +7,7 @@ import type {
 } from '#shared/comparison.defs';
 import type { ComparisonRow } from '~/pages/[packageName]/comparisonView';
 
-import { MEASUREMENTS_UNAVAILABLE_VALUE, MEASURING_VALUE } from './comparisonView';
+import { MEASUREMENT_SOURCE_IDS, MEASUREMENTS_UNAVAILABLE_VALUE, MEASURING_VALUE } from './comparisonView';
 
 const number = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 
@@ -137,7 +137,7 @@ const rowPresentationWithState = (
   input: ComparisonSummaryInput,
   size: SizeComparison | undefined,
 ) => {
-  if (input.measurementsUnavailable) {
+  if (input.measurementsUnavailable && MEASUREMENT_SOURCE_IDS.includes(row.sourceId)) {
     return {
       from: MEASUREMENTS_UNAVAILABLE_VALUE,
       to: MEASUREMENTS_UNAVAILABLE_VALUE,

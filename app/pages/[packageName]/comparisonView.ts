@@ -248,6 +248,13 @@ const formatBundleSize = (bytes: number | null, version: MeasuredPackageVersion)
     : formatBytes(bytes);
 };
 
+export const MEASUREMENT_SOURCE_IDS: readonly string[] = [
+  'comparison.sizes-unpacked',
+  'comparison.sizes-minified',
+  'comparison.sizes-gzip',
+  'comparison.advisories',
+  'comparison.tarball',
+];
 export const MEASURING_VALUE = 'Measuring…';
 export const MEASUREMENTS_UNAVAILABLE_VALUE = 'Unavailable';
 

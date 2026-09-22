@@ -171,5 +171,15 @@ describe('buildComparisonSummaries', () => {
           from === 'Unavailable' && to === 'Unavailable' && !changed && note === '' && !expandable,
       ),
     ).toBe(true);
+    expect(summaries.slice(0, 8).map(({ row, from, to }) => [row.id, from, to])).toEqual([
+      ['comparison-dependencies', 'None declared', 'None declared'],
+      ['comparison-peers', 'None declared', 'None declared'],
+      ['comparison-node', '>=18', '>=18'],
+      ['comparison-module-format', 'None declared', 'None declared'],
+      ['comparison-exports', 'Not declared', 'Not declared'],
+      ['comparison-types', 'None declared', 'None declared'],
+      ['comparison-licenses', 'MIT', 'MIT'],
+      ['comparison-install-scripts', 'None declared', 'None declared'],
+    ]);
   });
 });
