@@ -93,11 +93,16 @@ Returns measurements for a resolved pair. Callers pass the resolved versions fro
 ```ts
 type PackageMeasurementsResponse = {
   packageName: string;
-  from: string;
-  to: string;
-  sizes: PackageComparison['sizes'];
-  advisories: PackageComparison['advisories'];
-  tarball: { from: TarballSummary; to: TarballSummary };
+  from: MeasuredPackageVersion;
+  to: MeasuredPackageVersion;
+  comparison: {
+    sizes: PackageComparison['sizes'];
+    advisories: PackageComparison['advisories'];
+  };
+};
+
+type MeasuredPackageVersion = Omit<ComparisonVersion, 'tarball'> & {
+  tarball: TarballSummary;
 };
 
 type TarballSummary = {
@@ -108,6 +113,8 @@ type TarballSummary = {
   changelogCount: number;
 };
 ```
+
+The plan revises the earlier draft shape so the client reads per-version bundle and advisory evidence for the size, advisory, and incomplete-estimate rows, while the tarball inventory remains summarized on the wire.
 
 `sizes.unpacked` keeps its `sources: 'registry' | 'tarball'` reporting and stays in the measurements tier even when the registry supplies `dist.unpackedSize`, so the “Size & provenance” group renders as one unit rather than splitting mid-group.
 

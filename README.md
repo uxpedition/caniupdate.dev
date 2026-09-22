@@ -32,7 +32,7 @@ The comparison prioritizes dependency changes, estimated gzip impact, and adviso
 
 Bundle estimates with omitted dependencies remain visible but are marked “Incomplete estimate” for the affected version. Their delta reads “Not comparable: incomplete build”, and expanded details list the omitted dependencies for each version. Missing measurements use separate availability messages. These warnings do not change the backend comparability rules.
 
-Row and evidence anchors deep-link: opening `#comparison-dependencies`, `#comparison-advisories`, or a citation anchor scrolls to that element once the comparison and briefing render. Because the comparison rows and evidence entries come from client-side queries, `app/router.options.ts` replaces Nuxt's default scroll behavior with one that waits for the anchor to exist — up to 30 seconds — and scrolls to the last reachable position when the anchor sits near the end of the page.
+Row and evidence anchors deep-link: opening `#comparison-dependencies`, `#comparison-advisories`, or a citation anchor scrolls to that element once the comparison and briefing render. Declaration rows can already exist in SSR HTML, while measurement rows and briefing/citation entries arrive from client-side queries; `app/router.options.ts` replaces Nuxt's default scroll behavior with one that waits for the anchor to exist — up to 30 seconds — and scrolls to the last reachable position when the anchor sits near the end of the page.
 
 The shared theme in `app/assets/css/main.css` defines neutral light/dark surfaces, DM Sans headings and body text, monospace package data, and a blue change/focus accent. Blue indicates a change, not a risk rating. Homepage controls retain their original responsive layout and dimensions.
 
