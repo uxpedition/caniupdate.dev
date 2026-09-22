@@ -4,7 +4,7 @@ import type { ComparisonVersion } from '#shared/comparison.defs';
 import type { PackageAdvisory, PackageVulnerabilities } from '#shared/osv.defs';
 import { toPackageVersion } from '#shared/package.defs';
 
-import { comparePackages } from './packageComparison';
+import { compareDeclarations, compareMeasurements, comparePackages } from './packageComparison';
 
 function version(overrides: Partial<ComparisonVersion> = {}): ComparisonVersion {
   return {
@@ -181,5 +181,43 @@ describe('local comparison boundaries', () => {
       comparePackages(old, version({ vulnerabilities: { status: 'unavailable', count: null, advisories: [] } }))
         .advisories,
     ).toMatchObject({ status: 'partial', fromOnly: [], uncertain: [{ ids: ['OLD'] }] });
+  });
+});
+
+describe('declaration and measurement split', () => {
+  it('compares declarations from manifest fields without measurement evidence', () => {
+    const declaredFrom = {
+      name: 'example-package',
+      version: '1.0.0',
+      dist: { tarball: 'https://registry.npmjs.org/example-package/-/example-package-1.0.0.tgz' },
+      licenses: ['MIT'],
+      deprecated: false,
+      engines: { node: '>=18' },
+      dependencies: { dep: '^1.0.0' },
+      peerDependencies: {},
+      optionalDependencies: {},
+      optionalPeers: [],
+      installScripts: [],
+      installScriptCommands: {},
+      moduleFormat: { main: 'index.js' },
+    };
+    const declaredTo = { ...declaredFrom, version: '2.0.0', engines: { node: '>=20' } };
+
+    expect(compareDeclarations(declaredFrom, declaredTo)).toMatchObject({
+      node: { changed: true, from: '>=18', to: '>=20' },
+      dependencies: [],
+      peers: [],
+      installScripts: [],
+    });
+  });
+
+  it('splits a combined comparison into its declaration and measurement halves', () => {
+    const from = version();
+    const to = version({ version: '2.0.0' });
+
+    expect(comparePackages(from, to)).toEqual({
+      ...compareDeclarations(from, to),
+      ...compareMeasurements(from, to),
+    });
   });
 });

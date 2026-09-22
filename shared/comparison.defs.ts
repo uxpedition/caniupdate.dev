@@ -54,7 +54,7 @@ type TypeDeclaration = Pick<ParsedPackageVersion['moduleFormat'], 'types' | 'typ
   /** Full map retains condition context and ordering, including nested type conditions. */
   exports: ParsedPackageVersion['moduleFormat']['exports'] | null;
 };
-export type PackageComparison = {
+export type DeclarationComparison = {
   dependencies: DeclarationChange<DependencyRequirement>[];
   peers: DeclarationChange<PeerRequirement>[];
   node: ValueComparison<string>;
@@ -63,6 +63,9 @@ export type PackageComparison = {
   types: ValueComparison<TypeDeclaration>;
   licenses: { changed: boolean; from: string[]; to: string[]; added: string[]; removed: string[] };
   installScripts: DeclarationChange<string>[];
+};
+
+export type MeasurementComparison = {
   sizes: {
     unpacked: SizeComparison & { sources: { from: 'registry' | 'tarball' | null; to: 'registry' | 'tarball' | null } };
     bundle: {
@@ -73,4 +76,35 @@ export type PackageComparison = {
     };
   };
   advisories: AdvisoryComparison;
+};
+
+export type PackageComparison = DeclarationComparison & MeasurementComparison;
+
+/** Inspected-archive evidence without the per-file inventory, which stays server-side. */
+export type TarballSummary = {
+  status: PackageTarball['status'];
+  reasons: readonly string[];
+  url: string;
+  fileCount: number;
+  changelogCount: number;
+};
+
+/** Registry manifest fields only; what the declarations route returns per version. */
+export type DeclaredPackageVersion = ParsedPackageVersion;
+
+/** Manifest fields plus measurement evidence; what the measurements route returns per version. */
+export type MeasuredPackageVersion = Omit<ComparisonVersion, 'tarball'> & { tarball: TarballSummary };
+
+export type PackageDeclarationsResponse = {
+  packageName: string;
+  from: DeclaredPackageVersion;
+  to: DeclaredPackageVersion;
+  comparison: DeclarationComparison;
+};
+
+export type PackageMeasurementsResponse = {
+  packageName: string;
+  from: MeasuredPackageVersion;
+  to: MeasuredPackageVersion;
+  comparison: MeasurementComparison;
 };

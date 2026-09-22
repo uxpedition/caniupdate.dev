@@ -2,8 +2,11 @@ import type {
   AdvisoryComparison,
   AdvisoryGroup,
   ComparisonVersion,
+  DeclaredPackageVersion,
   DeclarationChange,
+  DeclarationComparison,
   DependencyRequirement,
+  MeasurementComparison,
   PackageComparison,
   SizeComparison,
   ValueComparison,
@@ -20,7 +23,7 @@ const compareValue = <T>(from: T | undefined, to: T | undefined): ValueCompariso
   toDeclared: to !== undefined,
 });
 
-function compareDeclarations<T>(from: ReadonlyMap<string, T>, to: ReadonlyMap<string, T>): DeclarationChange<T>[] {
+function compareDeclarationMaps<T>(from: ReadonlyMap<string, T>, to: ReadonlyMap<string, T>): DeclarationChange<T>[] {
   const changes: DeclarationChange<T>[] = [];
   for (const name of [...new Set([...from.keys(), ...to.keys()])].sort()) {
     const before = from.get(name);
@@ -36,7 +39,7 @@ function compareDeclarations<T>(from: ReadonlyMap<string, T>, to: ReadonlyMap<st
   return changes;
 }
 
-function dependencies(version: ComparisonVersion): Map<string, DependencyRequirement> {
+function dependencies(version: DeclaredPackageVersion): Map<string, DependencyRequirement> {
   const result = new Map<string, DependencyRequirement>();
   for (const [name, range] of Object.entries(version.dependencies)) result.set(name, { category: 'runtime', range });
   for (const [name, range] of Object.entries(version.optionalDependencies))
@@ -44,14 +47,14 @@ function dependencies(version: ComparisonVersion): Map<string, DependencyRequire
   return result;
 }
 
-function peers(version: ComparisonVersion) {
+function peers(version: DeclaredPackageVersion) {
   const optional = new Set(version.optionalPeers);
   return new Map(
     Object.entries(version.peerDependencies).map(([name, range]) => [name, { range, optional: optional.has(name) }]),
   );
 }
 
-function moduleDeclaration(version: ComparisonVersion) {
+function moduleDeclaration(version: DeclaredPackageVersion) {
   const { type, main, module } = version.moduleFormat;
   return {
     ...(type === undefined ? {} : { type }),
@@ -67,7 +70,7 @@ function hasTypeCondition(value: unknown): boolean {
   );
 }
 
-function typeDeclaration(version: ComparisonVersion) {
+function typeDeclaration(version: DeclaredPackageVersion) {
   const { types, typings, typesVersions, exports } = version.moduleFormat;
   return {
     ...(types === undefined ? {} : { types }),
@@ -227,12 +230,12 @@ function compareSizes(from: ComparisonVersion, to: ComparisonVersion): PackageCo
   };
 }
 
-export function comparePackages(from: ComparisonVersion, to: ComparisonVersion): PackageComparison {
+export function compareDeclarations(from: DeclaredPackageVersion, to: DeclaredPackageVersion): DeclarationComparison {
   const oldLicenses = [...new Set(from.licenses)].sort();
   const newLicenses = [...new Set(to.licenses)].sort();
   return {
-    dependencies: compareDeclarations(dependencies(from), dependencies(to)),
-    peers: compareDeclarations(peers(from), peers(to)),
+    dependencies: compareDeclarationMaps(dependencies(from), dependencies(to)),
+    peers: compareDeclarationMaps(peers(from), peers(to)),
     node: compareValue(from.engines.node, to.engines.node),
     moduleFormat: compareValue(moduleDeclaration(from), moduleDeclaration(to)),
     exports: compareValue(from.moduleFormat.exports, to.moduleFormat.exports),
@@ -244,11 +247,20 @@ export function comparePackages(from: ComparisonVersion, to: ComparisonVersion):
       added: newLicenses.filter((license) => !oldLicenses.includes(license)),
       removed: oldLicenses.filter((license) => !newLicenses.includes(license)),
     },
-    installScripts: compareDeclarations(
+    installScripts: compareDeclarationMaps(
       new Map(Object.entries(from.installScriptCommands)),
       new Map(Object.entries(to.installScriptCommands)),
     ),
+  };
+}
+
+export function compareMeasurements(from: ComparisonVersion, to: ComparisonVersion): MeasurementComparison {
+  return {
     sizes: compareSizes(from, to),
     advisories: compareAdvisories(from.vulnerabilities, to.vulnerabilities),
   };
+}
+
+export function comparePackages(from: ComparisonVersion, to: ComparisonVersion): PackageComparison {
+  return { ...compareDeclarations(from, to), ...compareMeasurements(from, to) };
 }
