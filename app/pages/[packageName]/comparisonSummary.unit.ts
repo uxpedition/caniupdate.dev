@@ -8,11 +8,15 @@ import type {
   PackageDeclarationsResponse,
   PackageMeasurementsResponse,
 } from '#shared/comparison.defs';
+import type { ParsedPackageVersion } from '#shared/package.defs';
 
 import { buildComparisonSummaries } from './comparisonSummary';
 import { buildComparisonRows } from './comparisonView';
 
-const makeDeclaredVersion = (version: string): DeclaredPackageVersion => ({
+const makeDeclaredVersion = (
+  version: string,
+  overrides: Partial<ParsedPackageVersion> = {},
+): DeclaredPackageVersion => ({
   name: 'example-package',
   version,
   dist: { tarball: `https://registry.npmjs.org/example-${version}.tgz`, integrity: 'sha512-example' },
@@ -26,6 +30,7 @@ const makeDeclaredVersion = (version: string): DeclaredPackageVersion => ({
   installScripts: [],
   installScriptCommands: {},
   moduleFormat: {},
+  ...overrides,
 });
 
 const declarationComparison: DeclarationComparison = {
@@ -50,6 +55,17 @@ const declarations: PackageDeclarationsResponse = {
   from: makeDeclaredVersion('1.0.0'),
   to: makeDeclaredVersion('2.0.0'),
   comparison: declarationComparison,
+};
+
+const unavailableDeclarations: PackageDeclarationsResponse = {
+  ...declarations,
+  from: makeDeclaredVersion('1.0.0', { dependencies: {} }),
+  to: makeDeclaredVersion('2.0.0', { dependencies: { added: '^1.0.0' }, engines: { node: '>=20' } }),
+  comparison: {
+    ...declarationComparison,
+    dependencies: [{ name: 'added', kind: 'added', from: null, to: { category: 'runtime', range: '^1.0.0' } }],
+    node: { changed: true, from: '>=18', to: '>=20', fromDeclared: true, toDeclared: true },
+  },
 };
 
 const makeMeasuredVersion = (version: string, omitted: string[] = []): MeasuredPackageVersion => ({
@@ -151,10 +167,10 @@ describe('buildComparisonSummaries', () => {
     expect(minified).toMatchObject({ from: '1 kB', to: '1.3 kB', fromNote: '', toNote: 'Incomplete estimate' });
   });
 
-  it('collapses measurement rows as unavailable after the measurements tier fails', () => {
-    const rows = buildComparisonRows(declarations, undefined, true);
+  it('collapses measurement rows as unavailable without hiding declaration changes', () => {
+    const rows = buildComparisonRows(unavailableDeclarations, undefined, true);
     const summaries = buildComparisonSummaries(
-      { declarations, measurements: undefined, measurementsUnavailable: true },
+      { declarations: unavailableDeclarations, measurements: undefined, measurementsUnavailable: true },
       rows,
     );
     const unavailable = summaries.filter(
@@ -163,6 +179,8 @@ describe('buildComparisonSummaries', () => {
         row.sourceId === 'comparison.advisories' ||
         row.sourceId === 'comparison.tarball',
     );
+    const changedDeclaration = summaries.find(({ row }) => row.sourceId === 'comparison.dependencies');
+    const unchangedDeclaration = summaries.find(({ row }) => row.sourceId === 'comparison.moduleFormat');
 
     expect(unavailable).toHaveLength(5);
     expect(
@@ -171,15 +189,19 @@ describe('buildComparisonSummaries', () => {
           from === 'Unavailable' && to === 'Unavailable' && !changed && note === '' && !expandable,
       ),
     ).toBe(true);
-    expect(summaries.slice(0, 8).map(({ row, from, to }) => [row.id, from, to])).toEqual([
-      ['comparison-dependencies', 'None declared', 'None declared'],
-      ['comparison-peers', 'None declared', 'None declared'],
-      ['comparison-node', '>=18', '>=18'],
-      ['comparison-module-format', 'None declared', 'None declared'],
-      ['comparison-exports', 'Not declared', 'Not declared'],
-      ['comparison-types', 'None declared', 'None declared'],
-      ['comparison-licenses', 'MIT', 'MIT'],
-      ['comparison-install-scripts', 'None declared', 'None declared'],
-    ]);
+    expect(changedDeclaration).toMatchObject({
+      from: 'None declared',
+      to: '1 dependencies',
+      changed: true,
+      note: '1 declaration changes',
+      showNote: true,
+      expandable: true,
+    });
+    expect(unchangedDeclaration).toMatchObject({
+      from: 'None declared',
+      to: 'None declared',
+      changed: false,
+      expandable: false,
+    });
   });
 });
