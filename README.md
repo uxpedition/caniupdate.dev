@@ -152,6 +152,8 @@ nub run --node lint:check
 nub run --node format:check
 ```
 
+Lefthook installs the Git hooks through `prepare`. The `pre-commit` hook runs the type, lint, and format checks in parallel; the `commit-msg` hook enforces the conventional commit format.
+
 ## Unit tests
 
 Unit tests live beside their implementation and use the `.unit.ts` suffix:

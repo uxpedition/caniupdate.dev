@@ -1,0 +1,16 @@
+$schema: https://json.schemastore.org/lefthook.json
+
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      run: nub run --node lint:check
+    type-check:
+      run: nub run --node type-check
+    format:
+      run: nub run --node format:check
+
+commit-msg:
+  commands:
+    commitlint:
+      run: nub run --node commitlint --edit {1}
