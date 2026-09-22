@@ -36,13 +36,27 @@ Row and evidence anchors deep-link: opening `#comparison-dependencies`, `#compar
 
 The shared theme in `app/assets/css/main.css` defines neutral light/dark surfaces, DM Sans headings and body text, monospace package data, and a blue change/focus accent. Blue indicates a change, not a risk rating. Homepage controls retain their original responsive layout and dimensions.
 
+Comparison loading is tiered. During SSR, the page prefetches declarations and streams the comparison table in the first HTML, including `Measuring…` placeholders for tier-2 rows. Measurements and AI notes start client-side after the resolved versions arrive and fill in without interaction; a measurements endpoint failure degrades each affected row or tile to `Unavailable` instead of blocking declarations. Nuxt disables streaming for crawler user agents.
+
 ## Package comparison API
 
-`GET /api/package/{encodedPackageName}/compare?from={versionOrTag}&to={versionOrTag}` returns registry metadata and a `vulnerabilities` object on each version. Tags resolve to published versions before OSV is queried.
+`GET /api/package/{encodedPackageName}/compare?from={versionOrTag}&to={versionOrTag}` returns `{ packageName, from, to, comparison }` for the resolved versions. The `comparison` contains declaration fields only: `dependencies`, `peers`, `node`, `moduleFormat`, `exports`, `types`, `licenses`, and `installScripts`. `from` and `to` contain registry manifest declarations; measurement evidence is served by the sibling measurements route, while `releaseNotes` are collected only inside the server-side briefing pipeline. This route makes no GitHub request.
 
-`GET /api/package/{encodedPackageName}/compare/briefing?from={versionOrTag}&to={versionOrTag}` returns the AI briefing for the same pair as `{ packageName, from, to, briefing }`, where `from` and `to` are the resolved versions. It accepts the same parameters and validation as the comparison route, collects evidence server-side through the same providers and caches, and never trusts browser-supplied facts. Keeping it separate lets clients render the factual comparison without waiting for inference.
+### Measurements route
 
-Both npm manifest requests start concurrently. When both inputs are full, unprefixed versions, OSV starts alongside npm; tags and noncanonical inputs wait for registry resolution before OSV is queried. On an OSV cache miss, the comparison makes one batch request for both versions, then one detail request per unique returned ID, shared across versions. Detail requests run concurrently with a limit of five. No automatic retries or pagination are performed.
+`GET /api/package/{encodedPackageName}/compare/measurements?from={version}&to={version}` returns `{ packageName, from, to, comparison: { sizes, advisories } }` for a resolved pair. The page calls it with the exact versions resolved by the declarations response; each returned version includes a `tarball` summary with `status`, `reasons`, `url`, `fileCount`, and `changelogCount`. The per-file inventory and changelog bodies stay server-side for briefing evidence packing.
+
+#### Measurement evidence
+
+Both npm manifest requests start concurrently. When both inputs are full, unprefixed versions, OSV starts alongside npm; tags and noncanonical inputs wait for registry resolution before OSV is queried. On an OSV cache miss, the measurements route makes one batch request for both versions, then one detail request per unique returned ID, shared across versions. Detail requests run concurrently with a limit of five. No automatic retries or pagination are performed.
+
+The measurements response keeps `sizes` and `advisories` under `comparison`:
+
+- `sizes.unpacked`: before/after bytes, `delta` (`to - from`), `percent`, coverage status/reasons, and per-version `sources`. Uses valid registry `unpackedSize`, falling back to the verified tarball's regular-file bytes. Partial changelog text does not invalidate the complete tarball inventory. Missing measurements are `null`, never zero; a zero baseline has `percent: null`.
+- `sizes.bundle.minified` and `.gzip`: separate Bundlephobia estimate comparisons with the same numeric fields and coverage states. Builds reporting ignored missing dependencies retain values but have no calculated delta. These are provider estimates, not reproducible application bundle measurements; retrieval times and returned build metadata remain under each version's `bundleSize`.
+- `advisories`: groups records transitively by shared OSV IDs/aliases, retaining the original records under each group's `from`/`to`, plus sorted `ids` and `aliases`. `related` IDs are not duplicates. With complete evidence, groups are `fromOnly`, `both`, or `toOnly`. Under incomplete evidence, one-sided groups go to `uncertain` rather than implying a fix or a newly introduced vulnerability. `coverage`, `status`, and `reasons` retain lookup limitations. Per-version counts remain counts of OSV IDs; grouped comparison entries are not interchangeable with those counts.
+
+Per-version OSV data under `from.vulnerabilities` and `to.vulnerabilities` retains:
 
 - `status`: `available`, `partial`, or `unavailable`.
 - `count`: unique OSV IDs for that version, excluding confirmed withdrawn records. A successful empty result is `0`; a failed or missing batch result is `null`. Counts are by OSV ID, not merged by CVE aliases.
@@ -52,13 +66,13 @@ A failed detail lookup retains its batch match and count with `detailsStatus: 'u
 
 For example, `minimist` versions `1.2.5` and `1.2.8` currently return counts of `1` and `0`, respectively. Advisory data can change over time.
 
-The response also includes a comparison-level `releaseNotes` object:
+### Briefing route
 
-- `status`: `available`, `partial`, or `unavailable`, with `reasons` explaining coverage gaps. Missing evidence does not mean there were no changes.
-- `releases`: GitHub release version, tag, name, full body, and source URL for `(from, to]`. Drafts are excluded; prereleases follow semver ordering. Packages with a repository subdirectory require package-specific tags such as `@scope/package@1.2.3`; ambiguous bare monorepo tags are not guessed.
-- `changelog`: the target package directory's `CHANGELOG`, `CHANGES`, or `HISTORY` document (plain text, Markdown, or reStructuredText), including its body, path, explicit ref, and source URL; otherwise `null`. It is pinned to the target npm `gitHead` commit, or a unique matching target release tag when no usable commit is available. A bare monorepo tag is usable only after `package.json` in the selected package directory at that same ref confirms the exact requested package name and version; this does not attribute the repository-wide release body to the package. The default branch is never used.
+`GET /api/package/{encodedPackageName}/compare/briefing?from={versionOrTag}&to={versionOrTag}` returns the AI briefing for the same pair as `{ packageName, from, to, briefing }`, where `from` and `to` are the resolved versions. It accepts the same parameters and validation as the comparison route, collects evidence server-side through the same providers and caches, and never trusts browser-supplied facts. Keeping it separate lets clients render the factual comparison without waiting for inference.
 
-GitHub starts after both npm manifests resolve their repository metadata, without waiting for OSV. Release pagination and the entire commit-pinned changelog lookup run concurrently. Only dependent requests—later release pages, reading a discovered changelog file, or discovering a fallback release tag—wait for their prerequisites. GitHub requests have a five-second timeout including the body, a 1 MiB response limit, and no retries. Release pagination stops after ten pages, preserving earlier results as partial evidence if later pages fail or the bound is reached.
+#### Briefing release-note collection
+
+GitHub collection starts after both npm manifests resolve their repository metadata, without waiting for OSV. Release pagination and the entire commit-pinned changelog lookup run concurrently. Only dependent requests—later release pages, reading a discovered changelog file, or discovering a fallback release tag—wait for their prerequisites. GitHub requests have a five-second timeout including the body, a 1 MiB response limit, and no retries. Release pagination stops after ten pages, preserving earlier results as partial evidence if later pages fail or the bound is reached.
 
 Non-GitHub hosts, missing/malformed repository metadata, and repository/directory changes return unavailable release evidence without GitHub requests; npm and OSV results remain intact. GitHub failures, missing notes, and rate limits also preserve the rest of the comparison. This does not fetch GitLab/Bitbucket notes. Published tarball evidence is returned separately, as described below.
 
@@ -82,11 +96,11 @@ Tags and ranges resolve afresh on each request; they are only shared while a loo
 
 Caches retain parsed evidence, not HTTP response objects or raw archives. Tarball URL validation still runs before cache lookup, and changed integrity metadata cannot reuse a previously verified entry. GitHub caches are isolated by credential identity; credentials never appear in the API response. Bundlephobia cache hits retain the original `retrievedAt`, rather than presenting cached measurements as newly fetched.
 
-The response shape is unchanged. Warm and overlapping comparisons reuse cached provider evidence, but an uncached comparison still waits for upstream services. OSV and other mutable evidence can lag by their configured TTL. Cache entries are local to each server process, disappear on restart/module reload, and are not shared across multiple instances. This caches evidence, not the complete HTTP response, and does not introduce retries, stale-while-revalidate behavior, or streaming.
+The declarations and measurements routes read these same process-local caches, so a page load collects each version's manifest once even though they are separate requests. The briefing route shares the same caches while assembling complete server-side facts. Warm and overlapping comparisons reuse cached provider evidence, but an uncached comparison still waits for upstream services. OSV and other mutable evidence can lag by their configured TTL. Cache entries are local to each server process, disappear on restart/module reload, and are not shared across multiple instances. This caches evidence, not complete HTTP responses, and does not introduce retries or stale-while-revalidate behavior.
 
 ### Local comparison
 
-The top-level `comparison` object calculates facts from the two resolved versions and their collected evidence. It adds no network calls and never executes package code. Existing `from`, `to`, and `releaseNotes` evidence remains available.
+The declarations comparison calculates facts from the two resolved manifest versions. It adds no network calls and never executes package code. Measurement comparisons for `sizes` and `advisories` are returned by the measurements route described above; the briefing pipeline combines both tiers internally with its server-side evidence.
 
 - `dependencies`: sorted added/removed/changed declarations, each with `name`, `kind`, and nullable `from`/`to` values containing `category` (`runtime` or `optional`) and `range`. Optional requirements override same-name runtime requirements. Category moves are one change, not two dependencies. Dev dependencies are excluded.
 - `peers`: separate requirement changes, including optional/required transitions. Before/after values contain `range` and `optional`.
@@ -94,13 +108,12 @@ The top-level `comparison` object calculates facts from the two resolved version
 - `moduleFormat`, `exports`, and `types`: before/after declarations with `changed`. Module metadata contains `type`, `main`, and `module`; it does not prove that loading the package with `require` or `import` succeeds. Type metadata includes `types`, legacy `typings`, `typesVersions`, and the full export map when it contains nested `types` or versioned `types@…` conditions. Export condition and type-version mapping order is preserved, since precedence can matter. Presence flags (`fromDeclared`, `toDeclared`) distinguish an absent field from an explicit JSON `null`; nullable before/after values alone cannot do so. Composite declaration objects can be empty.
 - `licenses`: unique sorted declarations with `added`/`removed`, without legal compatibility advice.
 - `installScripts`: added, removed, and changed explicit `preinstall`, `install`, and `postinstall` commands. Per-version `installScriptCommands` retains their bodies alongside the existing `installScripts` names. This does not infer implicit npm lifecycle behavior such as a default native build.
-- `sizes.unpacked`: before/after bytes, `delta` (`to - from`), `percent`, coverage status/reasons, and per-version `sources`. Uses valid registry `unpackedSize`, falling back to the verified tarball's regular-file bytes. Partial changelog text does not invalidate the complete tarball inventory. Missing measurements are `null`, never zero; a zero baseline has `percent: null`.
-- `sizes.bundle.minified` and `.gzip`: separate Bundlephobia estimate comparisons with the same numeric fields and coverage states. Builds reporting ignored missing dependencies retain values but have no calculated delta. These are provider estimates, not reproducible application bundle measurements; retrieval times and returned build metadata remain under each version's `bundleSize`.
-- `advisories`: groups records transitively by shared OSV IDs/aliases, retaining the original records under each group's `from`/`to`, plus sorted `ids` and `aliases`. `related` IDs are not duplicates. With complete evidence, groups are `fromOnly`, `both`, or `toOnly`. Under incomplete evidence, one-sided groups go to `uncertain` rather than implying a fix or a newly introduced vulnerability. `coverage`, `status`, and `reasons` retain lookup limitations. Per-version counts remain counts of OSV IDs; grouped comparison entries are not interchangeable with those counts.
 
 Declaration change lists contain only differences. Scalar/composite comparisons retain unchanged values with `changed: false`. Comparison direction follows the requested version pair, including identical versions and downgrades; the factual comparison itself does not generate upgrade advice. Missing provider evidence affects only its comparison sections. No published-file diff, dependency-tree resolution, or consumer compatibility verdict is implied. The AI briefing is served by its own endpoint, described below.
 
 ### Optional AI briefing
+
+The briefing route keeps collecting complete facts server-side, including release notes, but release notes are inference evidence only. They are not returned as a standalone response field or rendered in a page section; if included in the briefing evidence, they appear solely as `maintainer` sources and support bullets with `basis: 'maintainer'`.
 
 Set these server-only environment variables (see `.env.example`):
 
@@ -128,14 +141,18 @@ The persistent store is paired with a process-local Effect cache that shares ide
 
 ### Published npm tarballs
 
-Each version also includes a `tarball` object. Each tarball lookup starts as soon as its own npm manifest resolves, without waiting for the other manifest, GitHub, OSV, or Bundlephobia. The downloads can overlap; verified cache hits skip download and inspection entirely. GitHub still waits for both manifests to validate repository agreement, but does not wait for either tarball.
+Each tarball lookup starts as soon as its own npm manifest resolves, without waiting for the other manifest, GitHub, OSV, or Bundlephobia. The downloads can overlap; verified cache hits skip download and inspection entirely. GitHub still waits for both manifests to validate repository agreement, but does not wait for either tarball.
+
+The browser-facing `/compare/measurements` response exposes `from.tarball` and `to.tarball` summaries:
 
 - `status`: `available`, `partial`, or `unavailable`; `reasons` explains incomplete inspection. Failure for one version preserves the other version and all unrelated evidence.
 - `url`: the manifest's published tarball URL.
-- `files`: sorted package-relative paths, entry `type`, declared byte `size`, and a hex `sha256` of regular-file contents. Directories and links have `sha256: null`; links include their original `linkTarget` and are never followed. The `package/` root directory itself is omitted.
-- `changelogs`: shipped `CHANGELOG`, `CHANGES`, and `HISTORY` files, case-insensitive, with no extension or `.md`, `.markdown`, `.txt`, or `.rst`, at any depth. Each includes `path`, UTF-8 `body`, and `truncated`. These are artifact contents, not version-filtered release notes or source diffs; they remain separate from GitHub `releaseNotes`.
+- `fileCount`: the number of inspected package files.
+- `changelogCount`: the number of matching changelog files.
 
-A complete archive with no matching changelog is `available` with `changelogs: []`; that does not mean there were no changes. Truncated text or invalid UTF-8 marks inspection `partial` while preserving the file inventory. Integrity, transport, archive, and hard resource-limit failures return `unavailable` with empty evidence arrays, never a misleading partial inventory.
+The full per-file inventory (`path`, `type`, `size`, `sha256`, and link targets) and changelog bodies (`path`, UTF-8 `body`, and `truncated`) remain server-side for briefing evidence packing; they are not returned by either comparison route. These artifact contents are not version-filtered release notes or source diffs.
+
+A complete archive with no matching changelog is `available` with `changelogCount: 0`; that does not mean there were no changes. Truncated text or invalid UTF-8 marks inspection `partial` while preserving the server-side inventory and summary counts. Integrity, transport, archive, and hard resource-limit failures return `unavailable` with zero summary counts, never a misleading partial inventory.
 
 Inspection accepts only `https://registry.npmjs.org` URLs without credentials or fragments, rejects redirects, sends no registry/GitHub credentials, and performs no retries. It verifies the strongest supported manifest integrity digest (SHA-512, SHA-384, SHA-256), or the legacy SHA-1 `shasum` only when integrity is absent. A present but unsupported or invalid integrity value never falls back to SHA-1.
 

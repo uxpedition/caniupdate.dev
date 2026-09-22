@@ -29,6 +29,19 @@ Three independent causes:
 
 The agreed product plan already states the intended behavior: “Render factual sections immediately: each branch has independent loading, available, partial or unavailable state” and “Show calculated results as soon as they are ready” (`2026-09-16-package-upgrade-design.md` §4–§5). The current single-response gate violates that principle; this design restores it for the two tiers that matter on the page.
 
+### After (2026-09-22)
+
+Measured against the built server on the lodash pair with a fresh browser tab, a cold server process, and Fast 3G emulation (150 ms latency, 1.6 Mbps down, 750 kbps up):
+
+| Measurement | Observed result |
+| --- | --- |
+| Declaration rows visible | **1,434 ms** after navigation start; all 8 declaration rows were present |
+| Measurement rows resolved | **4,526 ms** after navigation start; all 5 measurement rows had left `Measuring…` |
+| Declarations response on the wire | **1,559 B** for `GET /api/package/lodash/compare?from=4.17.20&to=4.17.21` |
+| Streamed page response | **549 ms TTFB**, **1,684 ms total**, 35,277 encoded HTML bytes |
+
+The cold run showed no full-page loading sentence, one client request each to `/compare/measurements` and `/compare/briefing`, no client request to `/compare`, and no console errors. A warm reload showed all 8 declaration rows without a pending declaration state. The observed declaration timing was above the 1.2 s acceptance target; the target is unchanged.
+
 ## 2. Required behavior
 
 Decisions taken on 2026-09-22:
