@@ -1,5 +1,5 @@
 {
-  "name": "can-i-npm-update",
+  "name": "can-i-update",
   "private": true,
   "type": "module",
   "scripts": {

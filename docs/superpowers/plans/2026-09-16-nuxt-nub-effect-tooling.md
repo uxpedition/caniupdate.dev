@@ -18,7 +18,7 @@
 - Use `typescript@npm:@typescript/typescript6@^6.0.2` as the narrow compatibility exception required by the latest `vue-tsc`; all unrelated packages remain latest.
 - Add latest `oxlint-tsgolint` because Oxlint type-aware mode requires its executable bridge.
 - Initialize with `nub dlx nuxi@latest init . --packageManager=nub --no-install --force`.
-- Preserve the project name `can-i-npm-update` and Nub package-manager metadata.
+- Preserve the project name `can-i-update` and Nub package-manager metadata.
 - Do not add pnpm workspace files or pnpm-specific scripts.
 - Keep Nuxt's root project-reference `tsconfig.json` and generated `.nuxt/tsconfig.*` files under Nuxt control.
 - Copy `docpenny` compiler, Oxlint, and Oxfmt policy; remove only irrelevant `docpenny` workspace ignore paths.
@@ -55,7 +55,7 @@ Read `package.json` and verify:
 
 ```json
 {
-  "name": "can-i-npm-update",
+  "name": "can-i-update",
   "packageManager": "nub@0.8.3"
 }
 ```

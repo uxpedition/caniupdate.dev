@@ -1,4 +1,4 @@
-# Can I npm update? — Product plan
+# Can I update? — Product plan
 
 **Date:** 2026-09-16
 **Status:** Product proposal with the SLC data flow agreed on 2026-09-17 (see §5). This document records what to build, how to present it, and where the evidence comes from. It does not authorize implementation.

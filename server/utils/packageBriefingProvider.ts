@@ -12,7 +12,7 @@ import { Headers, HttpClient, HttpClientError, HttpClientRequest, HttpClientResp
 export const REQUEST_TIMEOUT = Duration.seconds(75);
 const MAX_RESPONSE_BYTES = 128 * 1024;
 const MAX_OUTPUT_TOKENS = 4096;
-const USER_AGENT = 'can-i-npm-update/ai-briefing';
+const USER_AGENT = 'can-i-update/ai-briefing';
 const OMITTED_REBUILT_HEADERS = ['content-encoding', 'content-length'];
 
 export type BriefingProviderTarget = {

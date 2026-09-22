@@ -180,7 +180,7 @@ describe('getPackageBriefing', () => {
     const request = new Request(call[0], call[1]);
     expect(request.url).toBe('https://briefing.example/v1/chat/completions');
     expect(request.headers.get('authorization')).toBe('Bearer test-key');
-    expect(request.headers.get('user-agent')).toBe('can-i-npm-update/ai-briefing');
+    expect(request.headers.get('user-agent')).toBe('can-i-update/ai-briefing');
     expect(request.headers.get('x-opencode-session')).toMatch(/^[a-f0-9]{64}$/);
     const body: unknown = await request.json();
     expect(body).toMatchObject({

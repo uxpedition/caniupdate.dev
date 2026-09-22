@@ -1,4 +1,4 @@
-# Can I npm update?
+# Can I update?
 
 A Nuxt starter using Nub, Effect v4 RC, Oxlint, and Oxfmt.
 

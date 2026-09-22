@@ -91,7 +91,7 @@ const revealCitation = async (event: MouseEvent) => {
       <a
         href="/"
         class="font-mono font-semibold tracking-[-0.04em] hover:underline hover:underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring"
-        >can i npm update<span class="text-change" aria-hidden="true">?</span></a
+        >can i update<span class="text-change" aria-hidden="true">?</span></a
       >
       <div class="flex gap-6 text-muted-foreground max-[700px]:gap-4">
         <a

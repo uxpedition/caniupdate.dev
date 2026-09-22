@@ -15,7 +15,7 @@ Replace the current Nub TypeScript hello-world starter with a minimal Nuxt appli
 - Use `@typescript/typescript6` through the `typescript` npm alias because the latest `vue-tsc` cannot load TypeScript 7's removed `typescript/lib/tsc` export; this is the narrow compatibility exception.
 - Include the latest `oxlint-tsgolint` bridge required by Oxlint's type-aware mode.
 - Use the current Nuxi initializer through Nub with `--packageManager=nub`.
-- Keep the existing project name, `can-i-npm-update`.
+- Keep the existing project name, `can-i-update`.
 - Do not introduce pnpm workspace files or pnpm-specific scripts.
 - Do not overwrite Nuxt's generated TypeScript project-reference structure.
 - Copy `../docpenny` compiler, Oxlint, and Oxfmt policy where it is compatible with Nuxt; remove only irrelevant workspace-specific ignore paths.

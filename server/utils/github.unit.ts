@@ -140,7 +140,7 @@ describe('listGithubReleases', () => {
         url: 'https://api.github.com/repos/octo-org/release-tools/releases?page=1&per_page=100',
         accept: 'application/vnd.github+json',
         apiVersion: '2022-11-28',
-        userAgent: 'can-i-npm-update',
+        userAgent: 'can-i-update',
         authorization: 'Bearer ghp_secret',
       },
     ]);
@@ -358,7 +358,7 @@ describe('getGithubFile', () => {
       url: 'https://api.github.com/repos/octo-org/release-tools/contents/docs/CHANGELOG%20release.md?ref=release%2Fv1.2.3',
       accept: 'application/vnd.github.raw+json',
       apiVersion: '2022-11-28',
-      userAgent: 'can-i-npm-update',
+      userAgent: 'can-i-update',
       authorization: null,
     });
   });

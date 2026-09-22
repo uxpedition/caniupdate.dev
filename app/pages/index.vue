@@ -174,7 +174,7 @@ watch(selectedFromVersion, () => {
     <div class="mx-auto flex min-h-[calc(100svh-3rem)] w-full max-w-6xl flex-col justify-center pb-16">
       <header class="mx-auto max-w-2xl space-y-4 text-center">
         <p class="font-mono font-semibold tracking-[-0.04em]">
-          can i npm update<span class="text-change" aria-hidden="true">?</span>
+          can i update<span class="text-change" aria-hidden="true">?</span>
         </p>
         <h1 class="text-4xl font-medium tracking-tight sm:text-6xl">
           Check what changes before you update an npm package.

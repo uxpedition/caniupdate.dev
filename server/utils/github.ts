@@ -3,7 +3,7 @@ import { FetchHttpClient, Headers, HttpClient, HttpClientRequest, HttpClientResp
 
 const API_ORIGIN = 'https://api.github.com';
 const GITHUB_API_VERSION = '2022-11-28';
-const GITHUB_USER_AGENT = 'can-i-npm-update';
+const GITHUB_USER_AGENT = 'can-i-update';
 const RELEASES_PER_PAGE = 100;
 const MAX_RELEASE_PAGES = 10;
 const REQUEST_TIMEOUT = Duration.seconds(5);
