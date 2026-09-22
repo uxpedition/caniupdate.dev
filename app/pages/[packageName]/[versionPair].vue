@@ -27,6 +27,8 @@ const {
 const expanded = ref(new Set<string>());
 const showBrief = ref(false);
 const showSources = ref(false);
+// The header names the package, so the target version's description leads; the older one covers a version that ships none.
+const description = computed(() => declarations.value?.to.description ?? declarations.value?.from.description);
 const rows = computed(() =>
   declarations.value
     ? buildComparisonSummaries(
@@ -114,7 +116,7 @@ const revealCitation = async (event: MouseEvent) => {
           ><strong class="font-medium text-foreground">{{ displayToVersion }}</strong>
         </p>
         <p class="mt-4 text-sm leading-[1.6] text-muted-foreground">
-          What changes when you update. The details when you need them.
+          {{ description ?? 'What changes when you update. The details when you need them.' }}
         </p>
       </header>
 

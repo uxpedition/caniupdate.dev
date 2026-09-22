@@ -69,6 +69,7 @@ const RegistryPackageLicenseSchema = Schema.Struct({
 export const RegistryVersionManifestSchema = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
+  description: Schema.optionalKey(Schema.String),
   // Enrichment validates optional source metadata independently; malformed values must not discard npm/OSV facts.
   repository: Schema.optionalKey(Schema.Unknown),
   gitHead: Schema.optionalKey(Schema.Unknown),
@@ -117,6 +118,7 @@ const ParsedPackageModuleFormatSchema = Schema.Struct({
 const ParsedPackageVersionSchema = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
+  description: Schema.optionalKey(Schema.String),
   dist: ParsedPackageDistSchema,
   licenses: Schema.Array(Schema.String),
   deprecated: Schema.Boolean,
@@ -167,6 +169,13 @@ const toLicenses = (manifest: RegistryVersionManifest): readonly string[] => {
   return (manifest.licenses ?? []).map(({ type }) => type).filter((type) => type.length > 0);
 };
 
+// Published descriptions are free text: some versions carry none and others pad or blank the value.
+const toDescription = (manifest: RegistryVersionManifest): string | undefined => {
+  const description = manifest.description?.trim();
+
+  return description === undefined || description === '' ? undefined : description;
+};
+
 const toOptionalPeers = (peerDependenciesMeta: RegistryVersionManifest['peerDependenciesMeta']): readonly string[] => {
   const optionalPeers: string[] = [];
 
@@ -198,9 +207,12 @@ const toModuleFormat = (manifest: RegistryVersionManifest): ParsedPackageVersion
 });
 
 export function toPackageVersion(manifest: RegistryVersionManifest): ParsedPackageVersion {
+  const description = toDescription(manifest);
+
   return {
     name: manifest.name,
     version: manifest.version,
+    ...(description === undefined ? {} : { description }),
     dist: toPackageDist(manifest.dist),
     licenses: toLicenses(manifest),
     deprecated: manifest.deprecated !== undefined,

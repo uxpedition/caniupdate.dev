@@ -206,6 +206,16 @@ describe('toPackageVersion', () => {
     expect(curate(lodashManifest).engines).toEqual({ node: '', rhino: '' });
   });
 
+  it('trims a published description and drops a blank one', () => {
+    // vue@3.5.0 publishes 'The progressive JavaScript framework for building modern web UI.'; dayjs shipped ''
+    // for its first releases, so both padded and blank values reach the parsed version.
+    expect(
+      curate({ ...vueManifest, description: '  The progressive JavaScript framework for building modern web UI.  ' })
+        .description,
+    ).toBe('The progressive JavaScript framework for building modern web UI.');
+    expect(curate({ ...coffeeScriptManifest, description: '   ' }).description).toBeUndefined();
+  });
+
   it('rejects a version manifest whose published size is not a number', () => {
     expect(() => curate({ ...vueManifest, dist: { ...vueManifest.dist, unpackedSize: '2374183' } })).toThrow(
       Schema.SchemaError,
