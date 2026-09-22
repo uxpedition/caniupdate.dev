@@ -3,6 +3,7 @@ import { computed, nextTick, ref } from 'vue';
 
 import BriefingPanel from '~/components/comparison/BriefingPanel.vue';
 import EvidencePanel from '~/components/comparison/EvidencePanel.vue';
+import RowHelp from '~/components/comparison/RowHelp.vue';
 import { useComparisonPage } from '~/composables/useComparisonPage';
 import { buildComparisonSummaries, sizeChange } from '~/pages/[packageName]/comparisonSummary';
 
@@ -278,35 +279,47 @@ const revealCitation = async (event: MouseEvent) => {
                       scope="row"
                       class="border-b border-b-border/55 py-[15px] pr-4 pl-0 align-top font-normal wrap-anywhere max-[700px]:py-3.5 max-[700px]:pr-2"
                     >
-                      <button
-                        v-if="item.expandable"
-                        type="button"
-                        :aria-expanded="expanded.has(item.anchor)"
-                        :aria-controls="`details-${item.anchor}`"
-                        class="inline-flex cursor-pointer items-baseline gap-2 text-left [font:inherit] text-inherit focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring max-[700px]:underline max-[700px]:decoration-border max-[700px]:underline-offset-4"
-                        @click="toggleRow(item.anchor)"
-                      >
-                        {{ item.row.label
-                        }}<span
-                          aria-hidden="true"
-                          class="text-muted-foreground transition-transform duration-150 motion-reduce:transition-none max-[700px]:hidden"
-                          :class="{ 'rotate-180': expanded.has(item.anchor) }"
-                          >⌄</span
+                      <div class="flex items-start">
+                        <button
+                          v-if="item.expandable"
+                          type="button"
+                          :aria-expanded="expanded.has(item.anchor)"
+                          :aria-controls="`details-${item.anchor}`"
+                          class="inline-flex cursor-pointer items-baseline gap-2 text-left [font:inherit] text-inherit focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring max-[700px]:underline max-[700px]:decoration-border max-[700px]:underline-offset-4"
+                          @click="toggleRow(item.anchor)"
                         >
-                      </button>
-                      <span v-else>{{ item.row.label }}</span>
+                          {{ item.row.label
+                          }}<span
+                            aria-hidden="true"
+                            class="text-muted-foreground transition-transform duration-150 motion-reduce:transition-none max-[700px]:hidden"
+                            :class="{ 'rotate-180': expanded.has(item.anchor) }"
+                            >⌄</span
+                          >
+                        </button>
+                        <span v-else>{{ item.row.label }}</span>
+                        <RowHelp :label="item.row.label" :explanation="item.row.explanation" />
+                      </div>
                     </th>
                     <td
                       class="border-b border-b-border/55 px-4 py-[15px] align-top text-muted-foreground wrap-anywhere max-[700px]:px-2 max-[700px]:py-3.5"
                     >
                       {{ item.from }}
+                      <span
+                        v-if="item.fromNote"
+                        class="mt-[5px] block text-[11px] leading-[1.6] text-muted-foreground"
+                        >{{ item.fromNote }}</span
+                      >
                     </td>
                     <td
                       class="border-b border-b-border/55 px-4 py-[15px] align-top wrap-anywhere max-[700px]:px-2 max-[700px]:py-3.5"
                     >
                       <span class="font-medium" :class="{ 'text-change': item.changed }">{{ item.to }}</span
                       ><span
-                        v-if="item.note && (item.changed || item.note === 'Comparison unavailable')"
+                        v-if="item.toNote"
+                        class="mt-[5px] block text-[11px] leading-[1.6] text-muted-foreground"
+                        >{{ item.toNote }}</span
+                      ><span
+                        v-if="item.note && item.showNote"
                         class="mt-[5px] block text-[11px] leading-[1.6] text-muted-foreground"
                         >{{ item.note }}</span
                       >

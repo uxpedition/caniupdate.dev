@@ -12,7 +12,9 @@ export function readableSize(bytes: number | null): string {
 }
 
 export function sizeChange(size: SizeComparison): string {
-  if (size.delta === null) return 'Comparison unavailable';
+  if (size.from === null && size.to === null) return 'Sizes unavailable';
+  if (size.from === null || size.to === null) return 'Size missing for one version';
+  if (size.delta === null) return 'Not comparable: incomplete build';
   if (size.delta === 0) return 'No size change';
   const sign = size.delta > 0 ? '+' : '−';
   const percent = size.percent === null ? '' : ` (${sign}${number.format(Math.abs(size.percent))}%)`;
@@ -70,13 +72,21 @@ function rowPresentation(row: ComparisonRow, data: BriefingInput, size: SizeComp
       to: readableSize(size.to),
       changed: size.delta !== null && size.delta !== 0,
       note: sizeChange(size),
+      showNote: size.delta !== 0,
     };
   return {
     from: evidenceSummary(data.from, row.sourceId, row.from),
     to: evidenceSummary(data.to, row.sourceId, row.to),
     changed: row.changed,
     note: row.changed ? row.detail || 'Declaration changed' : '',
+    showNote: row.changed,
   };
+}
+
+function incompleteEstimate(version: ComparisonVersion): string {
+  return version.bundleSize.status === 'available' && version.bundleSize.ignoredMissingDependencies?.length
+    ? 'Incomplete estimate'
+    : '';
 }
 
 export function buildComparisonSummaries(data: BriefingInput, rows: readonly ComparisonRow[]) {
@@ -86,10 +96,14 @@ export function buildComparisonSummaries(data: BriefingInput, rows: readonly Com
     'comparison.sizes-gzip': data.comparison.sizes.bundle.gzip,
   };
   return rows.map((row) => {
-    const presentation = rowPresentation(row, data, sizes[row.sourceId]);
+    const size = sizes[row.sourceId];
+    const presentation = rowPresentation(row, data, size);
+    const isBundle = row.sourceId === 'comparison.sizes-minified' || row.sourceId === 'comparison.sizes-gzip';
     return {
       row,
       ...presentation,
+      fromNote: isBundle ? incompleteEstimate(data.from) : '',
+      toNote: isBundle ? incompleteEstimate(data.to) : '',
       anchor: row.sourceId === 'comparison.sizes-unpacked' ? 'comparison-sizes' : row.id,
       expandable:
         presentation.from !== row.from ||

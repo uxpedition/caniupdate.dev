@@ -28,7 +28,9 @@ The setup includes an Effect-backed health endpoint at `/api/health`.
 
 Search for a package on the homepage, choose versions, and open `/{encodedPackageName}/{from}...{to}`. For example, `/vue/3.4.38...3.5.13` compares Vue releases using the live comparison and AI briefing APIs. Scoped package names are URL-encoded.
 
-The comparison prioritizes dependency changes, estimated gzip impact, and advisory coverage. Expand individual categories for complete declarations and measurement notes; AI migration notes and source evidence are collapsed initially. Citation links reveal their referenced evidence.
+The comparison prioritizes dependency changes, estimated gzip impact, and advisory coverage. Every comparison row has a Lucide info icon beside its title with an explanation available on hover, keyboard focus, or tap. Expand individual categories for complete declarations and measurement notes; AI migration notes and source evidence are collapsed initially. Citation links reveal their referenced evidence.
+
+Bundle estimates with omitted dependencies remain visible but are marked “Incomplete estimate” for the affected version. Their delta reads “Not comparable: incomplete build”, and expanded details list the omitted dependencies for each version. Missing measurements use separate availability messages. These warnings do not change the backend comparability rules.
 
 Row and evidence anchors deep-link: opening `#comparison-dependencies`, `#comparison-advisories`, or a citation anchor scrolls to that element once the comparison and briefing render. Because the comparison rows and evidence entries come from client-side queries, `app/router.options.ts` replaces Nuxt's default scroll behavior with one that waits for the anchor to exist — up to 30 seconds — and scrolls to the last reachable position when the anchor sits near the end of the page.
 

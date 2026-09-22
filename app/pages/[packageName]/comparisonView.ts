@@ -9,6 +9,7 @@ export type ComparisonRow = {
   to: string;
   changed: boolean;
   detail: string;
+  explanation: string;
 };
 
 export type BriefingCitation = {
@@ -94,7 +95,10 @@ const formatTarball = (version: ComparisonVersion): string => {
 };
 
 const formatDelta = (size: SizeComparison): string => {
-  if (size.delta === null) return size.status === 'available' ? 'No delta available' : `Coverage ${size.status}`;
+  if (size.delta === null) {
+    if (size.from === null || size.to === null) return 'A size comparison needs a measurement for both versions.';
+    return 'Bundlephobia omitted dependencies from at least one build. The size difference would not be a like-for-like comparison.';
+  }
 
   const sign = size.delta > 0 ? '+' : '';
   const percentage = size.percent === null ? '' : ` (${size.percent > 0 ? '+' : ''}${size.percent.toFixed(1)}%)`;
@@ -102,14 +106,52 @@ const formatDelta = (size: SizeComparison): string => {
   return `${sign}${formatNumber(size.delta)} bytes${percentage}${reasons}`;
 };
 
+const rowExplanations = {
+  'comparison.dependencies':
+    'Runtime and optional dependencies declared by the package. Changes here compare version ranges, not the exact versions installed in your project.',
+  'comparison.peers':
+    'Packages expected from your project, with their supported version ranges. Optional peers are marked in the details.',
+  'comparison.node':
+    'The Node.js versions this package declares it supports. No declaration does not guarantee compatibility with every Node.js version.',
+  'comparison.moduleFormat':
+    'How the package declares its JavaScript module format and entry points. These declarations help tools choose between ESM and CommonJS.',
+  'comparison.exports':
+    'The public import paths and conditions declared in package.json. Changes can affect which files your application can import.',
+  'comparison.types':
+    'TypeScript declaration entry points and version mappings declared in package.json. This does not compare the types themselves.',
+  'comparison.licenses':
+    'License identifiers declared in the published package metadata. Review the license terms before deciding whether they fit your project.',
+  'comparison.installScripts':
+    'Lifecycle scripts that may run during installation, depending on your package manager and settings. Expand to inspect the commands.',
+  'comparison.sizes-unpacked':
+    'The total size of the published package files before compression. Dependencies are not included. This is not your application bundle size.',
+  'comparison.sizes-minified':
+    'Bundlephobia’s minified build of the package and its bundled dependencies. Your application may include different code. Builds with omitted dependencies are not comparable.',
+  'comparison.sizes-gzip':
+    'The gzip-compressed size of Bundlephobia’s minified build, not its installed size or your application’s download size. Builds with omitted dependencies are not comparable.',
+  'comparison.advisories':
+    'Known security advisories matched by OSV for each version. No matches is not a guarantee of safety, and incomplete coverage cannot establish that an issue was fixed.',
+  'comparison.tarball':
+    'Evidence from inspecting the published npm archive, including file count and shipped changelogs. Availability indicates inspection coverage, not a security or provenance guarantee.',
+};
+
 const row = (
-  sourceId: string,
+  sourceId: keyof typeof rowExplanations,
   label: string,
   from: string,
   to: string,
   changed: boolean,
   detail = '',
-): ComparisonRow => ({ id: citationAnchorId(sourceId), sourceId, label, from, to, changed, detail });
+): ComparisonRow => ({
+  id: citationAnchorId(sourceId),
+  sourceId,
+  label,
+  from,
+  to,
+  changed,
+  detail,
+  explanation: rowExplanations[sourceId],
+});
 
 const packageDeclarationRows = (
   from: ComparisonVersion,
@@ -191,7 +233,19 @@ const declarationRows = (
   ...moduleDeclarationRows(from, to, comparison),
 ];
 
-const sizeRows = (comparison: PackageComparison): readonly ComparisonRow[] => [
+const formatBundleSize = (bytes: number | null, version: ComparisonVersion): string => {
+  const build = version.bundleSize;
+  const omitted = build.status === 'available' ? build.ignoredMissingDependencies : undefined;
+  return omitted?.length
+    ? `${formatBytes(bytes)}\nIncomplete estimate. Bundlephobia omitted:\n${omitted.join('\n')}`
+    : formatBytes(bytes);
+};
+
+const sizeRows = (
+  from: ComparisonVersion,
+  to: ComparisonVersion,
+  comparison: PackageComparison,
+): readonly ComparisonRow[] => [
   row(
     'comparison.sizes-unpacked',
     'Unpacked package size',
@@ -203,16 +257,16 @@ const sizeRows = (comparison: PackageComparison): readonly ComparisonRow[] => [
   row(
     'comparison.sizes-minified',
     'Estimated minified bundle',
-    formatBytes(comparison.sizes.bundle.minified.from),
-    formatBytes(comparison.sizes.bundle.minified.to),
+    formatBundleSize(comparison.sizes.bundle.minified.from, from),
+    formatBundleSize(comparison.sizes.bundle.minified.to, to),
     comparison.sizes.bundle.minified.delta !== 0,
     `${formatDelta(comparison.sizes.bundle.minified)} · provider estimate`,
   ),
   row(
     'comparison.sizes-gzip',
     'Estimated gzip bundle',
-    formatBytes(comparison.sizes.bundle.gzip.from),
-    formatBytes(comparison.sizes.bundle.gzip.to),
+    formatBundleSize(comparison.sizes.bundle.gzip.from, from),
+    formatBundleSize(comparison.sizes.bundle.gzip.to, to),
     comparison.sizes.bundle.gzip.delta !== 0,
     `${formatDelta(comparison.sizes.bundle.gzip)} · provider estimate`,
   ),
@@ -247,7 +301,11 @@ export function buildComparisonRows(
   to: ComparisonVersion,
   comparison: PackageComparison,
 ): readonly ComparisonRow[] {
-  return [...declarationRows(from, to, comparison), ...sizeRows(comparison), ...evidenceRows(from, to, comparison)];
+  return [
+    ...declarationRows(from, to, comparison),
+    ...sizeRows(from, to, comparison),
+    ...evidenceRows(from, to, comparison),
+  ];
 }
 
 export function resolvedBriefingVersions(comparison: { from: ComparisonVersion; to: ComparisonVersion } | undefined): {
