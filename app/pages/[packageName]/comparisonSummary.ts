@@ -7,7 +7,7 @@ import type {
 } from '#shared/comparison.defs';
 import type { ComparisonRow } from '~/pages/[packageName]/comparisonView';
 
-import { MEASURING_VALUE } from './comparisonView';
+import { MEASUREMENTS_UNAVAILABLE_VALUE, MEASURING_VALUE } from './comparisonView';
 
 const number = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 
@@ -90,6 +90,7 @@ function evidenceSummary(
 export type ComparisonSummaryInput = {
   declarations: PackageDeclarationsResponse;
   measurements: PackageMeasurementsResponse | undefined;
+  measurementsUnavailable: boolean;
 };
 
 function rowPresentation(row: ComparisonRow, input: ComparisonSummaryInput, size: SizeComparison | undefined) {
@@ -131,14 +132,24 @@ const measurementSizes = (measurements: PackageMeasurementsResponse | undefined)
         'comparison.sizes-gzip': measurements.comparison.sizes.bundle.gzip,
       };
 
-const rowPresentationWithPending = (
+const rowPresentationWithState = (
   row: ComparisonRow,
   input: ComparisonSummaryInput,
   size: SizeComparison | undefined,
-) =>
-  row.from === MEASURING_VALUE && row.to === MEASURING_VALUE
+) => {
+  if (input.measurementsUnavailable) {
+    return {
+      from: MEASUREMENTS_UNAVAILABLE_VALUE,
+      to: MEASUREMENTS_UNAVAILABLE_VALUE,
+      changed: false,
+      note: '',
+      showNote: false,
+    };
+  }
+  return row.from === MEASURING_VALUE && row.to === MEASURING_VALUE
     ? { from: MEASURING_VALUE, to: MEASURING_VALUE, changed: false, note: '', showNote: false }
     : rowPresentation(row, input, size);
+};
 
 const isBundleRow = (row: ComparisonRow): boolean =>
   row.sourceId === 'comparison.sizes-minified' || row.sourceId === 'comparison.sizes-gzip';
@@ -164,7 +175,7 @@ const isExpandable = (row: ComparisonRow, presentation: { from: string; to: stri
 export function buildComparisonSummaries(input: ComparisonSummaryInput, rows: readonly ComparisonRow[]) {
   const sizes = measurementSizes(input.measurements);
   return rows.map((row) => {
-    const presentation = rowPresentationWithPending(row, input, sizes[row.sourceId]);
+    const presentation = rowPresentationWithState(row, input, sizes[row.sourceId]);
     return {
       row,
       ...presentation,

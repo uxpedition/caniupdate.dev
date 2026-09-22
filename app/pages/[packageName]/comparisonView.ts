@@ -249,81 +249,130 @@ const formatBundleSize = (bytes: number | null, version: MeasuredPackageVersion)
 };
 
 export const MEASURING_VALUE = 'Measuring…';
+export const MEASUREMENTS_UNAVAILABLE_VALUE = 'Unavailable';
 
 const measured = (
   measurements: PackageMeasurementsResponse | undefined,
+  measurementsUnavailable: boolean,
   read: (value: PackageMeasurementsResponse) => string,
-) => (measurements === undefined ? MEASURING_VALUE : read(measurements));
+) =>
+  measurementsUnavailable
+    ? MEASUREMENTS_UNAVAILABLE_VALUE
+    : measurements === undefined
+      ? MEASURING_VALUE
+      : read(measurements);
+
+const measurementChanged = (measurementsUnavailable: boolean, changed: boolean): boolean =>
+  !measurementsUnavailable && changed;
+
+const measurementDetail = (
+  measurements: PackageMeasurementsResponse | undefined,
+  measurementsUnavailable: boolean,
+  read: (value: PackageMeasurementsResponse) => string,
+): string => (measurementsUnavailable || measurements === undefined ? '' : read(measurements));
 
 const measurementSizeRows = (
   measurements: PackageMeasurementsResponse | undefined,
   sizes: PackageMeasurementsResponse['comparison']['sizes'] | undefined,
+  measurementsUnavailable: boolean,
 ): readonly ComparisonRow[] => [
   row(
     'comparison.sizes-unpacked',
     'Unpacked package size',
-    measured(measurements, (value) => formatBytes(value.comparison.sizes.unpacked.from)),
-    measured(measurements, (value) => formatBytes(value.comparison.sizes.unpacked.to)),
-    sizes !== undefined && sizes.unpacked.delta !== 0,
-    sizes === undefined ? '' : formatDelta(sizes.unpacked),
+    measured(measurements, measurementsUnavailable, (value) => formatBytes(value.comparison.sizes.unpacked.from)),
+    measured(measurements, measurementsUnavailable, (value) => formatBytes(value.comparison.sizes.unpacked.to)),
+    measurementChanged(measurementsUnavailable, sizes !== undefined && sizes.unpacked.delta !== 0),
+    measurementDetail(measurements, measurementsUnavailable, (value) => formatDelta(value.comparison.sizes.unpacked)),
   ),
   row(
     'comparison.sizes-minified',
     'Estimated minified bundle',
-    measured(measurements, (value) => formatBundleSize(value.comparison.sizes.bundle.minified.from, value.from)),
-    measured(measurements, (value) => formatBundleSize(value.comparison.sizes.bundle.minified.to, value.to)),
-    sizes !== undefined && sizes.bundle.minified.delta !== 0,
-    sizes === undefined ? '' : `${formatDelta(sizes.bundle.minified)} · provider estimate`,
+    measured(measurements, measurementsUnavailable, (value) =>
+      formatBundleSize(value.comparison.sizes.bundle.minified.from, value.from),
+    ),
+    measured(measurements, measurementsUnavailable, (value) =>
+      formatBundleSize(value.comparison.sizes.bundle.minified.to, value.to),
+    ),
+    measurementChanged(measurementsUnavailable, sizes !== undefined && sizes.bundle.minified.delta !== 0),
+    measurementDetail(
+      measurements,
+      measurementsUnavailable,
+      (value) => `${formatDelta(value.comparison.sizes.bundle.minified)} · provider estimate`,
+    ),
   ),
   row(
     'comparison.sizes-gzip',
     'Estimated gzip bundle',
-    measured(measurements, (value) => formatBundleSize(value.comparison.sizes.bundle.gzip.from, value.from)),
-    measured(measurements, (value) => formatBundleSize(value.comparison.sizes.bundle.gzip.to, value.to)),
-    sizes !== undefined && sizes.bundle.gzip.delta !== 0,
-    sizes === undefined ? '' : `${formatDelta(sizes.bundle.gzip)} · provider estimate`,
+    measured(measurements, measurementsUnavailable, (value) =>
+      formatBundleSize(value.comparison.sizes.bundle.gzip.from, value.from),
+    ),
+    measured(measurements, measurementsUnavailable, (value) =>
+      formatBundleSize(value.comparison.sizes.bundle.gzip.to, value.to),
+    ),
+    measurementChanged(measurementsUnavailable, sizes !== undefined && sizes.bundle.gzip.delta !== 0),
+    measurementDetail(
+      measurements,
+      measurementsUnavailable,
+      (value) => `${formatDelta(value.comparison.sizes.bundle.gzip)} · provider estimate`,
+    ),
   ),
 ];
 
-const measurementAdvisoryRow = (measurements: PackageMeasurementsResponse | undefined): ComparisonRow =>
+const measurementAdvisoryRow = (
+  measurements: PackageMeasurementsResponse | undefined,
+  measurementsUnavailable: boolean,
+): ComparisonRow =>
   row(
     'comparison.advisories',
     'Security advisories',
-    measured(measurements, (value) => formatAdvisories(value.from)),
-    measured(measurements, (value) => formatAdvisories(value.to)),
-    measurements !== undefined &&
-      (measurements.comparison.advisories.fromOnly.length > 0 ||
-        measurements.comparison.advisories.toOnly.length > 0 ||
-        measurements.comparison.advisories.uncertain.length > 0),
-    measurements === undefined
-      ? ''
-      : measurements.comparison.advisories.status === 'available'
+    measured(measurements, measurementsUnavailable, (value) => formatAdvisories(value.from)),
+    measured(measurements, measurementsUnavailable, (value) => formatAdvisories(value.to)),
+    measurementChanged(
+      measurementsUnavailable,
+      measurements !== undefined &&
+        (measurements.comparison.advisories.fromOnly.length > 0 ||
+          measurements.comparison.advisories.toOnly.length > 0 ||
+          measurements.comparison.advisories.uncertain.length > 0),
+    ),
+    measurementDetail(measurements, measurementsUnavailable, (value) =>
+      value.comparison.advisories.status === 'available'
         ? 'Coverage available'
-        : `Coverage ${measurements.comparison.advisories.status}`,
+        : `Coverage ${value.comparison.advisories.status}`,
+    ),
   );
 
-const measurementTarballRow = (measurements: PackageMeasurementsResponse | undefined): ComparisonRow =>
+const measurementTarballRow = (
+  measurements: PackageMeasurementsResponse | undefined,
+  measurementsUnavailable: boolean,
+): ComparisonRow =>
   row(
     'comparison.tarball',
     'Published tarball',
-    measured(measurements, (value) => formatTarball(value.from)),
-    measured(measurements, (value) => formatTarball(value.to)),
-    measurements !== undefined && measurements.from.tarball.status !== measurements.to.tarball.status,
+    measured(measurements, measurementsUnavailable, (value) => formatTarball(value.from)),
+    measured(measurements, measurementsUnavailable, (value) => formatTarball(value.to)),
+    measurementChanged(
+      measurementsUnavailable,
+      measurements !== undefined && measurements.from.tarball.status !== measurements.to.tarball.status,
+    ),
   );
 
-const measurementRows = (measurements: PackageMeasurementsResponse | undefined): readonly ComparisonRow[] => [
-  ...measurementSizeRows(measurements, measurements?.comparison.sizes),
-  measurementAdvisoryRow(measurements),
-  measurementTarballRow(measurements),
+const measurementRows = (
+  measurements: PackageMeasurementsResponse | undefined,
+  measurementsUnavailable: boolean,
+): readonly ComparisonRow[] => [
+  ...measurementSizeRows(measurements, measurements?.comparison.sizes, measurementsUnavailable),
+  measurementAdvisoryRow(measurements, measurementsUnavailable),
+  measurementTarballRow(measurements, measurementsUnavailable),
 ];
 
 export function buildComparisonRows(
   declarations: PackageDeclarationsResponse,
   measurements: PackageMeasurementsResponse | undefined,
+  measurementsUnavailable = false,
 ): readonly ComparisonRow[] {
   return [
     ...declarationRows(declarations.from, declarations.to, declarations.comparison),
-    ...measurementRows(measurements),
+    ...measurementRows(measurements, measurementsUnavailable),
   ];
 }
 

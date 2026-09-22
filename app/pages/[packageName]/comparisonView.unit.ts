@@ -211,6 +211,22 @@ describe('buildComparisonRows', () => {
     expect(rows.slice(8).every((row) => row.changed === false)).toBe(true);
   });
 
+  it('renders unavailable measurement rows after the measurements tier fails', () => {
+    const rows = buildComparisonRows(declarationsFixture, undefined, true);
+
+    expect(rows.slice(8).map((row) => row.id)).toEqual([
+      'comparison-sizes-unpacked',
+      'comparison-sizes-minified',
+      'comparison-sizes-gzip',
+      'comparison-advisories',
+      'comparison-tarball',
+    ]);
+    expect(rows.slice(8).map((row) => [row.from, row.to])).toEqual(
+      Array.from({ length: 5 }, () => ['Unavailable', 'Unavailable']),
+    );
+    expect(rows.slice(8).every((row) => row.changed === false && row.detail === '')).toBe(true);
+  });
+
   it('fills measurement rows from the measurements tier', () => {
     const rows = buildComparisonRows(declarationsFixture, measurementsFixture);
 

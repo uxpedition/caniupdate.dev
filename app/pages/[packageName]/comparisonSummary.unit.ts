@@ -114,7 +114,10 @@ const measurements: PackageMeasurementsResponse = {
 describe('buildComparisonSummaries', () => {
   it('keeps pending measurement rows collapsed with an explicit measuring value', () => {
     const rows = buildComparisonRows(declarations, undefined);
-    const summaries = buildComparisonSummaries({ declarations, measurements: undefined }, rows);
+    const summaries = buildComparisonSummaries(
+      { declarations, measurements: undefined, measurementsUnavailable: false },
+      rows,
+    );
     const pending = summaries.filter(
       ({ row }) =>
         row.sourceId.startsWith('comparison.sizes') ||
@@ -132,7 +135,7 @@ describe('buildComparisonSummaries', () => {
 
   it('shows readable measurement deltas and incomplete estimate notes only for bundle rows', () => {
     const rows = buildComparisonRows(declarations, measurements);
-    const summaries = buildComparisonSummaries({ declarations, measurements }, rows);
+    const summaries = buildComparisonSummaries({ declarations, measurements, measurementsUnavailable: false }, rows);
     const gzip = summaries.find(({ row }) => row.sourceId === 'comparison.sizes-gzip');
     const unpacked = summaries.find(({ row }) => row.sourceId === 'comparison.sizes-unpacked');
     const minified = summaries.find(({ row }) => row.sourceId === 'comparison.sizes-minified');
@@ -146,5 +149,27 @@ describe('buildComparisonSummaries', () => {
     });
     expect(unpacked).toMatchObject({ from: '100 B', to: '120 B', note: '+20 B (+20%)', fromNote: '', toNote: '' });
     expect(minified).toMatchObject({ from: '1 kB', to: '1.3 kB', fromNote: '', toNote: 'Incomplete estimate' });
+  });
+
+  it('collapses measurement rows as unavailable after the measurements tier fails', () => {
+    const rows = buildComparisonRows(declarations, undefined, true);
+    const summaries = buildComparisonSummaries(
+      { declarations, measurements: undefined, measurementsUnavailable: true },
+      rows,
+    );
+    const unavailable = summaries.filter(
+      ({ row }) =>
+        row.sourceId.startsWith('comparison.sizes') ||
+        row.sourceId === 'comparison.advisories' ||
+        row.sourceId === 'comparison.tarball',
+    );
+
+    expect(unavailable).toHaveLength(5);
+    expect(
+      unavailable.every(
+        ({ from, to, changed, note, expandable }) =>
+          from === 'Unavailable' && to === 'Unavailable' && !changed && note === '' && !expandable,
+      ),
+    ).toBe(true);
   });
 });

@@ -17,6 +17,7 @@ const {
   isDeclarationsPending,
   isDeclarationsError,
   isMeasurementsPending,
+  isMeasurementsError,
   briefing,
   isBriefingPending,
   briefingError,
@@ -29,8 +30,12 @@ const showSources = ref(false);
 const rows = computed(() =>
   declarations.value
     ? buildComparisonSummaries(
-        { declarations: declarations.value, measurements: measurements.value },
-        buildComparisonRows(declarations.value, measurements.value),
+        {
+          declarations: declarations.value,
+          measurements: measurements.value,
+          measurementsUnavailable: isMeasurementsError.value,
+        },
+        buildComparisonRows(declarations.value, measurements.value, isMeasurementsError.value),
       )
     : [],
 );
@@ -43,7 +48,7 @@ const changedCount = computed(() => rows.value.filter((row) => row.changed).leng
 const dependencyCount = computed(() => declarations.value?.comparison.dependencies.length ?? 0);
 const security = computed(() => {
   const measured = measurements.value;
-  if (!measured) return { value: 'Checking…', detail: '' };
+  if (!measured) return { value: isMeasurementsError.value ? 'Unavailable' : 'Checking…', detail: '' };
   const { status, count } = measured.to.vulnerabilities;
   if (status !== 'available' || count === null)
     return { value: 'Incomplete coverage', detail: 'No safety conclusion can be drawn.' };
@@ -166,7 +171,11 @@ const revealCitation = async (event: MouseEvent) => {
                     measurements.comparison.sizes.bundle.gzip.delta !== 0,
                 }"
                 >{{
-                  measurements === undefined ? 'Measuring…' : sizeChange(measurements.comparison.sizes.bundle.gzip)
+                  measurements === undefined
+                    ? isMeasurementsError
+                      ? 'Unavailable'
+                      : 'Measuring…'
+                    : sizeChange(measurements.comparison.sizes.bundle.gzip)
                 }}</strong
               >
               <span class="text-[11px] leading-[1.6] text-muted-foreground max-[700px]:col-start-2"
@@ -216,9 +225,11 @@ const revealCitation = async (event: MouseEvent) => {
             <h2 id="comparison-heading" class="text-base font-semibold tracking-[-0.02em]">Compare releases</h2>
             <p class="text-xs leading-normal text-muted-foreground">
               {{
-                isMeasurementsPending
-                  ? 'Measuring remaining categories…'
-                  : `${changedCount} of ${rows.length} categories changed`
+                isMeasurementsError
+                  ? 'Measurement categories unavailable'
+                  : isMeasurementsPending
+                    ? 'Measuring remaining categories…'
+                    : `${changedCount} of ${rows.length} categories changed`
               }}
             </p>
           </div>
