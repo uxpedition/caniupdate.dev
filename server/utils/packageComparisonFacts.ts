@@ -1,6 +1,6 @@
-// Shared server contract for the package comparison API. Both the factual comparison route and the AI briefing
-// route resolve the same package/version pair, so they validate requests identically and collect evidence from the
-// same provider scheduling and caches instead of trusting anything the browser supplies.
+// Shared server contract for the package comparison API. Both routes validate requests and resolve the same
+// package/version manifests; complete evidence (tarball inventory, advisories, bundle sizes, and release notes) is
+// collected only for the AI briefing pipeline.
 
 import { Cache, Data, Effect, Exit, Schema } from 'effect';
 import type { HttpClient } from 'effect/unstable/http';

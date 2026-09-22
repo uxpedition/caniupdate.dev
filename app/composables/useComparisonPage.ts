@@ -36,6 +36,9 @@ export const useComparisonPage = async () => {
   const measurementsQuery = useQuery(
     packageMeasurementsQueryOptions(requestFetch, packageName, resolvedFrom, resolvedTo),
   );
+  const measurements = computed(() => measurementsQuery.data.value);
+  // Cached measurements remain renderable after a failed refetch; only an error without resolved data is unavailable.
+  const isMeasurementsUnavailable = computed(() => measurementsQuery.isError.value && measurements.value === undefined);
   const briefingQuery = useQuery(packageBriefingQueryOptions(requestFetch, packageName, resolvedFrom, resolvedTo));
 
   if (import.meta.server) {
@@ -54,11 +57,11 @@ export const useComparisonPage = async () => {
     displayFromVersion: computed(() => declarations.value?.from.version ?? fromVersion.value),
     displayToVersion: computed(() => declarations.value?.to.version ?? toVersion.value),
     declarations,
-    measurements: computed(() => measurementsQuery.data.value),
+    measurements,
     isDeclarationsPending: computed(() => declarationsQuery.isPending.value),
     isDeclarationsError: computed(() => declarationsQuery.isError.value),
     isMeasurementsPending: computed(() => measurementsQuery.isPending.value),
-    isMeasurementsError: computed(() => measurementsQuery.isError.value),
+    isMeasurementsUnavailable,
     briefing,
     isBriefingPending: computed(() => briefingQuery.isPending.value),
     briefingError: computed(() => briefingQuery.error.value),

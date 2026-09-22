@@ -156,7 +156,7 @@ Rules:
 | Tarball, OSV, or Bundlephobia fails | Its own rows and tiles show unavailable or partial states; declarations are unaffected. |
 | GitHub release notes fail | No effect on the page: release notes are consumed only by the briefing route, which already reports `partial`/`unavailable` coverage. |
 | Briefing provider fails or times out | Unchanged: `briefing.status: 'unavailable'` with the existing sanitized reasons. |
-| SSR prefetch fails | The dehydrated state carries the error, and the client renders the existing error block. |
+| SSR prefetch fails | The failed prefetch is dropped from the query cache rather than dehydrated; the client retries from a pending state because only successful queries are dehydrated, and retrying is preferable to pinning an undismissable server-side error. |
 
 Expected effect for the measured worst case (lodash, Fast 3G, cold process): declarations and the first eight rows render well under a second instead of 4.29 s; the tier-1 payload drops from 293 KB to roughly 28 KB raw; measurements arrive later and can no longer blank the page while Bundlephobia builds or rate-limits.
 

@@ -17,7 +17,7 @@ const {
   isDeclarationsPending,
   isDeclarationsError,
   isMeasurementsPending,
-  isMeasurementsError,
+  isMeasurementsUnavailable,
   briefing,
   isBriefingPending,
   briefingError,
@@ -33,9 +33,9 @@ const rows = computed(() =>
         {
           declarations: declarations.value,
           measurements: measurements.value,
-          measurementsUnavailable: isMeasurementsError.value,
+          measurementsUnavailable: isMeasurementsUnavailable.value,
         },
-        buildComparisonRows(declarations.value, measurements.value, isMeasurementsError.value),
+        buildComparisonRows(declarations.value, measurements.value, isMeasurementsUnavailable.value),
       )
     : [],
 );
@@ -48,7 +48,7 @@ const changedCount = computed(() => rows.value.filter((row) => row.changed).leng
 const dependencyCount = computed(() => declarations.value?.comparison.dependencies.length ?? 0);
 const security = computed(() => {
   const measured = measurements.value;
-  if (!measured) return { value: isMeasurementsError.value ? 'Unavailable' : 'Checking…', detail: '' };
+  if (!measured) return { value: isMeasurementsUnavailable.value ? 'Unavailable' : 'Checking…', detail: '' };
   const { status, count } = measured.to.vulnerabilities;
   if (status !== 'available' || count === null)
     return { value: 'Incomplete coverage', detail: 'No safety conclusion can be drawn.' };
@@ -119,7 +119,7 @@ const revealCitation = async (event: MouseEvent) => {
       </header>
 
       <p v-if="isDeclarationsPending" class="py-[30px] text-sm leading-[1.8]" role="status">
-        Reading package declarations and published evidence…
+        Reading package declarations…
       </p>
       <div v-else-if="isDeclarationsError" class="py-[30px] text-sm leading-[1.8] text-destructive" role="alert">
         <h2 class="text-base font-semibold tracking-[-0.02em]">This comparison couldn’t be loaded.</h2>
@@ -172,7 +172,7 @@ const revealCitation = async (event: MouseEvent) => {
                 }"
                 >{{
                   measurements === undefined
-                    ? isMeasurementsError
+                    ? isMeasurementsUnavailable
                       ? 'Unavailable'
                       : 'Measuring…'
                     : sizeChange(measurements.comparison.sizes.bundle.gzip)
@@ -225,7 +225,7 @@ const revealCitation = async (event: MouseEvent) => {
             <h2 id="comparison-heading" class="text-base font-semibold tracking-[-0.02em]">Compare releases</h2>
             <p class="text-xs leading-normal text-muted-foreground">
               {{
-                isMeasurementsError
+                isMeasurementsUnavailable
                   ? 'Measurement categories unavailable'
                   : isMeasurementsPending
                     ? 'Measuring remaining categories…'
