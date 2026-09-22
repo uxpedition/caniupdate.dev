@@ -45,8 +45,11 @@ export const packageBriefingQueryOptions = (
         signal,
       });
     },
+    // Briefing is client-only: with declarations awaited during SSR, this query would otherwise enable server-side
+    // and spend a model call on every page view.
     enabled: computed(
       () =>
+        import.meta.client === true &&
         normalizedPackageName.value.length > 0 &&
         normalizedFromVersion.value.length > 0 &&
         normalizedToVersion.value.length > 0,

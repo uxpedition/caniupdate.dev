@@ -1,5 +1,12 @@
 import type { BriefingBullet, BriefingSource } from '#shared/briefing.defs';
-import type { ComparisonVersion, PackageComparison, SizeComparison } from '#shared/comparison.defs';
+import type {
+  DeclarationComparison,
+  DeclaredPackageVersion,
+  MeasuredPackageVersion,
+  PackageDeclarationsResponse,
+  PackageMeasurementsResponse,
+  SizeComparison,
+} from '#shared/comparison.defs';
 
 export type ComparisonRow = {
   id: string;
@@ -33,7 +40,7 @@ const formatJson = (value: unknown): string => {
 
 const formatEntries = (entries: readonly string[]): string => (entries.length === 0 ? EMPTY_VALUE : entries.join('\n'));
 
-const formatRequirements = (version: ComparisonVersion): string => {
+const formatRequirements = (version: DeclaredPackageVersion): string => {
   const requirements = new Map<string, string>();
   for (const [name, range] of Object.entries(version.dependencies)) requirements.set(name, range);
   for (const [name, range] of Object.entries(version.optionalDependencies))
@@ -46,7 +53,7 @@ const formatRequirements = (version: ComparisonVersion): string => {
   );
 };
 
-const formatPeers = (version: ComparisonVersion): string => {
+const formatPeers = (version: DeclaredPackageVersion): string => {
   const optionalPeers = new Set(version.optionalPeers);
   return formatEntries(
     Object.entries(version.peerDependencies)
@@ -55,7 +62,7 @@ const formatPeers = (version: ComparisonVersion): string => {
   );
 };
 
-const formatModule = (version: ComparisonVersion): string => {
+const formatModule = (version: DeclaredPackageVersion): string => {
   const values = Object.entries({
     type: version.moduleFormat.type,
     main: version.moduleFormat.main,
@@ -67,7 +74,7 @@ const formatModule = (version: ComparisonVersion): string => {
   return formatEntries(values);
 };
 
-const formatTypes = (version: ComparisonVersion): string => {
+const formatTypes = (version: DeclaredPackageVersion): string => {
   const values: string[] = [];
   if (version.moduleFormat.types !== undefined) values.push(`types: ${version.moduleFormat.types}`);
   if (version.moduleFormat.typings !== undefined) values.push(`typings: ${version.moduleFormat.typings}`);
@@ -76,22 +83,22 @@ const formatTypes = (version: ComparisonVersion): string => {
   return formatEntries(values);
 };
 
-const formatScripts = (version: ComparisonVersion): string =>
+const formatScripts = (version: DeclaredPackageVersion): string =>
   formatEntries(
     Object.entries(version.installScriptCommands)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([name, command]) => `${name}: ${command}`),
   );
 
-const formatAdvisories = (version: ComparisonVersion): string => {
+const formatAdvisories = (version: MeasuredPackageVersion): string => {
   const { status, count } = version.vulnerabilities;
   const countLabel = count === null ? 'count unavailable' : `${count} ${count === 1 ? 'advisory' : 'advisories'}`;
   return `${countLabel} · coverage ${status}`;
 };
 
-const formatTarball = (version: ComparisonVersion): string => {
-  const changelogLabel = version.tarball.changelogs.length === 0 ? 'no shipped changelog' : 'shipped changelog';
-  return `${version.tarball.status} · ${formatNumber(version.tarball.files.length)} files · ${changelogLabel}`;
+const formatTarball = (version: MeasuredPackageVersion): string => {
+  const changelogLabel = version.tarball.changelogCount === 0 ? 'no shipped changelog' : 'shipped changelog';
+  return `${version.tarball.status} · ${formatNumber(version.tarball.fileCount)} files · ${changelogLabel}`;
 };
 
 const formatDelta = (size: SizeComparison): string => {
@@ -154,9 +161,9 @@ const row = (
 });
 
 const packageDeclarationRows = (
-  from: ComparisonVersion,
-  to: ComparisonVersion,
-  comparison: PackageComparison,
+  from: DeclaredPackageVersion,
+  to: DeclaredPackageVersion,
+  comparison: DeclarationComparison,
 ): readonly ComparisonRow[] => [
   row(
     'comparison.dependencies',
@@ -186,9 +193,9 @@ const packageDeclarationRows = (
 ];
 
 const moduleDeclarationRows = (
-  from: ComparisonVersion,
-  to: ComparisonVersion,
-  comparison: PackageComparison,
+  from: DeclaredPackageVersion,
+  to: DeclaredPackageVersion,
+  comparison: DeclarationComparison,
 ): readonly ComparisonRow[] => [
   row(
     'comparison.moduleFormat',
@@ -225,15 +232,15 @@ const moduleDeclarationRows = (
 ];
 
 const declarationRows = (
-  from: ComparisonVersion,
-  to: ComparisonVersion,
-  comparison: PackageComparison,
+  from: DeclaredPackageVersion,
+  to: DeclaredPackageVersion,
+  comparison: DeclarationComparison,
 ): readonly ComparisonRow[] => [
   ...packageDeclarationRows(from, to, comparison),
   ...moduleDeclarationRows(from, to, comparison),
 ];
 
-const formatBundleSize = (bytes: number | null, version: ComparisonVersion): string => {
+const formatBundleSize = (bytes: number | null, version: MeasuredPackageVersion): string => {
   const build = version.bundleSize;
   const omitted = build.status === 'available' ? build.ignoredMissingDependencies : undefined;
   return omitted?.length
@@ -241,82 +248,94 @@ const formatBundleSize = (bytes: number | null, version: ComparisonVersion): str
     : formatBytes(bytes);
 };
 
-const sizeRows = (
-  from: ComparisonVersion,
-  to: ComparisonVersion,
-  comparison: PackageComparison,
+export const MEASURING_VALUE = 'Measuring…';
+
+const measured = (
+  measurements: PackageMeasurementsResponse | undefined,
+  read: (value: PackageMeasurementsResponse) => string,
+) => (measurements === undefined ? MEASURING_VALUE : read(measurements));
+
+const measurementSizeRows = (
+  measurements: PackageMeasurementsResponse | undefined,
+  sizes: PackageMeasurementsResponse['comparison']['sizes'] | undefined,
 ): readonly ComparisonRow[] => [
   row(
     'comparison.sizes-unpacked',
     'Unpacked package size',
-    formatBytes(comparison.sizes.unpacked.from),
-    formatBytes(comparison.sizes.unpacked.to),
-    comparison.sizes.unpacked.delta !== 0,
-    formatDelta(comparison.sizes.unpacked),
+    measured(measurements, (value) => formatBytes(value.comparison.sizes.unpacked.from)),
+    measured(measurements, (value) => formatBytes(value.comparison.sizes.unpacked.to)),
+    sizes !== undefined && sizes.unpacked.delta !== 0,
+    sizes === undefined ? '' : formatDelta(sizes.unpacked),
   ),
   row(
     'comparison.sizes-minified',
     'Estimated minified bundle',
-    formatBundleSize(comparison.sizes.bundle.minified.from, from),
-    formatBundleSize(comparison.sizes.bundle.minified.to, to),
-    comparison.sizes.bundle.minified.delta !== 0,
-    `${formatDelta(comparison.sizes.bundle.minified)} · provider estimate`,
+    measured(measurements, (value) => formatBundleSize(value.comparison.sizes.bundle.minified.from, value.from)),
+    measured(measurements, (value) => formatBundleSize(value.comparison.sizes.bundle.minified.to, value.to)),
+    sizes !== undefined && sizes.bundle.minified.delta !== 0,
+    sizes === undefined ? '' : `${formatDelta(sizes.bundle.minified)} · provider estimate`,
   ),
   row(
     'comparison.sizes-gzip',
     'Estimated gzip bundle',
-    formatBundleSize(comparison.sizes.bundle.gzip.from, from),
-    formatBundleSize(comparison.sizes.bundle.gzip.to, to),
-    comparison.sizes.bundle.gzip.delta !== 0,
-    `${formatDelta(comparison.sizes.bundle.gzip)} · provider estimate`,
+    measured(measurements, (value) => formatBundleSize(value.comparison.sizes.bundle.gzip.from, value.from)),
+    measured(measurements, (value) => formatBundleSize(value.comparison.sizes.bundle.gzip.to, value.to)),
+    sizes !== undefined && sizes.bundle.gzip.delta !== 0,
+    sizes === undefined ? '' : `${formatDelta(sizes.bundle.gzip)} · provider estimate`,
   ),
 ];
 
-const evidenceRows = (
-  from: ComparisonVersion,
-  to: ComparisonVersion,
-  comparison: PackageComparison,
-): readonly ComparisonRow[] => [
+const measurementAdvisoryRow = (measurements: PackageMeasurementsResponse | undefined): ComparisonRow =>
   row(
     'comparison.advisories',
     'Security advisories',
-    formatAdvisories(from),
-    formatAdvisories(to),
-    comparison.advisories.fromOnly.length > 0 ||
-      comparison.advisories.toOnly.length > 0 ||
-      comparison.advisories.uncertain.length > 0,
-    comparison.advisories.status === 'available' ? 'Coverage available' : `Coverage ${comparison.advisories.status}`,
-  ),
+    measured(measurements, (value) => formatAdvisories(value.from)),
+    measured(measurements, (value) => formatAdvisories(value.to)),
+    measurements !== undefined &&
+      (measurements.comparison.advisories.fromOnly.length > 0 ||
+        measurements.comparison.advisories.toOnly.length > 0 ||
+        measurements.comparison.advisories.uncertain.length > 0),
+    measurements === undefined
+      ? ''
+      : measurements.comparison.advisories.status === 'available'
+        ? 'Coverage available'
+        : `Coverage ${measurements.comparison.advisories.status}`,
+  );
+
+const measurementTarballRow = (measurements: PackageMeasurementsResponse | undefined): ComparisonRow =>
   row(
     'comparison.tarball',
     'Published tarball',
-    formatTarball(from),
-    formatTarball(to),
-    from.tarball.status !== to.tarball.status,
-  ),
+    measured(measurements, (value) => formatTarball(value.from)),
+    measured(measurements, (value) => formatTarball(value.to)),
+    measurements !== undefined && measurements.from.tarball.status !== measurements.to.tarball.status,
+  );
+
+const measurementRows = (measurements: PackageMeasurementsResponse | undefined): readonly ComparisonRow[] => [
+  ...measurementSizeRows(measurements, measurements?.comparison.sizes),
+  measurementAdvisoryRow(measurements),
+  measurementTarballRow(measurements),
 ];
 
 export function buildComparisonRows(
-  from: ComparisonVersion,
-  to: ComparisonVersion,
-  comparison: PackageComparison,
+  declarations: PackageDeclarationsResponse,
+  measurements: PackageMeasurementsResponse | undefined,
 ): readonly ComparisonRow[] {
   return [
-    ...declarationRows(from, to, comparison),
-    ...sizeRows(from, to, comparison),
-    ...evidenceRows(from, to, comparison),
+    ...declarationRows(declarations.from, declarations.to, declarations.comparison),
+    ...measurementRows(measurements),
   ];
 }
 
-export function resolvedBriefingVersions(comparison: { from: ComparisonVersion; to: ComparisonVersion } | undefined): {
-  from: string;
-  to: string;
-} {
+export function resolvedBriefingVersions(
+  comparison: { from: { version: string }; to: { version: string } } | undefined,
+): { from: string; to: string } {
   return comparison === undefined ? { from: '', to: '' } : { from: comparison.from.version, to: comparison.to.version };
 }
 
 export function citationAnchorId(sourceId: string): string {
   const normalized = sourceId
+    .replace(/([a-z])([A-Z])/g, '$1-$2')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');

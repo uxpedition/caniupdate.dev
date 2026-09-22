@@ -1,13 +1,11 @@
+import { useQuery, useQueryClient } from '@tanstack/vue-query';
 import { computed } from 'vue';
 
-import { useRoute } from '#imports';
-import { usePackageBriefingQuery } from '~/composables/usePackageBriefingQuery';
-import { usePackageComparisonQuery } from '~/composables/usePackageComparisonQuery';
-import {
-  buildBriefingCitations,
-  buildComparisonRows,
-  resolvedBriefingVersions,
-} from '~/pages/[packageName]/comparisonView';
+import { useRequestFetch, useRoute } from '#imports';
+import { packageBriefingQueryOptions } from '~/composables/packageBriefingQueryOptions';
+import { packageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
+import { packageMeasurementsQueryOptions } from '~/composables/packageMeasurementsQueryOptions';
+import { buildBriefingCitations, resolvedBriefingVersions } from '~/pages/[packageName]/comparisonView';
 
 const useComparisonRoute = () => {
   const route = useRoute();
@@ -22,39 +20,52 @@ const useComparisonRoute = () => {
   return { packageName, fromVersion, toVersion };
 };
 
-export const useComparisonPage = () => {
+export const useComparisonPage = async () => {
   const { packageName, fromVersion, toVersion } = useComparisonRoute();
-  const comparisonQuery = usePackageComparisonQuery(packageName, fromVersion, toVersion);
-  const comparisonData = computed(() => comparisonQuery.data.value);
-  const briefingVersions = computed(() => resolvedBriefingVersions(comparisonData.value));
-  const briefingQuery = usePackageBriefingQuery(
-    packageName,
-    computed(() => briefingVersions.value.from),
-    computed(() => briefingVersions.value.to),
+  const requestFetch = useRequestFetch();
+  const queryClient = useQueryClient();
+
+  // Every query is created before the server prefetch below: vue-query resolves its client through injection, so it
+  // must run inside the synchronous setup scope, never after an await.
+  const declarationsOptions = packageComparisonQueryOptions(requestFetch, packageName, fromVersion, toVersion);
+  const declarationsQuery = useQuery(declarationsOptions);
+  const declarations = computed(() => declarationsQuery.data.value);
+  const resolved = computed(() => resolvedBriefingVersions(declarations.value));
+  const resolvedFrom = computed(() => resolved.value.from);
+  const resolvedTo = computed(() => resolved.value.to);
+  const measurementsQuery = useQuery(
+    packageMeasurementsQueryOptions(requestFetch, packageName, resolvedFrom, resolvedTo),
   );
-  const comparisonRows = computed(() => {
-    const data = comparisonData.value;
-    return data === undefined ? [] : buildComparisonRows(data.from, data.to, data.comparison);
-  });
+  const briefingQuery = useQuery(packageBriefingQueryOptions(requestFetch, packageName, resolvedFrom, resolvedTo));
+
+  if (import.meta.server) {
+    // Declarations must be in the first paint. A failed prefetch is not dehydrated, so drop it and let the client
+    // retry from a pending state instead of hydrating an error the server already rendered.
+    await queryClient.prefetchQuery(declarationsOptions);
+    if (queryClient.getQueryState(declarationsOptions.queryKey)?.status !== 'success') {
+      queryClient.removeQueries({ queryKey: declarationsOptions.queryKey });
+    }
+  }
+
   const briefing = computed(() => briefingQuery.data.value?.briefing);
-  const sources = computed(() => (briefing.value?.status === 'available' ? briefing.value.sources : []));
-  const citations = computed(() => {
-    const value = briefing.value;
-    return value?.status === 'available' ? buildBriefingCitations(value.sources, value.bullets) : [];
-  });
 
   return {
     packageName,
-    displayFromVersion: computed(() => comparisonData.value?.from.version ?? fromVersion.value),
-    displayToVersion: computed(() => comparisonData.value?.to.version ?? toVersion.value),
-    comparisonData,
-    comparisonRows,
-    isComparisonPending: computed(() => comparisonQuery.isPending.value),
-    isComparisonError: computed(() => comparisonQuery.isError.value),
+    displayFromVersion: computed(() => declarations.value?.from.version ?? fromVersion.value),
+    displayToVersion: computed(() => declarations.value?.to.version ?? toVersion.value),
+    declarations,
+    measurements: computed(() => measurementsQuery.data.value),
+    isDeclarationsPending: computed(() => declarationsQuery.isPending.value),
+    isDeclarationsError: computed(() => declarationsQuery.isError.value),
+    isMeasurementsPending: computed(() => measurementsQuery.isPending.value),
+    isMeasurementsError: computed(() => measurementsQuery.isError.value),
+    briefing,
     isBriefingPending: computed(() => briefingQuery.isPending.value),
     briefingError: computed(() => briefingQuery.error.value),
-    briefing,
-    sources,
-    citations,
+    sources: computed(() => (briefing.value?.status === 'available' ? briefing.value.sources : [])),
+    citations: computed(() => {
+      const value = briefing.value;
+      return value?.status === 'available' ? buildBriefingCitations(value.sources, value.bullets) : [];
+    }),
   };
 };

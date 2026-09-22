@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import type { BriefingBullet, BriefingSource } from '#shared/briefing.defs';
-import type { ComparisonVersion, PackageComparison } from '#shared/comparison.defs';
+import type {
+  DeclarationComparison,
+  DeclaredPackageVersion,
+  MeasuredPackageVersion,
+  MeasurementComparison,
+  PackageDeclarationsResponse,
+  PackageMeasurementsResponse,
+} from '#shared/comparison.defs';
+import type { ParsedPackageVersion } from '#shared/package.defs';
 
 import {
   buildBriefingCitations,
@@ -10,7 +18,10 @@ import {
   resolvedBriefingVersions,
 } from './comparisonView';
 
-const makeVersion = (version: string, overrides: Partial<ComparisonVersion> = {}): ComparisonVersion => ({
+const makeDeclaredVersion = (
+  version: string,
+  overrides: Partial<ParsedPackageVersion> = {},
+): DeclaredPackageVersion => ({
   name: 'example-package',
   version,
   dist: {
@@ -29,6 +40,14 @@ const makeVersion = (version: string, overrides: Partial<ComparisonVersion> = {}
   installScripts: [],
   installScriptCommands: {},
   moduleFormat: { main: 'index.js' },
+  ...overrides,
+});
+
+const makeMeasuredVersion = (
+  version: string,
+  overrides: Partial<MeasuredPackageVersion> = {},
+): MeasuredPackageVersion => ({
+  ...makeDeclaredVersion(version),
   vulnerabilities: { status: 'available', count: 0, advisories: [] },
   bundleSize: {
     provider: 'bundlephobia',
@@ -44,13 +63,13 @@ const makeVersion = (version: string, overrides: Partial<ComparisonVersion> = {}
     status: 'available',
     reasons: [],
     url: `https://registry.npmjs.org/example-package/-/example-package-${version}.tgz`,
-    files: [],
-    changelogs: [],
+    fileCount: 0,
+    changelogCount: 0,
   },
   ...overrides,
 });
 
-const unchangedComparison: PackageComparison = {
+const declarationsComparison: DeclarationComparison = {
   dependencies: [],
   peers: [],
   node: { changed: false, from: '>=18', to: '>=18', fromDeclared: true, toDeclared: true },
@@ -65,6 +84,9 @@ const unchangedComparison: PackageComparison = {
   types: { changed: false, from: { exports: null }, to: { exports: null }, fromDeclared: true, toDeclared: true },
   licenses: { changed: false, from: ['MIT'], to: ['MIT'], added: [], removed: [] },
   installScripts: [],
+};
+
+const measurementsComparison: MeasurementComparison = {
   sizes: {
     unpacked: {
       status: 'available',
@@ -93,6 +115,38 @@ const unchangedComparison: PackageComparison = {
   },
 };
 
+const declarationsFixture: PackageDeclarationsResponse = {
+  packageName: 'example-package',
+  from: makeDeclaredVersion('1.0.0'),
+  to: makeDeclaredVersion('2.0.0'),
+  comparison: declarationsComparison,
+};
+
+const measurementsFixture: PackageMeasurementsResponse = {
+  packageName: 'example-package',
+  from: makeMeasuredVersion('1.0.0'),
+  to: makeMeasuredVersion('2.0.0', {
+    bundleSize: {
+      provider: 'bundlephobia',
+      url: 'https://bundlephobia.com/api/size?package=example-package%402.0.0',
+      name: 'example-package',
+      version: '2.0.0',
+      size: 1200,
+      gzip: 600,
+      status: 'available',
+      retrievedAt: '2026-09-20T00:00:00.000Z',
+    },
+    tarball: {
+      status: 'available',
+      reasons: [],
+      url: 'https://registry.npmjs.org/example-package/-/example-package-2.0.0.tgz',
+      fileCount: 3,
+      changelogCount: 1,
+    },
+  }),
+  comparison: measurementsComparison,
+};
+
 const sources: BriefingSource[] = [
   { id: 'comparison.sizes', kind: 'fact', label: 'Package size', urls: [], text: '{}' },
   { id: 'comparison.node', kind: 'fact', label: 'Node engine', urls: [], text: '{}' },
@@ -117,7 +171,7 @@ const bullets: BriefingBullet[] = [
 
 describe('buildComparisonRows', () => {
   it('keeps unchanged categories visible and formats side-by-side size values', () => {
-    const rows = buildComparisonRows(makeVersion('1.0.0'), makeVersion('2.0.0'), unchangedComparison);
+    const rows = buildComparisonRows(declarationsFixture, measurementsFixture);
 
     expect(rows.map((row) => row.id)).toContain('comparison-node');
     expect(rows.find((row) => row.id === 'comparison-node')).toMatchObject({
@@ -131,6 +185,37 @@ describe('buildComparisonRows', () => {
       detail: '+20 bytes (+20.0%)',
       changed: true,
     });
+  });
+
+  it('labels measurement rows as pending until the measurements tier resolves', () => {
+    const rows = buildComparisonRows(declarationsFixture, undefined);
+
+    expect(rows.map((row) => row.id)).toEqual([
+      'comparison-dependencies',
+      'comparison-peers',
+      'comparison-node',
+      'comparison-module-format',
+      'comparison-exports',
+      'comparison-types',
+      'comparison-licenses',
+      'comparison-install-scripts',
+      'comparison-sizes-unpacked',
+      'comparison-sizes-minified',
+      'comparison-sizes-gzip',
+      'comparison-advisories',
+      'comparison-tarball',
+    ]);
+    expect(rows.slice(8).map((row) => [row.from, row.to])).toEqual(
+      Array.from({ length: 5 }, () => ['Measuring…', 'Measuring…']),
+    );
+    expect(rows.slice(8).every((row) => row.changed === false)).toBe(true);
+  });
+
+  it('fills measurement rows from the measurements tier', () => {
+    const rows = buildComparisonRows(declarationsFixture, measurementsFixture);
+
+    expect(rows.find((row) => row.id === 'comparison-sizes-gzip')).toMatchObject({ changed: true });
+    expect(rows.find((row) => row.id === 'comparison-tarball')?.from).toContain('files');
   });
 });
 
@@ -153,9 +238,11 @@ describe('buildBriefingCitations', () => {
 });
 
 describe('resolvedBriefingVersions', () => {
-  it('uses the factual response versions and stays disabled before facts resolve', () => {
+  it('uses the declarations response versions and stays disabled before declarations resolve', () => {
     expect(resolvedBriefingVersions(undefined)).toEqual({ from: '', to: '' });
-    expect(resolvedBriefingVersions({ from: makeVersion('19.0.0'), to: makeVersion('19.3.0') })).toEqual({
+    expect(
+      resolvedBriefingVersions({ from: makeDeclaredVersion('19.0.0'), to: makeDeclaredVersion('19.3.0') }),
+    ).toEqual({
       from: '19.0.0',
       to: '19.3.0',
     });

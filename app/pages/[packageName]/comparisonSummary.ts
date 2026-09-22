@@ -1,6 +1,13 @@
-import type { BriefingInput } from '#shared/briefing.defs';
-import type { ComparisonVersion, SizeComparison } from '#shared/comparison.defs';
+import type {
+  DeclaredPackageVersion,
+  MeasuredPackageVersion,
+  PackageDeclarationsResponse,
+  PackageMeasurementsResponse,
+  SizeComparison,
+} from '#shared/comparison.defs';
 import type { ComparisonRow } from '~/pages/[packageName]/comparisonView';
+
+import { MEASURING_VALUE } from './comparisonView';
 
 const number = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 
@@ -21,7 +28,7 @@ export function sizeChange(size: SizeComparison): string {
   return `${sign}${readableSize(Math.abs(size.delta))}${percent}`;
 }
 
-const declarationSummaries: Record<string, (version: ComparisonVersion) => string> = {
+const declarationSummaries: Record<string, (version: DeclaredPackageVersion) => string> = {
   'comparison.dependencies': (version) => {
     const count = new Set([...Object.keys(version.dependencies), ...Object.keys(version.optionalDependencies)]).size;
     return count === 0 ? 'None declared' : `${count} dependencies`;
@@ -50,22 +57,42 @@ const declarationSummaries: Record<string, (version: ComparisonVersion) => strin
   },
 };
 
-function evidenceSummary(version: ComparisonVersion, sourceId: string, original: string): string {
-  if (sourceId === 'comparison.advisories') {
-    const { count, status } = version.vulnerabilities;
-    if (count === null) return 'Coverage unavailable';
-    return `${count} matched${status === 'available' ? '' : ' · partial coverage'}`;
-  }
-  if (sourceId === 'comparison.tarball') {
-    const { status, files } = version.tarball;
-    return status === 'unavailable'
-      ? 'Unavailable'
-      : `${files.length} files${status === 'available' ? '' : ' · partial coverage'}`;
-  }
-  return declarationSummaries[sourceId]?.(version) ?? original;
+const isMeasuredVersion = (
+  version: MeasuredPackageVersion | DeclaredPackageVersion,
+): version is MeasuredPackageVersion => 'vulnerabilities' in version;
+
+function advisorySummary(version: MeasuredPackageVersion | DeclaredPackageVersion, original: string): string {
+  if (!isMeasuredVersion(version)) return original;
+  const { count, status } = version.vulnerabilities;
+  if (count === null) return 'Coverage unavailable';
+  return `${count} matched${status === 'available' ? '' : ' · partial coverage'}`;
 }
 
-function rowPresentation(row: ComparisonRow, data: BriefingInput, size: SizeComparison | undefined) {
+function tarballSummary(version: MeasuredPackageVersion | DeclaredPackageVersion, original: string): string {
+  if (!isMeasuredVersion(version)) return original;
+  const { status, fileCount } = version.tarball;
+  return status === 'unavailable'
+    ? 'Unavailable'
+    : `${fileCount} files${status === 'available' ? '' : ' · partial coverage'}`;
+}
+
+function evidenceSummary(
+  version: MeasuredPackageVersion | DeclaredPackageVersion,
+  sourceId: string,
+  original: string,
+): string {
+  if (sourceId === 'comparison.advisories') return advisorySummary(version, original);
+  if (sourceId === 'comparison.tarball') return tarballSummary(version, original);
+  const declarationVersion: DeclaredPackageVersion = version;
+  return declarationSummaries[sourceId]?.(declarationVersion) ?? original;
+}
+
+export type ComparisonSummaryInput = {
+  declarations: PackageDeclarationsResponse;
+  measurements: PackageMeasurementsResponse | undefined;
+};
+
+function rowPresentation(row: ComparisonRow, input: ComparisonSummaryInput, size: SizeComparison | undefined) {
   if (size)
     return {
       from: readableSize(size.from),
@@ -74,43 +101,76 @@ function rowPresentation(row: ComparisonRow, data: BriefingInput, size: SizeComp
       note: sizeChange(size),
       showNote: size.delta !== 0,
     };
+
+  const versions =
+    input.measurements !== undefined &&
+    (row.sourceId === 'comparison.advisories' || row.sourceId === 'comparison.tarball')
+      ? input.measurements
+      : input.declarations;
   return {
-    from: evidenceSummary(data.from, row.sourceId, row.from),
-    to: evidenceSummary(data.to, row.sourceId, row.to),
+    from: evidenceSummary(versions.from, row.sourceId, row.from),
+    to: evidenceSummary(versions.to, row.sourceId, row.to),
     changed: row.changed,
     note: row.changed ? row.detail || 'Declaration changed' : '',
     showNote: row.changed,
   };
 }
 
-function incompleteEstimate(version: ComparisonVersion): string {
+function incompleteEstimate(version: MeasuredPackageVersion): string {
   return version.bundleSize.status === 'available' && version.bundleSize.ignoredMissingDependencies?.length
     ? 'Incomplete estimate'
     : '';
 }
 
-export function buildComparisonSummaries(data: BriefingInput, rows: readonly ComparisonRow[]) {
-  const sizes: Record<string, SizeComparison> = {
-    'comparison.sizes-unpacked': data.comparison.sizes.unpacked,
-    'comparison.sizes-minified': data.comparison.sizes.bundle.minified,
-    'comparison.sizes-gzip': data.comparison.sizes.bundle.gzip,
+const measurementSizes = (measurements: PackageMeasurementsResponse | undefined): Record<string, SizeComparison> =>
+  measurements === undefined
+    ? {}
+    : {
+        'comparison.sizes-unpacked': measurements.comparison.sizes.unpacked,
+        'comparison.sizes-minified': measurements.comparison.sizes.bundle.minified,
+        'comparison.sizes-gzip': measurements.comparison.sizes.bundle.gzip,
+      };
+
+const rowPresentationWithPending = (
+  row: ComparisonRow,
+  input: ComparisonSummaryInput,
+  size: SizeComparison | undefined,
+) =>
+  row.from === MEASURING_VALUE && row.to === MEASURING_VALUE
+    ? { from: MEASURING_VALUE, to: MEASURING_VALUE, changed: false, note: '', showNote: false }
+    : rowPresentation(row, input, size);
+
+const isBundleRow = (row: ComparisonRow): boolean =>
+  row.sourceId === 'comparison.sizes-minified' || row.sourceId === 'comparison.sizes-gzip';
+
+const estimateNotes = (row: ComparisonRow, measurements: PackageMeasurementsResponse | undefined) => {
+  if (!isBundleRow(row) || measurements === undefined) return { fromNote: '', toNote: '' };
+  return {
+    fromNote: incompleteEstimate(measurements.from),
+    toNote: incompleteEstimate(measurements.to),
   };
+};
+
+const summaryAnchor = (row: ComparisonRow): string =>
+  row.sourceId === 'comparison.sizes-unpacked' ? 'comparison-sizes' : row.id;
+
+const isExpandable = (row: ComparisonRow, presentation: { from: string; to: string }): boolean =>
+  presentation.from !== row.from ||
+  presentation.to !== row.to ||
+  row.detail.length > 0 ||
+  row.from.includes('\n') ||
+  row.to.includes('\n');
+
+export function buildComparisonSummaries(input: ComparisonSummaryInput, rows: readonly ComparisonRow[]) {
+  const sizes = measurementSizes(input.measurements);
   return rows.map((row) => {
-    const size = sizes[row.sourceId];
-    const presentation = rowPresentation(row, data, size);
-    const isBundle = row.sourceId === 'comparison.sizes-minified' || row.sourceId === 'comparison.sizes-gzip';
+    const presentation = rowPresentationWithPending(row, input, sizes[row.sourceId]);
     return {
       row,
       ...presentation,
-      fromNote: isBundle ? incompleteEstimate(data.from) : '',
-      toNote: isBundle ? incompleteEstimate(data.to) : '',
-      anchor: row.sourceId === 'comparison.sizes-unpacked' ? 'comparison-sizes' : row.id,
-      expandable:
-        presentation.from !== row.from ||
-        presentation.to !== row.to ||
-        row.detail.length > 0 ||
-        row.from.includes('\n') ||
-        row.to.includes('\n'),
+      ...estimateNotes(row, input.measurements),
+      anchor: summaryAnchor(row),
+      expandable: isExpandable(row, presentation),
     };
   });
 }

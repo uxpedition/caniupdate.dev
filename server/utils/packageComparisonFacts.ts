@@ -8,10 +8,18 @@ import npmFetch from 'npm-registry-fetch';
 
 import type { BriefingInput } from '#shared/briefing.defs';
 import { isExactSemver } from '#shared/compareSemver';
+import type {
+  ComparisonVersion,
+  MeasuredPackageVersion,
+  PackageDeclarationsResponse,
+  PackageMeasurementsResponse,
+  TarballSummary,
+} from '#shared/comparison.defs';
 import { PackageNameSchema, RegistryVersionManifestSchema, toPackageVersion } from '#shared/package.defs';
 
+import type { PackageTarball } from '../../shared/tarball.defs';
 import { getPackageBundleSize } from './packageBundleSize';
-import { comparePackages } from './packageComparison';
+import { compareDeclarations, compareMeasurements } from './packageComparison';
 import { getPackageReleaseNotes } from './packageReleaseNotes';
 import { getPackageTarball } from './packageTarball';
 import { getPackageVulnerabilities } from './packageVulnerabilities';
@@ -64,21 +72,48 @@ const manifestCache = Effect.runSync(
   }),
 );
 
-function getComparisonEvidence(packageName: string, from: string, to: string) {
-  return Effect.gen(function* () {
-    // Request-scoped sharing is also needed for tags, whose process-cache lifetime is zero.
-    const fromManifest = yield* Effect.cached(
-      Cache.get(manifestCache, new ManifestKey({ packageName, version: from })),
-    );
-    const toManifest = yield* Effect.cached(Cache.get(manifestCache, new ManifestKey({ packageName, version: to })));
+// Per-version lookup, shared within a request and reused across requests by `manifestCache`. Kept separate from the
+// pair so each tarball can start as soon as its own manifest resolves.
+const getManifest = (packageName: string, version: string) =>
+  Effect.cached(Cache.get(manifestCache, new ManifestKey({ packageName, version })));
+
+const getResolvedManifests = (packageName: string, from: string, to: string) =>
+  Effect.gen(function* () {
+    const fromManifest = yield* getManifest(packageName, from);
+    const toManifest = yield* getManifest(packageName, to);
     const manifests = yield* Effect.cached(Effect.all({ from: fromManifest, to: toManifest }, { concurrency: 2 }));
+    return yield* manifests;
+  });
+
+/** Manifest-only comparison; the payload the first paint depends on. */
+export function getComparisonDeclarations(
+  packageName: string,
+  from: string,
+  to: string,
+): Effect.Effect<PackageDeclarationsResponse, RegistryRequestError, HttpClient.HttpClient> {
+  return getResolvedManifests(packageName, from, to).pipe(
+    Effect.map((manifests) => {
+      const fromVersion = toPackageVersion(manifests.from);
+      const toVersion = toPackageVersion(manifests.to);
+      return {
+        packageName,
+        from: fromVersion,
+        to: toVersion,
+        comparison: compareDeclarations(fromVersion, toVersion),
+      };
+    }),
+  );
+}
+
+const collectMeasurements = (packageName: string, from: string, to: string) =>
+  Effect.gen(function* () {
+    const fromManifest = yield* getManifest(packageName, from);
+    const toManifest = yield* getManifest(packageName, to);
+    const manifests = yield* Effect.cached(Effect.all({ from: fromManifest, to: toManifest }, { concurrency: 2 }));
+    // Exact inputs can start measurement work before either manifest resolves; tags and ranges wait for resolution.
     const exact = isExactSemver(from) && isExactSemver(to);
-    return yield* Effect.all(
+    const evidence = yield* Effect.all(
       {
-        manifests,
-        releaseNotes: manifests.pipe(
-          Effect.flatMap((pair) => getPackageReleaseNotes(packageName, pair.from, pair.to, process.env.GITHUB_TOKEN)),
-        ),
         tarballs: Effect.all(
           {
             from: fromManifest.pipe(Effect.flatMap(getPackageTarball)),
@@ -97,40 +132,78 @@ function getComparisonEvidence(packageName: string, from: string, to: string) {
               Effect.flatMap((pair) => getPackageBundleSize(packageName, pair.from.version, pair.to.version)),
             ),
       },
-      { concurrency: 5 },
+      { concurrency: 3 },
     );
+    const resolvedManifests = yield* manifests;
+    const fromVersion = {
+      ...toPackageVersion(resolvedManifests.from),
+      vulnerabilities: evidence.vulnerabilities.from,
+      bundleSize: evidence.bundleSize.from,
+      tarball: evidence.tarballs.from,
+    };
+    const toVersion = {
+      ...toPackageVersion(resolvedManifests.to),
+      vulnerabilities: evidence.vulnerabilities.to,
+      bundleSize: evidence.bundleSize.to,
+      tarball: evidence.tarballs.to,
+    };
+    return { from: fromVersion, to: toVersion, comparison: compareMeasurements(fromVersion, toVersion) };
   });
+
+const toTarballSummary = ({ status, reasons, url, files, changelogs }: PackageTarball): TarballSummary => ({
+  status,
+  reasons,
+  url,
+  fileCount: files.length,
+  changelogCount: changelogs.length,
+});
+
+const toMeasuredVersion = ({ tarball, ...version }: ComparisonVersion): MeasuredPackageVersion => ({
+  ...version,
+  tarball: toTarballSummary(tarball),
+});
+
+/** Measurement evidence for a resolved pair; the per-file inventory stays server-side. */
+export function getComparisonMeasurements(
+  packageName: string,
+  from: string,
+  to: string,
+): Effect.Effect<PackageMeasurementsResponse, RegistryRequestError, HttpClient.HttpClient> {
+  return collectMeasurements(packageName, from, to).pipe(
+    Effect.map(({ from: fromVersion, to: toVersion, comparison }) => ({
+      packageName,
+      from: toMeasuredVersion(fromVersion),
+      to: toMeasuredVersion(toVersion),
+      comparison,
+    })),
+  );
 }
 
-/** The factual comparison for a resolved pair; the same object feeds the AI briefing. */
+/** The complete comparison facts shape consumed only by the briefing pipeline. */
 export type ComparisonFacts = BriefingInput;
 
+/** Complete facts for the briefing evidence packet; not exposed as a route. */
 export function getComparisonFacts(
   packageName: string,
   from: string,
   to: string,
 ): Effect.Effect<ComparisonFacts, RegistryRequestError, HttpClient.HttpClient> {
-  return getComparisonEvidence(packageName, from, to).pipe(
-    Effect.map(({ manifests, vulnerabilities, releaseNotes, bundleSize, tarballs }) => {
-      const fromVersion = {
-        ...toPackageVersion(manifests.from),
-        vulnerabilities: vulnerabilities.from,
-        bundleSize: bundleSize.from,
-        tarball: tarballs.from,
-      };
-      const toVersion = {
-        ...toPackageVersion(manifests.to),
-        vulnerabilities: vulnerabilities.to,
-        bundleSize: bundleSize.to,
-        tarball: tarballs.to,
-      };
-      return {
-        packageName,
-        releaseNotes,
-        from: fromVersion,
-        to: toVersion,
-        comparison: comparePackages(fromVersion, toVersion),
-      };
-    }),
+  return Effect.all(
+    {
+      declarations: getComparisonDeclarations(packageName, from, to),
+      measurements: collectMeasurements(packageName, from, to),
+      releaseNotes: getResolvedManifests(packageName, from, to).pipe(
+        Effect.flatMap((pair) => getPackageReleaseNotes(packageName, pair.from, pair.to, process.env.GITHUB_TOKEN)),
+      ),
+    },
+    { concurrency: 3 },
+  ).pipe(
+    Effect.map(({ declarations, measurements, releaseNotes }) => ({
+      packageName,
+      releaseNotes,
+      from: measurements.from,
+      to: measurements.to,
+      comparison: { ...declarations.comparison, ...measurements.comparison },
+    })),
   );
 }

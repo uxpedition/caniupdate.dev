@@ -6,26 +6,33 @@ import EvidencePanel from '~/components/comparison/EvidencePanel.vue';
 import RowHelp from '~/components/comparison/RowHelp.vue';
 import { useComparisonPage } from '~/composables/useComparisonPage';
 import { buildComparisonSummaries, sizeChange } from '~/pages/[packageName]/comparisonSummary';
+import { buildComparisonRows } from '~/pages/[packageName]/comparisonView';
 
 const {
   packageName,
   displayFromVersion,
   displayToVersion,
-  comparisonData,
-  comparisonRows,
-  isComparisonPending,
-  isComparisonError,
+  declarations,
+  measurements,
+  isDeclarationsPending,
+  isDeclarationsError,
+  isMeasurementsPending,
   briefing,
   isBriefingPending,
   briefingError,
   sources,
   citations,
-} = useComparisonPage();
+} = await useComparisonPage();
 const expanded = ref(new Set<string>());
 const showBrief = ref(false);
 const showSources = ref(false);
 const rows = computed(() =>
-  comparisonData.value ? buildComparisonSummaries(comparisonData.value, comparisonRows.value) : [],
+  declarations.value
+    ? buildComparisonSummaries(
+        { declarations: declarations.value, measurements: measurements.value },
+        buildComparisonRows(declarations.value, measurements.value),
+      )
+    : [],
 );
 const groups = computed(() => [
   { title: 'Dependencies & runtime', rows: rows.value.slice(0, 3) },
@@ -33,20 +40,20 @@ const groups = computed(() => [
   { title: 'Size & provenance', rows: rows.value.slice(8) },
 ]);
 const changedCount = computed(() => rows.value.filter((row) => row.changed).length);
-const dependencyCount = computed(() => comparisonData.value?.comparison.dependencies.length ?? 0);
+const dependencyCount = computed(() => declarations.value?.comparison.dependencies.length ?? 0);
 const security = computed(() => {
-  const data = comparisonData.value;
-  if (!data) return { value: 'Checking…', detail: '' };
-  const { status, count } = data.to.vulnerabilities;
+  const measured = measurements.value;
+  if (!measured) return { value: 'Checking…', detail: '' };
+  const { status, count } = measured.to.vulnerabilities;
   if (status !== 'available' || count === null)
     return { value: 'Incomplete coverage', detail: 'No safety conclusion can be drawn.' };
   return {
     value: `${count} matched ${count === 1 ? 'advisory' : 'advisories'}`,
-    detail: `For ${data.to.version} · not a guarantee of safety`,
+    detail: `For ${measured.to.version} · not a guarantee of safety`,
   };
 });
 const briefingState = computed(() => {
-  if (isComparisonError.value) return 'Waiting for package facts';
+  if (isDeclarationsError.value) return 'Waiting for package facts';
   if (briefingError.value || briefing.value?.status === 'unavailable') return 'Unavailable · facts are unaffected';
   if (briefing.value?.status === 'available') return `${briefing.value.bullets.length} evidence-linked notes`;
   return 'Preparing evidence-linked notes…';
@@ -106,10 +113,10 @@ const revealCitation = async (event: MouseEvent) => {
         </p>
       </header>
 
-      <p v-if="isComparisonPending" class="py-[30px] text-sm leading-[1.8]" role="status">
+      <p v-if="isDeclarationsPending" class="py-[30px] text-sm leading-[1.8]" role="status">
         Reading package declarations and published evidence…
       </p>
-      <div v-else-if="isComparisonError" class="py-[30px] text-sm leading-[1.8] text-destructive" role="alert">
+      <div v-else-if="isDeclarationsError" class="py-[30px] text-sm leading-[1.8] text-destructive" role="alert">
         <h2 class="text-base font-semibold tracking-[-0.02em]">This comparison couldn’t be loaded.</h2>
         <p>
           Check the package and versions, then
@@ -120,13 +127,13 @@ const revealCitation = async (event: MouseEvent) => {
           >.
         </p>
       </div>
-      <template v-else-if="comparisonData">
+      <template v-else-if="declarations">
         <section aria-labelledby="overview-heading">
           <h2 id="overview-heading" class="text-base font-semibold tracking-[-0.02em]">At a glance</h2>
-          <p v-if="comparisonData.comparison.node.changed" class="mt-4 text-sm leading-[1.7]">
+          <p v-if="declarations.comparison.node.changed" class="mt-4 text-sm leading-[1.7]">
             Node requirement changed:
-            <code class="font-mono text-change">{{ comparisonData.from.engines.node ?? 'Not declared' }}</code> →
-            <code class="font-mono text-change">{{ comparisonData.to.engines.node ?? 'Not declared' }}</code
+            <code class="font-mono text-change">{{ declarations.from.engines.node ?? 'Not declared' }}</code> →
+            <code class="font-mono text-change">{{ declarations.to.engines.node ?? 'Not declared' }}</code
             >.
           </p>
           <div class="mt-5.5 grid grid-cols-3 gap-8 max-[700px]:grid-cols-1 max-[700px]:gap-5">
@@ -154,10 +161,13 @@ const revealCitation = async (event: MouseEvent) => {
                 class="text-[19px] leading-[1.4] font-[550] tracking-[-0.03em] tabular-nums max-[700px]:text-base group-hover:underline group-hover:underline-offset-4"
                 :class="{
                   'text-change':
-                    comparisonData.comparison.sizes.bundle.gzip.delta !== null &&
-                    comparisonData.comparison.sizes.bundle.gzip.delta !== 0,
+                    measurements !== undefined &&
+                    measurements.comparison.sizes.bundle.gzip.delta !== null &&
+                    measurements.comparison.sizes.bundle.gzip.delta !== 0,
                 }"
-                >{{ sizeChange(comparisonData.comparison.sizes.bundle.gzip) }}</strong
+                >{{
+                  measurements === undefined ? 'Measuring…' : sizeChange(measurements.comparison.sizes.bundle.gzip)
+                }}</strong
               >
               <span class="text-[11px] leading-[1.6] text-muted-foreground max-[700px]:col-start-2"
                 >Bundlephobia estimate, not your app bundle</span
@@ -170,7 +180,7 @@ const revealCitation = async (event: MouseEvent) => {
               <span class="text-xs leading-normal text-muted-foreground">Security</span>
               <strong
                 class="text-[19px] leading-[1.4] font-[550] tracking-[-0.03em] tabular-nums max-[700px]:text-base group-hover:underline group-hover:underline-offset-4"
-                :class="{ 'text-destructive': (comparisonData.to.vulnerabilities.count ?? 0) > 0 }"
+                :class="{ 'text-destructive': (measurements?.to.vulnerabilities.count ?? 0) > 0 }"
                 >{{ security.value }}</strong
               >
               <span class="text-[11px] leading-[1.6] text-muted-foreground max-[700px]:col-start-2">{{
@@ -205,7 +215,11 @@ const revealCitation = async (event: MouseEvent) => {
           <div class="mb-5 flex flex-wrap items-baseline justify-between gap-2">
             <h2 id="comparison-heading" class="text-base font-semibold tracking-[-0.02em]">Compare releases</h2>
             <p class="text-xs leading-normal text-muted-foreground">
-              {{ changedCount }} of {{ rows.length }} categories changed
+              {{
+                isMeasurementsPending
+                  ? 'Measuring remaining categories…'
+                  : `${changedCount} of ${rows.length} categories changed`
+              }}
             </p>
           </div>
           <div

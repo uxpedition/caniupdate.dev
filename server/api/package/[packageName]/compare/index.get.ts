@@ -5,11 +5,13 @@ import { defineEventHandler, getValidatedQuery, getValidatedRouterParams } from 
 import {
   decodePackageComparisonQuery,
   decodePackageComparisonRouterParams,
-  getComparisonFacts,
+  getComparisonDeclarations,
 } from '../../../../utils/packageComparisonFacts';
 
 export default defineEventHandler(async (event) => {
   const { packageName } = await getValidatedRouterParams(event, decodePackageComparisonRouterParams);
   const { from, to } = await getValidatedQuery(event, decodePackageComparisonQuery);
-  return Effect.runPromise(getComparisonFacts(packageName, from, to).pipe(Effect.provide(FetchHttpClient.layer)));
+  return Effect.runPromise(
+    getComparisonDeclarations(packageName, from, to).pipe(Effect.provide(FetchHttpClient.layer)),
+  );
 });

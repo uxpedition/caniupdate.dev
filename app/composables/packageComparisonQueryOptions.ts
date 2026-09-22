@@ -3,7 +3,7 @@ import type { QueryFunctionContext } from '@tanstack/vue-query';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
-import type { BriefingInput } from '#shared/briefing.defs';
+import type { PackageDeclarationsResponse } from '#shared/comparison.defs';
 
 export const PACKAGE_COMPARISON_QUERY_KEY_PREFIX = ['npm', 'packages', 'comparison'] as const;
 export const PACKAGE_COMPARISON_STALE_TIME = 60_000;
@@ -11,8 +11,6 @@ export const PACKAGE_COMPARISON_STALE_TIME = 60_000;
 type NuxtRequestFetch = H3Event$Fetch | $Fetch;
 type PackageComparisonQueryKey = readonly [...typeof PACKAGE_COMPARISON_QUERY_KEY_PREFIX, string, string, string];
 type PackageComparisonQueryContext = QueryFunctionContext<PackageComparisonQueryKey>;
-
-export type PackageComparisonResponse = BriefingInput;
 
 export const packageComparisonQueryOptions = (
   requestFetch: NuxtRequestFetch,
@@ -31,9 +29,9 @@ export const packageComparisonQueryOptions = (
       normalizedFromVersion.value,
       normalizedToVersion.value,
     ]),
-    queryFn: async ({ queryKey, signal }: PackageComparisonQueryContext): Promise<PackageComparisonResponse> => {
+    queryFn: async ({ queryKey, signal }: PackageComparisonQueryContext): Promise<PackageDeclarationsResponse> => {
       const [, , , packageName, from, to] = queryKey;
-      return requestFetch<PackageComparisonResponse>(`/api/package/${encodeURIComponent(packageName)}/compare`, {
+      return requestFetch<PackageDeclarationsResponse>(`/api/package/${encodeURIComponent(packageName)}/compare`, {
         query: { from, to },
         retry: false,
         signal,
