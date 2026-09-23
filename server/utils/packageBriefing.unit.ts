@@ -4,20 +4,41 @@ import { join } from 'node:path';
 
 import { Effect } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BriefingInput } from '#shared/briefing.defs';
 import type { ComparisonVersion, PackageComparison } from '#shared/comparison.defs';
 import type { PackageReleaseNotes } from '#shared/github.defs';
 
+import { installBriefingSchema, openBriefingD1, type BriefingD1 } from '../../test/helpers/briefingD1';
 import type * as BriefingModule from './packageBriefing';
 
 let getPackageBriefing: typeof BriefingModule.getPackageBriefing;
-let databaseDirectory: string;
-let closeStore: () => void;
+let directory: string;
+let runtime: BriefingD1 | undefined;
 
 const fetchMock = vi.fn<typeof fetch>();
 let sequence = 0;
+
+// Miniflare startup dominates this suite, so every test shares one runtime and an explicitly emptied table.
+function database() {
+  if (runtime === undefined) throw new Error('D1 setup failed');
+  return runtime.database;
+}
+
+const runBriefing = (value: BriefingInput, target = database()) =>
+  Effect.runPromise(getPackageBriefing(value, target).pipe(Effect.provide(FetchHttpClient.layer)));
+
+async function withOtherBinding(body: (other: BriefingD1) => Promise<void>): Promise<void> {
+  const otherDirectory = await mkdtemp(join(tmpdir(), 'briefing-binding-'));
+  const other = await openBriefingD1(otherDirectory);
+  try {
+    await body(other);
+  } finally {
+    await other.dispose();
+    await rm(otherDirectory, { recursive: true, force: true });
+  }
+}
 
 const comparison = (nodeTo = '>=20'): PackageComparison => ({
   dependencies: [],
@@ -133,17 +154,20 @@ const response = (bullets = defaultBullets(), finishReason = 'stop') =>
     ],
   });
 
-const runBriefing = (value: BriefingInput) =>
-  Effect.runPromise(getPackageBriefing(value).pipe(Effect.provide(FetchHttpClient.layer)));
-
 describe('getPackageBriefing', () => {
+  beforeAll(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'briefing-cache-'));
+    runtime = await openBriefingD1(directory);
+  });
+
   beforeEach(async () => {
-    databaseDirectory = await mkdtemp(join(tmpdir(), 'briefing-cache-'));
-    vi.stubEnv('AI_BRIEFING_CACHE_PATH', join(databaseDirectory, 'briefings.db'));
-    // Fresh module state lets each test exercise disk persistence without inheriting process-local caches.
+    // One suite runtime, but every test still starts from the authoritative schema and an empty table.
+    await installBriefingSchema(database());
+    await database().prepare('DELETE FROM package_briefings').run();
+    // A static import cannot drop module-level Effect caches, so each test reloads the boundary explicitly to
+    // exercise database persistence without inheriting process-local state.
     vi.resetModules();
     ({ getPackageBriefing } = await import('./packageBriefing'));
-    ({ closeBriefingStore: closeStore } = await import('./packageBriefingStore'));
     vi.stubEnv('AI_BRIEFING_ENDPOINT', 'https://briefing.example/v1/chat/completions');
     vi.stubEnv('AI_BRIEFING_API_KEY', 'test-key');
     vi.stubEnv('AI_BRIEFING_MODEL', 'test-model');
@@ -151,12 +175,16 @@ describe('getPackageBriefing', () => {
     fetchMock.mockReset();
   });
 
-  afterEach(async () => {
+  afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
-    closeStore();
-    await rm(databaseDirectory, { recursive: true, force: true });
+  });
+
+  afterAll(async () => {
+    await runtime?.dispose();
+    runtime = undefined;
+    await rm(directory, { recursive: true, force: true });
   });
 
   it('accepts a single cited insight and retains coverage metadata without a disclaimer', async () => {
@@ -378,13 +406,19 @@ describe('getPackageBriefing', () => {
     const original = await runBriefing(value);
     expect(original).toMatchObject({ status: 'available' });
 
+    // Reopen the same directory with a fresh runtime: the stored row, not a cache, has to supply the result. Dispose
+    // first so only one runtime owns the database files, and clear the handle before awaiting so teardown stays safe.
+    const current = runtime;
+    if (current === undefined) throw new Error('D1 setup failed');
+    runtime = undefined;
+    await current.dispose();
+    runtime = await openBriefingD1(directory);
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2040-01-01'));
-    // Reloading removes every process-local cache; only the database can supply this result.
-    closeStore();
+
+    // Reloading removes every process-local cache as well.
     vi.resetModules();
     ({ getPackageBriefing } = await import('./packageBriefing'));
-    ({ closeBriefingStore: closeStore } = await import('./packageBriefingStore'));
     vi.stubEnv('AI_BRIEFING_ENDPOINT', '');
     vi.stubEnv('AI_BRIEFING_MODEL', '');
     vi.stubEnv('AI_BRIEFING_API_KEY', '');
@@ -420,8 +454,10 @@ describe('getPackageBriefing', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does not spend an AI request when the database cannot be opened', async () => {
-    vi.stubEnv('AI_BRIEFING_CACHE_PATH', databaseDirectory);
+  it('does not spend an AI request when the schema is missing', async () => {
+    fetchMock.mockImplementation(async () => response());
+    await database().prepare('DROP TABLE package_briefings').run();
+
     await expect(runBriefing(input())).resolves.toEqual({
       status: 'unavailable',
       reason: 'cache-error',
@@ -429,6 +465,63 @@ describe('getPackageBriefing', () => {
       sources: [],
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the request carries no binding', async () => {
+    fetchMock.mockImplementation(async () => response());
+
+    await expect(
+      Effect.runPromise(getPackageBriefing(input(), undefined).pipe(Effect.provide(FetchHttpClient.layer))),
+    ).resolves.toEqual({ status: 'unavailable', reason: 'cache-error', bullets: [], sources: [] });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed write instead of an uncached success', async () => {
+    fetchMock.mockImplementation(async () => {
+      // The provider answers after the stored snapshot was read, but the schema disappears before the write.
+      await database().prepare('DROP TABLE package_briefings').run();
+      return response();
+    });
+
+    await expect(runBriefing(input())).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'cache-error',
+      bullets: [],
+      sources: [],
+    });
+  });
+
+  it("reports one binding's storage failure instead of another binding's stored success", async () => {
+    fetchMock.mockImplementation(async () => response());
+    const value = input();
+    await expect(runBriefing(value)).resolves.toMatchObject({ status: 'available' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await withOtherBinding(async (other) => {
+      await other.database.prepare('DROP TABLE package_briefings').run();
+      await expect(runBriefing(value, other.database)).resolves.toEqual({
+        status: 'unavailable',
+        reason: 'cache-error',
+        bullets: [],
+        sources: [],
+      });
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("generates for the same evidence on a second binding rather than reusing the first binding's cache", async () => {
+    fetchMock.mockImplementation(async () => response());
+    const value = input();
+    const original = await runBriefing(value);
+    expect(original).toMatchObject({ status: 'available' });
+
+    await withOtherBinding(async (other) => {
+      await expect(runBriefing(value, other.database)).resolves.toEqual(original);
+    });
+
+    // An isolated binding cannot answer from another environment's cache, so it pays for its own request.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('recovers after a deadline failure because unavailable results are not cached', async () => {

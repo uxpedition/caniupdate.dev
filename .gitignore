@@ -22,6 +22,11 @@ logs
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
+
+# Local Cloudflare state
+.wrangler/
 
 # Local inspiration repository
 /npmx.dev/

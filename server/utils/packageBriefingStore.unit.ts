@@ -2,10 +2,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createClient } from '@libsql/client/sqlite3';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { closeBriefingStore, saveBriefing } from './packageBriefingStore';
+import { openBriefingD1, type BriefingD1 } from '../../test/helpers/briefingD1';
+import { readStoredBriefing, saveBriefing } from './packageBriefingStore';
 
 const briefing = {
   status: 'available' as const,
@@ -17,37 +17,60 @@ const briefing = {
 };
 
 let directory: string;
-let path: string;
+let runtime: BriefingD1 | undefined;
 
-beforeEach(async () => {
+// Miniflare startup dominates this suite, so every test shares one runtime and an explicitly emptied table.
+function database() {
+  if (runtime === undefined) throw new Error('D1 setup failed');
+  return runtime.database;
+}
+
+beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'briefing-store-'));
-  path = join(directory, 'briefings.db');
-  process.env.AI_BRIEFING_CACHE_PATH = path;
+  runtime = await openBriefingD1(directory);
 });
 
-afterEach(async () => {
-  closeBriefingStore();
-  delete process.env.AI_BRIEFING_CACHE_PATH;
+beforeEach(async () => {
+  await database().prepare('DELETE FROM package_briefings').run();
+});
+
+afterAll(async () => {
+  await runtime?.dispose();
+  runtime = undefined;
   await rm(directory, { recursive: true, force: true });
 });
 
 describe('package briefing store', () => {
-  it('waits for another local writer and preserves the successful response', async () => {
-    await saveBriefing('seed', briefing);
-    const lockClient = createClient({ url: `file:${path}`, timeout: 1000 });
-    const lock = await lockClient.transaction('write');
-    await lock.execute({
-      sql: 'INSERT INTO package_briefings (evidence_hash, response_json) VALUES (?, ?)',
-      args: ['held', '{}'],
-    });
+  it('preserves one canonical success across competing writes', async () => {
+    const alternative = { ...briefing, model: 'another-model' };
+    const results = await Promise.all([
+      saveBriefing(database(), 'same-evidence', briefing),
+      saveBriefing(database(), 'same-evidence', alternative),
+    ]);
 
-    const pending = saveBriefing('target', briefing);
-    const delay = Promise.withResolvers<void>();
-    setTimeout(delay.resolve, 50);
-    await delay.promise;
-    await lock.commit();
-    lock.close();
-    await expect(pending).resolves.toEqual(briefing);
-    lockClient.close();
+    expect(results[0]).toEqual(results[1]);
+    expect([briefing, alternative]).toContainEqual(results[0]);
+    expect(await readStoredBriefing(database(), 'same-evidence')).toEqual(results[0]);
+  });
+
+  it('rejects a corrupt saved result instead of treating it as a miss', async () => {
+    await database()
+      .prepare('INSERT INTO package_briefings (evidence_hash, response_json) VALUES (?, ?)')
+      .bind('corrupt-evidence', '{')
+      .run();
+
+    await expect(readStoredBriefing(database(), 'corrupt-evidence')).rejects.toBeDefined();
+    // A valid neighbour still decodes, so the rejection is the corrupt row rather than a broken binding.
+    await saveBriefing(database(), 'valid-evidence', briefing);
+    expect(await readStoredBriefing(database(), 'valid-evidence')).toEqual(briefing);
+  });
+
+  it('retains an old success when a later snapshot is saved', async () => {
+    await saveBriefing(database(), 'old-evidence', briefing);
+    const changed = { ...briefing, model: 'changed-evidence-model' };
+    await saveBriefing(database(), 'new-evidence', changed);
+
+    expect(await readStoredBriefing(database(), 'old-evidence')).toEqual(briefing);
+    expect(await readStoredBriefing(database(), 'new-evidence')).toEqual(changed);
   });
 });

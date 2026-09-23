@@ -4,8 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { getComparisonFacts as getComparisonFactsType } from './packageComparisonFacts';
 
-const registry = vi.hoisted(() => ({ json: vi.fn<(path: string) => Promise<unknown>>() }));
-vi.mock('npm-registry-fetch', () => ({ default: registry }));
+const registry = { json: vi.fn<(path: string) => Promise<unknown>>() };
 
 const manifest = (version: string) => ({
   name: 'minimist',
@@ -25,7 +24,14 @@ beforeEach(async () => {
   ({ getComparisonFacts } = await import('./packageComparisonFacts'));
   registry.json.mockReset();
   fetchMock.mockReset();
-  vi.stubGlobal('fetch', fetchMock);
+  // Registry manifests are served from the fetch boundary; tarballs (`/-/`) and evidence providers stay with fetchMock.
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(new Request(input, init).url);
+    if (url.origin === 'https://registry.npmjs.org' && !url.pathname.includes('/-/')) {
+      return Response.json(await registry.json(url.pathname));
+    }
+    return fetchMock(input, init);
+  });
 });
 afterEach(() => {
   vi.unstubAllGlobals();

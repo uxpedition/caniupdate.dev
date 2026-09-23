@@ -4,7 +4,6 @@
 
 import { Cache, Data, Effect, Exit, Schema } from 'effect';
 import type { HttpClient } from 'effect/unstable/http';
-import npmFetch from 'npm-registry-fetch';
 
 import type { BriefingInput } from '#shared/briefing.defs';
 import { isExactSemver } from '#shared/compareSemver';
@@ -18,6 +17,7 @@ import type {
 import { PackageNameSchema, RegistryVersionManifestSchema, toPackageVersion } from '#shared/package.defs';
 
 import type { PackageTarball } from '../../shared/tarball.defs';
+import { getRegistryJson } from './npmRegistry';
 import { getPackageBundleSize } from './packageBundleSize';
 import { compareDeclarations, compareMeasurements } from './packageComparison';
 import { getPackageReleaseNotes } from './packageReleaseNotes';
@@ -54,11 +54,7 @@ const registryRequestError = (cause: unknown): RegistryRequestError => new Regis
 // same full manifest. Only the packument route abbreviates, so no `Accept` header is sent here.
 const registryVersionManifestRequest = (packageName: string, version: string) =>
   Effect.gen(function* () {
-    const response = yield* Effect.tryPromise({
-      try: () => npmFetch.json(`/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`),
-
-      catch: (cause) => cause,
-    });
+    const response = yield* getRegistryJson(`/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`);
     return yield* Schema.decodeUnknownEffect(RegistryVersionManifestSchema)(response, { errors: 'all' });
   }).pipe(Effect.mapError(registryRequestError));
 
@@ -67,6 +63,7 @@ class ManifestKey extends Data.Class<{ packageName: string; version: string }> {
 const manifestCache = Effect.runSync(
   Cache.makeWith(({ packageName, version }: ManifestKey) => registryVersionManifestRequest(packageName, version), {
     capacity: 128,
+    requireServicesAt: 'lookup',
     // Tags/ranges must resolve afresh; only exact-version successes survive the current lookup.
     timeToLive: (exit, key) => (Exit.isSuccess(exit) && isExactSemver(key.version) ? '5 minutes' : 0),
   }),

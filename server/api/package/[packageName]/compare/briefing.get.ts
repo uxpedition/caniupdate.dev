@@ -14,10 +14,12 @@ import {
 export default defineEventHandler(async (event) => {
   const { packageName } = await getValidatedRouterParams(event, decodePackageComparisonRouterParams);
   const { from, to } = await getValidatedQuery(event, decodePackageComparisonQuery);
+  // The store is the request's own binding. An environment without it fails the briefing; it never falls back.
+  const database = event.context.cloudflare?.env?.BRIEFINGS_DB;
   return Effect.runPromise(
     getComparisonFacts(packageName, from, to).pipe(
       Effect.flatMap((facts) =>
-        getPackageBriefing(facts).pipe(
+        getPackageBriefing(facts, database).pipe(
           Effect.map((briefing) => ({
             packageName,
             from: facts.from.version,

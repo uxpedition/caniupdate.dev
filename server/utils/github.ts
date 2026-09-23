@@ -92,7 +92,7 @@ const executeGithubRequest = (
   Effect.gen(function* () {
     const noRedirectClient = client.pipe(HttpClient.followRedirects(0));
     return yield* noRedirectClient.pipe(HttpClient.filterStatusOk).execute(request);
-  }).pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: 'error' }));
+  }).pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: 'manual' }));
 
 const hasNextPage = (response: HttpClientResponse.HttpClientResponse): boolean => {
   const link = Option.getOrUndefined(Headers.get(response.headers, 'link'));

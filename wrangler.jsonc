@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "can-i-update-local",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  // Local-only binding: this id is a placeholder, not a remote resource. No account id, route, or secret is defined.
+  "d1_databases": [
+    {
+      "binding": "BRIEFINGS_DB",
+      "database_name": "can-i-update-local-briefings",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "migrations",
+      "remote": false,
+    },
+  ],
+}

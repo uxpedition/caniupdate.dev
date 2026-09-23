@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import type { D1Database } from '@cloudflare/workers-types';
 import { Cache, Cause, Data, Duration, Effect, Exit, Layer, Result, Schema } from 'effect';
 import { LanguageModel, Prompt } from 'effect/unstable/ai';
 import { FetchHttpClient, HttpClient } from 'effect/unstable/http';
@@ -226,18 +227,6 @@ type BriefingRequest = {
   readonly session: string;
 };
 
-// Cache keys intentionally carry only a one-way credential identity. The request record is process-local and is
-// never returned, logged, or used as a diagnostic key; it lets a cache miss still send the original bearer token.
-const requestRecords = new Map<string, BriefingRequest>();
-
-const rememberRequest = (key: BriefingCacheKey, request: BriefingRequest): void => {
-  const identity = briefingCacheIdentity(key);
-  requestRecords.set(identity, request);
-  if (requestRecords.size <= 512) return;
-  const oldest = requestRecords.keys().next().value;
-  if (oldest !== undefined) requestRecords.delete(oldest);
-};
-
 const requestBriefing = (request: BriefingRequest): Effect.Effect<PackageBriefing, never, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const prompt = Prompt.make([
@@ -259,7 +248,7 @@ const requestBriefing = (request: BriefingRequest): Effect.Effect<PackageBriefin
     return yield* Effect.gen(function* () {
       const response = yield* LanguageModel.generateText({ prompt }).pipe(
         Effect.provide(provider),
-        Effect.provideService(FetchHttpClient.RequestInit, { redirect: 'error' }),
+        Effect.provideService(FetchHttpClient.RequestInit, { redirect: 'manual' }),
       );
       if (response.finishReason !== 'stop') return yield* Effect.fail(invalidResponse());
 
@@ -283,30 +272,68 @@ const requestBriefing = (request: BriefingRequest): Effect.Effect<PackageBriefin
     }),
   );
 
-const briefingCache = Effect.runSync(
-  Cache.makeWith(
-    (key: BriefingCacheKey) => {
-      const request = requestRecords.get(briefingCacheIdentity(key));
-      if (request === undefined) return Effect.succeed(unavailable('provider-error'));
-      return requestBriefing(request).pipe(
-        Effect.flatMap((briefing) =>
-          briefing.status === 'available'
-            ? Effect.tryPromise<PackageBriefing>(() => saveBriefing(key.evidenceHash, briefing))
-            : Effect.succeed(briefing),
-        ),
-        Effect.catch(() => Effect.succeed(unavailable('cache-error'))),
-      );
-    },
-    {
-      capacity: 128,
-      requireServicesAt: 'lookup',
-      timeToLive: (exit) =>
-        Exit.isSuccess(exit) && exit.value.status === 'available' ? Duration.hours(1) : Duration.zero,
-    },
-  ),
-);
+type BriefingRuntime = {
+  readonly cache: Cache.Cache<BriefingCacheKey, PackageBriefing, never, HttpClient.HttpClient>;
+  readonly rememberRequest: (key: BriefingCacheKey, request: BriefingRequest) => void;
+};
 
-export function getPackageBriefing(input: BriefingInput): Effect.Effect<PackageBriefing, never, HttpClient.HttpClient> {
+function createBriefingRuntime(database: D1Database): BriefingRuntime {
+  // Cache keys intentionally carry only a one-way credential identity. The request record is process-local and is
+  // never returned, logged, or used as a diagnostic key; it lets a cache miss still send the original bearer token.
+  const requestRecords = new Map<string, BriefingRequest>();
+  const rememberRequest = (key: BriefingCacheKey, request: BriefingRequest): void => {
+    const identity = briefingCacheIdentity(key);
+    requestRecords.set(identity, request);
+    if (requestRecords.size <= 512) return;
+    const oldest = requestRecords.keys().next().value;
+    if (oldest !== undefined) requestRecords.delete(oldest);
+  };
+
+  const cache = Effect.runSync(
+    Cache.makeWith(
+      (key: BriefingCacheKey) => {
+        const request = requestRecords.get(briefingCacheIdentity(key));
+        if (request === undefined) return Effect.succeed(unavailable('provider-error'));
+        return requestBriefing(request).pipe(
+          Effect.flatMap((briefing) =>
+            briefing.status === 'available'
+              ? Effect.tryPromise<PackageBriefing>(() => saveBriefing(database, key.evidenceHash, briefing))
+              : Effect.succeed(briefing),
+          ),
+          Effect.catch(() => Effect.succeed(unavailable('cache-error'))),
+        );
+      },
+      {
+        capacity: 128,
+        requireServicesAt: 'lookup',
+        timeToLive: (exit) =>
+          Exit.isSuccess(exit) && exit.value.status === 'available' ? Duration.hours(1) : Duration.zero,
+      },
+    ),
+  );
+
+  return { cache, rememberRequest };
+}
+
+// One runtime per database, so a D1 failure in one environment cannot be hidden by another environment's cache.
+const briefingRuntimes = new WeakMap<D1Database, BriefingRuntime>();
+
+function runtimeFor(database: D1Database): BriefingRuntime {
+  const existing = briefingRuntimes.get(database);
+  if (existing !== undefined) return existing;
+  const created = createBriefingRuntime(database);
+  briefingRuntimes.set(database, created);
+  return created;
+}
+
+export function getPackageBriefing(
+  input: BriefingInput,
+  database: D1Database | undefined,
+): Effect.Effect<PackageBriefing, never, HttpClient.HttpClient> {
+  // Absence is deliberate: without the request's binding there is no store, and no local fallback is substituted.
+  if (database === undefined) return Effect.succeed(unavailable('cache-error'));
+  const binding = database;
+
   return Effect.gen(function* () {
     let evidence: BriefingEvidence;
     try {
@@ -317,7 +344,7 @@ export function getPackageBriefing(input: BriefingInput): Effect.Effect<PackageB
 
     // Hash exactly what the model sees. Retrieval timestamps are absent from this bounded evidence packet.
     const evidenceHash = sha256(JSON.stringify(evidence));
-    const stored = yield* Effect.tryPromise(() => readStoredBriefing(evidenceHash));
+    const stored = yield* Effect.tryPromise(() => readStoredBriefing(binding, evidenceHash));
     if (stored !== undefined) return stored;
 
     // Credentials, model, and prompt changes do not invalidate a previously paid-for response.
@@ -331,11 +358,12 @@ export function getPackageBriefing(input: BriefingInput): Effect.Effect<PackageB
       credentialIdentity: config.value.credentialIdentity,
       promptVersion: PROMPT_VERSION,
     });
-    rememberRequest(key, {
+    const runtime = runtimeFor(binding);
+    runtime.rememberRequest(key, {
       config: config.value,
       evidence,
       session: sha256(`${evidence.packageName}\n${evidence.from}\n${evidence.to}`),
     });
-    return yield* Cache.get(briefingCache, key);
+    return yield* Cache.get(runtime.cache, key);
   }).pipe(Effect.catch(() => Effect.succeed(unavailable('cache-error'))));
 }

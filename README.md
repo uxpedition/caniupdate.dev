@@ -20,7 +20,11 @@ nub run --node dev
 
 Open `http://<tailscale-ip>:5173` from another device. Get this device's current Tailscale IPv4 address with `tailscale ip -4`.
 
-Nub's `--node` mode keeps Nub as the package/script runner while disabling its runtime augmentation for Nuxt worker processes.
+Nub's `--node` mode keeps Nub as the package/script runner while disabling its runtime augmentation for Nuxt worker processes. Node 26 is pinned by `.node-version` and TypeScript 6.0.3 is pinned in `package.json`; run project scripts as `nub run --node ...` so the Nuxt and Nitro processes execute on plain Node.
+
+`dev` applies the local D1 migrations first, then starts Nuxt dev with HMR. Nitro's Cloudflare dev proxy emulates the `BRIEFINGS_DB` binding, so local development needs no Cloudflare account, API token, or remote resource. Local state is git-ignored under `.wrangler/state`: the dev proxy writes `.wrangler/state/v3`, the Wrangler CLI uses the parent `.wrangler/state`, and both paths address the same physical database.
+
+Nuxt development reads `.env` (see `.env.example`). Run `dev` and the production preview sequentially, never at the same time: two runtimes must not own that local D1 state concurrently.
 
 The setup includes an Effect-backed health endpoint at `/api/health`.
 
@@ -41,6 +45,8 @@ Comparison loading is tiered. During SSR, the page prefetches declarations and s
 ## Package comparison API
 
 `GET /api/package/{encodedPackageName}/compare?from={versionOrTag}&to={versionOrTag}` returns `{ packageName, from, to, comparison }` for the resolved versions. The `comparison` contains declaration fields only: `dependencies`, `peers`, `node`, `moduleFormat`, `exports`, `types`, `licenses`, and `installScripts`. `from` and `to` contain registry manifest declarations; measurement evidence is served by the sibling measurements route, while `releaseNotes` are collected only inside the server-side briefing pipeline. This route makes no GitHub request.
+
+Registry search and manifests come from the public `https://registry.npmjs.org` over HTTPS through the application's own Effect HTTP client. There is no npm CLI configuration, `.npmrc`, proxy-agent, or registry-authentication support, and no retry layer: the product requests the public registry explicitly and anonymously.
 
 ### Measurements route
 
@@ -125,19 +131,25 @@ AI_BRIEFING_MODEL=deepseek-v4-flash
 
 For OpenRouter, replace the endpoint with `https://openrouter.ai/api/v1/chat/completions`, the key with your OpenRouter key, and the model with `deepseek/deepseek-v4-flash`. The endpoint is the complete OpenAI-compatible Chat Completions URL: its path must end with `/chat/completions`, and query parameters are rejected. Production deployments must set the environment explicitly; do not expose these settings in public runtime configuration. Restart the server after changing its environment.
 
+To exercise the briefing path without paying for generation, point these three settings at a local OpenAI-compatible fixture endpoint—loopback HTTP is allowed—and treat its output as a test double rather than real inference. Only set real credentials when you intend to pay for real generations; no smoke or development workflow requires them.
+
 Model choice matters for latency. Measured against OpenCode Go with a real comparison payload: `glm-5.3-flash` answered in 7–11 s (three of three requests produced a valid briefing), `mimo-v2.5` in 13–75 s, and the reasoning models `deepseek-v4-flash` and `qwen3.8-flash` spent 2.3–4.5k tokens on hidden reasoning and needed 37–50 s. `minimax-m2.7` returned HTTP 500 from the gateway. Prefer a fast model such as `glm-5.3-flash`; requests that exceed the deadline come back as `timeout`.
 
 After evidence collection and local comparison finish, a non-streaming AI request summarizes the evidence through Effect's OpenAI-compatible provider (`@effect/ai-openai-compat` over `effect/unstable/ai`). Invalid provider output gets one fresh generation via `Effect.retry` (at most two attempts), reusing the same evidence and prompt without refetching non-AI data or feeding rejected text back to the model. HTTP/authentication failures, transport failures, timeouts, configuration errors, and local evidence-packaging failures are not retried. There are no repair conversations, browsing, tools, or Jev calls. The request uses ordinary Chat Completions fields rather than requiring provider-specific structured-output support, and every attempt is validated locally. Provider reasoning may consume part of each attempt's 4,096-token output allowance.
 
 An available `briefing` contains `status`, `model`, `bullets`, and collected `sources`. Fresh generations return one to five distinct, comparison-relevant insights about consequential changes, security findings, and specific migration actions, preferring fewer useful points over padding. Each generated bullet has `kind` (`change` or `migration`), `basis` (`fact`, `maintainer`, or `inference`), text, and `evidenceIds`. Fresh output validation rejects coverage bullets; the prompt focuses on specific insights rather than generic disclaimers, unchanged-metadata inventories, or repeated points. The prompt requires timeless, exact-version wording: advisory matches do not establish discovery time or the first affected release, and recency or latest-release status must not be inferred. Coverage remains a structured source in the response even when no bullet cites it. Existing permanent snapshots remain unchanged and may contain the previous `coverage` bullet kind. Source records contain IDs, labels, provenance URLs, and evidence text. Internal coverage evidence has no external URL. The model cannot supply new citation URLs or inline links. Local validation checks structure and reference membership, not whether every interpretation is semantically correct; this is not a verified safety or compatibility verdict.
 
-Successful briefings are stored indefinitely in a local libSQL database at `.data/briefings.db` by default (`AI_BRIEFING_CACHE_PATH` can override the file). The key is SHA-256 of the bounded evidence packet sent to the model. A later request still refreshes factual evidence enough to build that packet, then reuses the stored response when the hash matches. Changed advisories, release notes, measurements, or other model-visible evidence create a new snapshot and may generate a new briefing. API-key, endpoint, model, and prompt changes do not invalidate an existing snapshot; this preserves the already-generated result. Cache read/write failures return `cache-error` rather than silently spending another AI request. The file is local-only and is not synced to Turso Cloud.
+Successful briefings are stored permanently in the Cloudflare D1 binding `BRIEFINGS_DB`, which is required. The key is SHA-256 of the bounded evidence packet sent to the model. A later request still refreshes factual evidence enough to build that packet, then reuses the stored response when the hash matches. Changed advisories, release notes, measurements, or other model-visible evidence create a new snapshot and may generate a new briefing. API-key, endpoint, model, and prompt changes do not invalidate an existing snapshot; this preserves the already-generated result.
+
+Storage is first-writer-wins: the first validated response stored for a hash stays in place, and a later duplicate insert for the same hash is ignored. `created_at` defaults to the insert time but is not part of the key, so it never affects reuse. A missing binding, an unapplied schema, or a failed read returns `cache-error` before any provider request. A write failure also returns `cache-error`, but can occur after the provider has already generated a result; D1 persistence cannot undo that spend. Install the schema with `nub run --node db:migrate:local`.
 
 Unavailable briefings have empty bullets/sources and a sanitized reason: `not-configured`, `invalid-config`, `provider-error`, `cache-error`, `timeout`, or `invalid-response`. All three settings absent disables AI; incomplete configuration is invalid. A failed briefing changes only the briefing endpoint's response; the factual comparison route never calls the provider and is unaffected.
 
 Evidence packaging is bounded to 48 KiB and 64 sources, with maintainer excerpts capped at 4 KiB. Advisory evidence keeps computed match groups, IDs/aliases, summaries, severity, source links, and coverage status; it explicitly excludes full affected-version ranges and reference lists, which remain available from the factual comparison endpoint. Sources are admitted in priority order with coverage space reserved, skipping sources that cannot fit rather than evicting every smaller fact. Omitted or truncated evidence becomes an explicit coverage limitation. Conservative Markdown version-heading matching excludes unversioned, unreleased, and out-of-range changelog sections. The AI stage has one 75-second total deadline across both attempts, including body decoding and validation, a 128 KiB response limit per attempt enforced while reading, and no redirects. HTTPS is required except for HTTP loopback development endpoints.
 
 The persistent store is paired with a process-local Effect cache that shares identical in-flight lookups. Raw credentials are not exposed. Failures are not retained as successful cache entries, and credentials or raw provider error bodies never enter either endpoint's response.
+
+The briefing route is still synchronous: its response waits for evidence collection, inference, and storage. In-flight coalescing is isolate-local—the Effect cache shares identical pending lookups inside one running instance, and D1 keeps completed snapshots—so two instances can still generate the same snapshot concurrently. Queueing, global inference budgets, and push notifications are later milestones and are not part of this runtime.
 
 ### Published npm tarballs
 
@@ -157,6 +169,33 @@ A complete archive with no matching changelog is `available` with `changelogCoun
 Inspection accepts only `https://registry.npmjs.org` URLs without credentials or fragments, rejects redirects, sends no registry/GitHub credentials, and performs no retries. It verifies the strongest supported manifest integrity digest (SHA-512, SHA-384, SHA-256), or the legacy SHA-1 `shasum` only when integrity is absent. A present but unsupported or invalid integrity value never falls back to SHA-1.
 
 Limits per version: ten seconds, 10 MiB downloaded, 32 MiB decompressed archive, 10,000 entries, 4,096 characters per archive path/link target, 256 KiB captured per changelog, and 1 MiB total captured changelog text. Archives must use npm's `package/` root; malformed/truncated archives, duplicate paths, unsafe paths or link targets, and unsupported entry types are rejected. Parsing uses in-memory archive data only: no filesystem extraction, package installation, lifecycle scripts, or package imports. This is artifact evidence, not a claim that the package is safe to execute.
+
+## Local D1 persistence
+
+Briefing snapshots live in the emulated Cloudflare D1 database bound as `BRIEFINGS_DB`, defined in the root `wrangler.jsonc` with migrations from `migrations/`. Apply the schema explicitly; it is never installed lazily by a briefing request:
+
+```bash
+nub run --node db:migrate:local
+```
+
+`nub run --node dev` runs that migration before starting Nuxt dev, so development normally needs no separate step. The database files are git-ignored under `.wrangler/state`, are local-only, and are never synced to a remote service. The binding is not optional: without it, or against a database missing the schema, the briefing route answers `cache-error`.
+
+The pinned Effect patch in `patches/effect@4.0.0-rc.115.patch` adds a native promise bridge so pending `Cache` waiters keep their `workerd` request context. Keep it in place; do not work around a shared-lookup request-context error by disabling cross-request promise safety.
+
+## Moving existing briefing snapshots
+
+Snapshots generated before D1 can be carried over without regenerating them. Stop the application that owns the old file first and keep a backup; the exporter opens the source read-only, never writes to it, and leaves it in place. The default source is `.data/briefings.db`; a setup that previously used a custom `AI_BRIEFING_CACHE_PATH` passes that file as the source argument instead, since the path is no longer a runtime setting. Run the exporter on plain Node 26 (the `.node-version` release) so `node:sqlite` and TypeScript execution are available:
+
+```bash
+cp .data/briefings.db .data/briefings.db.bak
+nub --node scripts/export-briefings.ts .data/briefings.db .data/briefings-export.sql
+nub run --node db:migrate:local
+nub exec -- wrangler d1 execute BRIEFINGS_DB --local --config wrangler.jsonc --persist-to .wrangler/state --file .data/briefings-export.sql
+```
+
+The exporter writes a new SQL file and refuses to touch an existing one, so a previous export is never overwritten. Every row is validated before it is emitted: a malformed row, a key that is not a 64-character lowercase SHA-256, or a stored response that fails the briefing schema stops the export with a nonzero exit and leaves no importable partial output. Stored JSON text and its `created_at` value are copied verbatim—escaped for SQL literals but never decoded and re-encoded—so already-paid responses survive exactly. The generated SQL uses `ON CONFLICT (evidence_hash) DO NOTHING`, so importing it into a D1 database that already holds a snapshot for the same hash preserves the existing winner, and re-running the import is safe.
+
+The exporter is an offline operational script. Its `node:sqlite` and filesystem access are never imported into the application server or Worker graph.
 
 ## Checks
 
@@ -187,17 +226,28 @@ nub run --node test
 nub run --node test:watch
 ```
 
-Vitest discovers `*.unit.ts` files under `app/`, `server/`, and `shared/`, using a Node environment with `~`, `@`, and `#shared` aliases. Import test helpers explicitly from `vitest`. Nuxt and Nitro ignore these files during application discovery, and `pages.pattern` keeps page routes to `.vue` files so page-owned modules such as `versionSearch.ts` are not routed. The local `npmx.dev/` reference checkout is not part of the suite.
+Vitest discovers `*.unit.ts` files under `app/`, `server/`, `shared/`, and `scripts/`, using a Node environment with `~`, `@`, and `#shared` aliases. Import test helpers explicitly from `vitest`. Nuxt and Nitro ignore these files during application discovery, and `pages.pattern` keeps page routes to `.vue` files so page-owned modules such as `versionSearch.ts` are not routed. The local `npmx.dev/` reference checkout is not part of the suite.
 
 `Select` keeps search opt-in: pass a `search` prop (`{ filter, placeholder?, emptyMessage? }`) to render the filter input, or omit it for a plain list. The version-select filter lives with the page that owns it and is covered by local fixtures for ranking, numeric/hash/date matches, tag descriptions, normalization, stable ordering, and input preservation. The suite does not start Nuxt or call the npm registry.
 
-## Production
+## Production runtime
 
-Build and preview the application through Nub without runtime augmentation:
+Build the application, then boot the built Worker locally under the real Cloudflare runtime, through Nub without runtime augmentation:
 
 ```bash
 nub run --node build
+nub run --node db:migrate:local
 nub run --node preview
 ```
 
-See the [Nuxt deployment documentation](https://nuxt.com/docs/getting-started/deployment) for deployment options.
+`build` emits the Worker entry, assets, and the generated `.output/server/wrangler.json`, which carries the built `main`/`assets` alongside the same local `BRIEFINGS_DB` binding as the root `wrangler.jsonc`. `preview` runs that generated config with `wrangler dev --local` (real `workerd`), serving on port `5173` from all interfaces and persisting to `.wrangler/state`. Dev and preview therefore share one physical local D1 database: run them sequentially, never concurrently.
+
+Use `.output/server/.dev.vars` for this preview's server-only settings. Wrangler also supports dotenv fallback, so do not assume an absent `.dev.vars` disables credentials. A build recreates the output directory; copy the intentionally configured, git-ignored file after every build:
+
+```bash
+cp .dev.vars .output/server/.dev.vars
+```
+
+`nub run --node dev` reads `.env` instead. Keep the same intentional server-only settings in whichever local file the runtime you use reads; neither file is committed, and neither should hold real credentials for a fixture-based check.
+
+The root `wrangler.jsonc` is a local-only development configuration. Its `database_id` is a placeholder, `remote` is disabled, and no account id, route, or secret is defined, so it is not deployable as-is: do not run `wrangler deploy` against it. Remote resources and the production launch gate belong to M4, which is a separate milestone. Nuxt-side deployment options are described in the [Nuxt deployment documentation](https://nuxt.com/docs/getting-started/deployment).

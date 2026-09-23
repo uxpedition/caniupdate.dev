@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import tailwindcss from '@tailwindcss/vite';
 import { defineNuxtConfig } from 'nuxt/config';
 
@@ -19,6 +21,12 @@ export default defineNuxtConfig({
   },
   nitro: {
     ignore: ['**/*.unit.ts'],
+    preset: 'cloudflare_module',
+    cloudflare: {
+      deployConfig: true,
+      nodeCompat: true,
+      dev: { configPath: 'wrangler.jsonc', persistDir: '.wrangler/state/v3' },
+    },
   },
   css: ['~/assets/css/main.css'],
   modules: ['@nuxt/fonts'],
@@ -38,6 +46,15 @@ export default defineNuxtConfig({
   },
   components: {
     dirs: [],
+  },
+  hooks: {
+    'prepare:types'({ nodeTsConfig }) {
+      nodeTsConfig.include ??= [];
+      nodeTsConfig.include.push(
+        fileURLToPath(new URL('./scripts/**/*.ts', import.meta.url)),
+        fileURLToPath(new URL('./test/**/*.ts', import.meta.url)),
+      );
+    },
   },
   typescript: {
     strict: true,

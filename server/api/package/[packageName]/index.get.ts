@@ -1,8 +1,10 @@
 import { Data, Effect, Schema } from 'effect';
-import { defineEventHandler, getRouterParam } from 'h3';
-import npmFetch from 'npm-registry-fetch';
+import { FetchHttpClient } from 'effect/unstable/http';
+import { createError, defineEventHandler, getRouterParam } from 'h3';
 
 import { RegistryPackageMetadataSchema, toPackageMetadata } from '#shared/package.defs';
+
+import { getRegistryJson } from '../../../utils/npmRegistry';
 
 const REGISTRY_METADATA_ACCEPT = 'application/vnd.npm.install-v1+json';
 
@@ -15,17 +17,15 @@ type RegistryRequestError = InstanceType<typeof RegistryRequestError>;
 const registryRequestError = (cause: unknown): RegistryRequestError => new RegistryRequestError({ cause });
 
 export default defineEventHandler(async (event) => {
-  const packageName = getRouterParam(event, 'packageName');
+  const routerSegment = getRouterParam(event, 'packageName');
+  if (!routerSegment) throw createError({ statusCode: 400, statusMessage: 'Package name is required' });
+  // H3's `decode: true` keeps encoded path separators (`%2F`) encoded, so re-encoding its result would encode a
+  // scoped name twice. Decode the router segment once here and encode it once for the registry path.
+  const packageName = decodeURIComponent(routerSegment);
 
-  const registryRequest = Effect.tryPromise({
-    try: () =>
-      npmFetch.json(`/${packageName}`, {
-        headers: {
-          Accept: REGISTRY_METADATA_ACCEPT,
-        },
-      }),
-    catch: registryRequestError,
-  });
+  const registryRequest = getRegistryJson(`/${encodeURIComponent(packageName)}`, {
+    accept: REGISTRY_METADATA_ACCEPT,
+  }).pipe(Effect.mapError(registryRequestError));
 
   const packageMetadata = Effect.gen(function* () {
     const response = yield* registryRequest;
@@ -37,5 +37,5 @@ export default defineEventHandler(async (event) => {
     return toPackageMetadata(decoded);
   });
 
-  return Effect.runPromise(packageMetadata);
+  return Effect.runPromise(packageMetadata.pipe(Effect.provide(FetchHttpClient.layer)));
 });

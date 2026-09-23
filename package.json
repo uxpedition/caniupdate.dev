@@ -4,9 +4,10 @@
   "type": "module",
   "scripts": {
     "build": "nuxt build",
-    "dev": "nuxt dev --host 0.0.0.0 --port 5173",
+    "db:migrate:local": "wrangler d1 migrations apply BRIEFINGS_DB --local --config wrangler.jsonc --persist-to .wrangler/state",
+    "dev": "wrangler d1 migrations apply BRIEFINGS_DB --local --config wrangler.jsonc --persist-to .wrangler/state && nuxt dev --host 0.0.0.0 --port 5173",
     "generate": "nuxt generate",
-    "preview": "nuxt preview",
+    "preview": "wrangler dev --local --config .output/server/wrangler.json --persist-to .wrangler/state --ip 0.0.0.0 --port 5173",
     "prepare": "nuxt prepare && lefthook install",
     "postinstall": "nuxt prepare",
     "commitlint": "commitlint",
@@ -20,15 +21,13 @@
   },
   "dependencies": {
     "@effect/ai-openai-compat": "4.0.0-rc.115",
-    "@libsql/client": "^0.18.0",
     "@lucide/vue": "^1.47.0",
     "@nuxt/fonts": "^0.14.0",
     "@tanstack/vue-query": "^5.102.8",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
-    "effect": "^4.0.0-rc.115",
+    "effect": "4.0.0-rc.115",
     "h3": "^2.0.1-rc.32",
-    "npm-registry-fetch": "^20.0.1",
     "nuxt": "^4.5.2",
     "reka-ui": "^2.10.4",
     "tar-stream": "^3.2.1",
@@ -36,19 +35,21 @@
     "vue-router": "^5.3.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20260922.1",
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.20.2",
-    "@types/npm-registry-fetch": "^8.0.9",
     "lefthook": "^2.1.14",
+    "miniflare": "5.20260921.0-alpha",
     "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0",
     "oxlint-tsgolint": "^7.0.2001",
     "tailwindcss": "^4.3.3",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript": "6.0.3",
     "vitest": "^5.0.1",
-    "vue-tsc": "^3.3.11"
+    "vue-tsc": "^3.3.11",
+    "wrangler": "4.136.1"
   },
   "devEngines": {
     "packageManager": {
@@ -57,5 +58,8 @@
       "onFail": "ignore"
     }
   },
-  "packageManager": "nub@0.8.3"
+  "packageManager": "nub@0.8.3",
+  "patchedDependencies": {
+    "effect@4.0.0-rc.115": "patches/effect@4.0.0-rc.115.patch"
+  }
 }

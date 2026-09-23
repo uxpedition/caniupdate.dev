@@ -68,7 +68,8 @@ function normalizeSafeTarballUrl(url: string): string {
 }
 
 async function downloadTarball(url: string, signal: AbortSignal): Promise<Buffer> {
-  const response = await fetch(normalizeSafeTarballUrl(url), { signal, redirect: 'error' });
+  // workerd supports manual redirects; the status check below rejects them without following Location.
+  const response = await fetch(normalizeSafeTarballUrl(url), { signal, redirect: 'manual' });
   if (!response.ok || !response.body) {
     await response.body?.cancel();
     throw new Error('Tarball request failed');

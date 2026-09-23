@@ -1,8 +1,10 @@
 import { Data, Effect, Schema, SchemaTransformation } from 'effect';
+import { FetchHttpClient } from 'effect/unstable/http';
 import { defineEventHandler, getValidatedQuery } from 'h3';
-import npmFetch from 'npm-registry-fetch';
 
 import { RegistryPackagesSearchResponseSchema, toSearchResults } from '#shared/search.defs';
+
+import { getRegistryJson } from '../../utils/npmRegistry';
 
 const EndpointQueryParamsSchema = Schema.Struct({
   text: Schema.Trim.pipe(Schema.decode(SchemaTransformation.toLowerCase())).check(
@@ -27,13 +29,7 @@ export default defineEventHandler(async (event) => {
     Schema.decodeUnknownSync(EndpointQueryParamsSchema)(queryParams, { errors: 'all' }),
   );
 
-  const registryRequest = Effect.tryPromise({
-    try: () =>
-      npmFetch.json('/-/v1/search', {
-        query,
-      }),
-    catch: registryRequestError,
-  });
+  const registryRequest = getRegistryJson('/-/v1/search', { query }).pipe(Effect.mapError(registryRequestError));
 
   const searchResults = Effect.gen(function* () {
     const response = yield* registryRequest;
@@ -45,5 +41,5 @@ export default defineEventHandler(async (event) => {
     return toSearchResults(decoded);
   });
 
-  return Effect.runPromise(searchResults);
+  return Effect.runPromise(searchResults.pipe(Effect.provide(FetchHttpClient.layer)));
 });
