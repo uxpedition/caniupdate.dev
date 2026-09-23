@@ -3,7 +3,7 @@ import { posix } from 'node:path';
 import { promisify } from 'node:util';
 import { gunzip } from 'node:zlib';
 
-import { Cache, Data, Duration, Effect, Exit } from 'effect';
+import { Effect } from 'effect';
 import { extract, type Header } from 'tar-stream';
 
 import type { RegistryVersionManifest } from '../../shared/package.defs';
@@ -16,19 +16,9 @@ const MAX_ENTRIES = 10_000;
 const MAX_CHANGELOG_BYTES = 256 * 1024;
 const MAX_CHANGELOG_TOTAL_BYTES = 1024 * 1024;
 const TIMEOUT_MS = 10_000;
-const INSPECTION_VERSION = 'tarball-inspection-v1';
 const CHANGELOG_NAME = /^(changelog|changes|history)(\.(md|markdown|txt|rst))?$/i;
 
-type CachedTarball = Omit<PackageTarball, 'url'>;
-
-type TarballCacheKeyFields = {
-  readonly url: string;
-  readonly verification: string;
-  readonly verificationKind: 'integrity' | 'shasum';
-  readonly inspectionVersion: string;
-};
-
-class TarballCacheKey extends Data.Class<TarballCacheKeyFields> {}
+type InspectedTarball = Omit<PackageTarball, 'url'>;
 
 function verifyIntegrity(body: Buffer, dist: Pick<RegistryVersionManifest['dist'], 'integrity' | 'shasum'>) {
   if (dist.integrity !== undefined) {
@@ -243,29 +233,19 @@ const unavailableTarball = (url: string, cause: unknown): PackageTarball => ({
   changelogs: [],
 });
 
-const inspectCachedTarball = (key: TarballCacheKey) =>
+const inspectPackageTarball = (
+  url: string,
+  dist: RegistryVersionManifest['dist'],
+): Effect.Effect<InspectedTarball, unknown> =>
   Effect.tryPromise({
-    try: async (signal): Promise<CachedTarball> => {
-      const body = await downloadTarball(key.url, signal);
-      verifyIntegrity(
-        body,
-        key.verificationKind === 'integrity'
-          ? { integrity: key.verification, shasum: '' }
-          : { shasum: key.verification },
-      );
+    try: async (signal): Promise<InspectedTarball> => {
+      const body = await downloadTarball(url, signal);
+      verifyIntegrity(body, dist);
       const result = await inspectTarball(body, signal);
       return { status: result.reasons.length ? 'partial' : 'available', ...result };
     },
     catch: (cause) => cause,
   }).pipe(Effect.timeout(TIMEOUT_MS));
-
-const tarballCache = Effect.runSync(
-  Cache.makeWith<TarballCacheKey, CachedTarball, unknown>(inspectCachedTarball, {
-    capacity: 16,
-    timeToLive: (exit) =>
-      Exit.isSuccess(exit) && exit.value.status !== 'unavailable' ? Duration.hours(24) : Duration.zero,
-  }),
-);
 
 export const getPackageTarball = (manifest: RegistryVersionManifest): Effect.Effect<PackageTarball> => {
   const url = manifest.dist.tarball;
@@ -275,14 +255,7 @@ export const getPackageTarball = (manifest: RegistryVersionManifest): Effect.Eff
   } catch (cause) {
     return Effect.succeed(unavailableTarball(url, cause));
   }
-  const verificationKind = manifest.dist.integrity === undefined ? 'shasum' : 'integrity';
-  const key = new TarballCacheKey({
-    url: normalizedUrl,
-    verification: manifest.dist.integrity ?? manifest.dist.shasum,
-    verificationKind,
-    inspectionVersion: INSPECTION_VERSION,
-  });
-  return Cache.get(tarballCache, key).pipe(
+  return inspectPackageTarball(normalizedUrl, manifest.dist).pipe(
     Effect.map((result) => ({ ...result, url })),
     Effect.catch((cause) => Effect.succeed(unavailableTarball(url, cause))),
   );

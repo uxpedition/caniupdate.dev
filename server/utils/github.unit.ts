@@ -1,22 +1,8 @@
 import { Effect } from 'effect';
 import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/unstable/http';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import type * as Github from './github';
-
-let getGithubFile: typeof Github.getGithubFile;
-let listGithubDirectory: typeof Github.listGithubDirectory;
-let listGithubReleases: typeof Github.listGithubReleases;
-
-beforeEach(async () => {
-  // Reload the module boundary so each test owns fresh process-local caches.
-  vi.resetModules();
-  ({ getGithubFile, listGithubDirectory, listGithubReleases } = await import('./github'));
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
+import { getGithubFile, listGithubDirectory, listGithubReleases } from './github';
 
 const RELEASES_PER_PAGE = 100;
 const MAX_BODY_BYTES = 1_048_576;
@@ -77,59 +63,6 @@ const releasesResponse = (body: unknown, headers?: Record<string, string>) =>
 const errorResponse = (status: number) => Response.json({ message: 'failure' }, { status });
 
 describe('listGithubReleases', () => {
-  it('coalesces concurrent requests and reuses complete results for the same credential', async () => {
-    const concurrent = runWithStub(
-      Effect.all([listGithubReleases(repository), listGithubReleases(repository)], { concurrency: 2 }),
-      [releasesResponse([release(1)])],
-    );
-
-    await expect(concurrent.result).resolves.toEqual([
-      { releases: [release(1)], complete: true },
-      { releases: [release(1)], complete: true },
-    ]);
-    expect(concurrent.calls).toHaveLength(1);
-
-    const cached = runWithStub(listGithubReleases(repository), [releasesResponse([release(2)])]);
-    await expect(cached.result).resolves.toEqual({ releases: [release(1)], complete: true });
-    expect(cached.calls).toEqual([]);
-  });
-
-  it('refreshes mutable release evidence after five minutes', async () => {
-    vi.useFakeTimers();
-    const initial = runWithStub(listGithubReleases(repository), [releasesResponse([release(1)])]);
-    await expect(initial.result).resolves.toEqual({ releases: [release(1)], complete: true });
-
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
-
-    const refreshed = runWithStub(listGithubReleases(repository), [releasesResponse([release(2)])]);
-    await expect(refreshed.result).resolves.toEqual({ releases: [release(2)], complete: true });
-    expect(refreshed.calls).toHaveLength(1);
-  });
-
-  it('does not share release evidence across credential identities', async () => {
-    const first = runWithStub(listGithubReleases(repository, 'token-a'), [releasesResponse([release(1)])]);
-    await expect(first.result).resolves.toEqual({ releases: [release(1)], complete: true });
-
-    const second = runWithStub(listGithubReleases(repository, 'token-b'), [releasesResponse([release(2)])]);
-    await expect(second.result).resolves.toEqual({ releases: [release(2)], complete: true });
-    expect(first.calls).toHaveLength(1);
-    expect(second.calls).toHaveLength(1);
-  });
-
-  it('does not cache incomplete pagination and retries the repository listing', async () => {
-    const first = runWithStub(listGithubReleases(repository), [
-      releasesResponse(fullReleasePage(0), {
-        link: '<https://evil.example/releases?page=2>; rel="next"',
-      }),
-      errorResponse(503),
-    ]);
-    await expect(first.result).resolves.toMatchObject({ releases: fullReleasePage(0), complete: false });
-
-    const retry = runWithStub(listGithubReleases(repository), [releasesResponse([release(100)])]);
-    await expect(retry.result).resolves.toEqual({ releases: [release(100)], complete: true });
-    expect(retry.calls).toHaveLength(1);
-  });
-
   it('requests the fixed releases endpoint with GitHub headers and completes an empty page', async () => {
     const { calls, result } = runWithStub(listGithubReleases(repository, 'ghp_secret'), [releasesResponse([])]);
 
@@ -144,10 +77,6 @@ describe('listGithubReleases', () => {
         authorization: 'Bearer ghp_secret',
       },
     ]);
-
-    const cached = runWithStub(listGithubReleases(repository, 'ghp_secret'), [releasesResponse([release(1)])]);
-    await expect(cached.result).resolves.toEqual({ releases: [], complete: true });
-    expect(cached.calls).toEqual([]);
   });
 
   it('uses fixed numbered pages rather than a Link URL and stops on a short page', async () => {
@@ -225,45 +154,6 @@ describe('listGithubReleases', () => {
 });
 
 describe('listGithubDirectory', () => {
-  it('reuses a complete directory listing only for the same path, ref, and credential', async () => {
-    const directory = [{ name: 'CHANGELOG.md', path: 'CHANGELOG.md', type: 'file' }];
-    const first = runWithStub(listGithubDirectory(repository, '', 'release/v1', 'token-a'), [
-      releasesResponse(directory),
-    ]);
-    await expect(first.result).resolves.toEqual(directory);
-
-    const differentRef = runWithStub(listGithubDirectory(repository, '', 'release/v2', 'token-a'), [
-      releasesResponse([{ name: 'CHANGES.md', path: 'CHANGES.md', type: 'file' }]),
-    ]);
-    await expect(differentRef.result).resolves.toEqual([{ name: 'CHANGES.md', path: 'CHANGES.md', type: 'file' }]);
-
-    const differentCredential = runWithStub(listGithubDirectory(repository, '', 'release/v1', 'token-b'), [
-      releasesResponse([{ name: 'HISTORY.md', path: 'HISTORY.md', type: 'file' }]),
-    ]);
-    await expect(differentCredential.result).resolves.toEqual([
-      { name: 'HISTORY.md', path: 'HISTORY.md', type: 'file' },
-    ]);
-
-    const cached = runWithStub(listGithubDirectory(repository, '', 'release/v1', 'token-a'), [
-      releasesResponse([{ name: 'new.md', path: 'new.md', type: 'file' }]),
-    ]);
-    await expect(cached.result).resolves.toEqual(directory);
-    expect(cached.calls).toEqual([]);
-  });
-
-  it('does not cache malformed directory evidence', async () => {
-    const first = runWithStub(listGithubDirectory(repository, '', 'v1.0.0'), [
-      releasesResponse({ name: 'CHANGELOG.md', path: 'CHANGELOG.md', type: 'file' }),
-    ]);
-    await expect(first.result).rejects.toMatchObject({ _tag: 'SchemaError' });
-
-    const retry = runWithStub(listGithubDirectory(repository, '', 'v1.0.0'), [
-      releasesResponse([{ name: 'CHANGELOG.md', path: 'CHANGELOG.md', type: 'file' }]),
-    ]);
-    await expect(retry.result).resolves.toEqual([{ name: 'CHANGELOG.md', path: 'CHANGELOG.md', type: 'file' }]);
-    expect(retry.calls).toHaveLength(1);
-  });
-
   it('lists an explicitly referenced encoded directory with JSON headers', async () => {
     const { calls, result } = runWithStub(listGithubDirectory(repository, 'docs/release notes', 'release/v1.2.3'), [
       releasesResponse([
@@ -293,61 +183,6 @@ describe('listGithubDirectory', () => {
 });
 
 describe('getGithubFile', () => {
-  it('keeps SHA-pinned contents for 24 hours but refreshes mutable refs after five minutes', async () => {
-    vi.useFakeTimers();
-    const commit = 'a'.repeat(40);
-    const pinned = runWithStub(getGithubFile(repository, 'CHANGELOG.md', commit), [new Response('pinned-v1')]);
-    await expect(pinned.result).resolves.toBe('pinned-v1');
-
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
-    const stillPinned = runWithStub(getGithubFile(repository, 'CHANGELOG.md', commit), [new Response('pinned-v2')]);
-    await expect(stillPinned.result).resolves.toBe('pinned-v1');
-    expect(stillPinned.calls).toEqual([]);
-
-    const mutable = runWithStub(getGithubFile(repository, 'CHANGELOG.md', 'main', 'token-a'), [
-      new Response('main-v1'),
-    ]);
-    await expect(mutable.result).resolves.toBe('main-v1');
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
-    const refreshed = runWithStub(getGithubFile(repository, 'CHANGELOG.md', 'main', 'token-a'), [
-      new Response('main-v2'),
-    ]);
-    await expect(refreshed.result).resolves.toBe('main-v2');
-    expect(refreshed.calls).toHaveLength(1);
-  });
-
-  it('does not share raw contents across refs or credential identities', async () => {
-    const first = runWithStub(getGithubFile(repository, 'CHANGELOG.md', 'release/v1', 'token-a'), [
-      new Response('v1-a'),
-    ]);
-    await expect(first.result).resolves.toBe('v1-a');
-
-    const differentRef = runWithStub(getGithubFile(repository, 'CHANGELOG.md', 'release/v2', 'token-a'), [
-      new Response('v2-a'),
-    ]);
-    await expect(differentRef.result).resolves.toBe('v2-a');
-
-    const differentCredential = runWithStub(getGithubFile(repository, 'CHANGELOG.md', 'release/v1', 'token-b'), [
-      new Response('v1-b'),
-    ]);
-    await expect(differentCredential.result).resolves.toBe('v1-b');
-
-    const cached = runWithStub(getGithubFile(repository, 'CHANGELOG.md', 'release/v1', 'token-a'), [
-      new Response('new'),
-    ]);
-    await expect(cached.result).resolves.toBe('v1-a');
-    expect(cached.calls).toEqual([]);
-  });
-
-  it('does not cache HTTP failures and retries raw contents', async () => {
-    const first = runWithStub(getGithubFile(repository, 'CHANGELOG.md', 'v1.0.0'), [errorResponse(503)]);
-    await expect(first.result).rejects.toMatchObject({ _tag: 'HttpClientError' });
-
-    const retry = runWithStub(getGithubFile(repository, 'CHANGELOG.md', 'v1.0.0'), [new Response('recovered')]);
-    await expect(retry.result).resolves.toBe('recovered');
-    expect(retry.calls).toHaveLength(1);
-  });
-
   it('gets raw text at the encoded path and explicit ref without using the default branch', async () => {
     const { calls, result } = runWithStub(getGithubFile(repository, 'docs/CHANGELOG release.md', 'release/v1.2.3'), [
       new Response('# Release notes\n', { status: 200 }),

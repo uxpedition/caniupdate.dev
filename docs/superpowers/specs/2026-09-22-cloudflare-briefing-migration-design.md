@@ -1,7 +1,7 @@
 # Cloudflare deployment and durable briefing generation
 
 **Date:** 2026-09-22  
-**Status:** Approved design; milestone 1 implemented and verified locally, with independent spec/quality review passed. Later milestone implementation and production deployment require their own approval.  
+**Status:** Approved design; milestone 1 implemented and verified locally, with independent spec/quality review passed. Later milestone implementation and production deployment require their own approval. **Revised 2026-09-23:** the user rejected the Effect dependency patch and directed removal of the current process-local caches instead, with a Cloudflare-native replacement deferred. See §12; the M1 verification record predates that revision.  
 **First implementation plan:** `docs/superpowers/plans/2026-09-22-cloudflare-compatibility.md`
 
 ## 1. Goal and decision record
@@ -50,7 +50,7 @@ Optional raw evidence, not prerequisites for understanding this design: `/tmp/ca
 
 ### Existing protection
 
-`server/utils/packageBriefing.ts` hashes `JSON.stringify(buildBriefingEvidence(input))`, looks up the persistent result before consulting provider configuration, and shares in-flight inference with a process-local Effect cache. `packageBriefingStore.ts` preserves the first successful result for an evidence hash. Failed store reads must prevent inference; failed writes must not be presented as durable success.
+`server/utils/packageBriefing.ts` hashes `JSON.stringify(buildBriefingEvidence(input))`, looks up the persistent result before consulting provider configuration, and calls the provider directly. Inference is no longer coalesced: the process-local in-flight cache was removed on 2026-09-23, so two concurrent misses for the same evidence hash may each generate — even inside one isolate. `packageBriefingStore.ts` preserves the first successful result for an evidence hash. Failed store reads must prevent inference; failed writes must not be presented as durable success.
 
 The persistent table is currently:
 
@@ -73,7 +73,7 @@ Persisted results can contain legacy coverage bullets, so the existing `Availabl
 5. The existing provider validation, citation rules, secret handling, response-size bounds, and 75-second inference deadline remain intact.
 6. One fresh regeneration for invalid provider output is the existing maximum within that deadline. Queue retries must not silently multiply that allowance.
 7. Facts continue to render independently of AI availability. No SSR inference, dependency execution, package installation, or tarball extraction to disk.
-8. Global correctness must not depend on isolate-local Effect caches. They remain performance optimizations only.
+8. Global correctness must not depend on isolate-local Effect caches. As of the 2026-09-23 revision no process-local cache remains at all: provider evidence is fetched per request, and only a request-local manifest memoization inside a single request survives. D1 resolves persisted first-writer-wins for a briefing hash; it is not a spend-coalescing mechanism.
 9. Preserve already-generated local results during the storage migration; never delete `.data/briefings.db` or silently discard history.
 
 ## 4. Target topology and boundaries
@@ -125,7 +125,7 @@ sha256(JSON.stringify(buildBriefingEvidence(input)))
 
 Do not include a job id, time, prompt version, model, or provider credential in that hash. Preserve JSON serialization and ordering; a storage migration must not inadvertently change every key.
 
-The initial HTTP request still performs evidence collection before it knows the hash. Queueing inference does not make that collection free or instantaneous. Existing evidence caches retain their current semantics. A separate shared evidence-cache project is out of scope.
+The initial HTTP request still performs evidence collection before it knows the hash. Queueing inference does not make that collection free or instantaneous. ~~Existing evidence caches retain their current semantics. A separate shared evidence-cache project is out of scope.~~ **Revised 2026-09-23:** the process-local evidence caches were removed rather than carried forward; evidence is collected per request, and a deployment-native cache (for example Cloudflare's Cache API) is a separate, later, explicitly approved project. No KV store or new cache service is introduced in its place.
 
 The exact packet is stored durably with the job before enqueue acknowledgment. The consumer uses that packet, not a new collection that might have a different hash. Queue messages contain the hash and generation identifier; they need not duplicate the evidence or carry secrets. The service recomputes/validates packet identity at its internal boundary.
 
@@ -257,9 +257,21 @@ No runtime behaviour or existing documentation contract is superseded by this dr
 
 ### M1 runtime findings
 
-Actual application verification required two narrow compatibility changes: reject redirects using `manual` plus zero-follow/non-2xx handling because `workerd` does not implement `redirect: 'error'`; and patch the pinned Effect Cache's pending waiters to bridge their Exit through a native promise so each HTTP request retains its own runtime context. Do not disable cross-request promise safety. Real concurrent application requests and a red/green workerd regression cover the cache fix; real tarball inspection and a provider redirect fixture cover the transport change. Neither change introduces a fallback store, hidden unavailable result, queue, or new client protocol.
+Actual application verification required two narrow compatibility changes: reject redirects using `manual` plus zero-follow/non-2xx handling because `workerd` does not implement `redirect: 'error'`; and, at the time, patch the pinned Effect Cache's pending waiters to bridge their Exit through a native promise so each HTTP request retained its own runtime context. Real tarball inspection and a provider redirect fixture cover the transport change, which stands. The cache patch is **rejected and removed** as of 2026-09-23 (see the revision record below). Neither change introduces a fallback store, hidden unavailable result, queue, or new client protocol.
 
 The TypeScript facade was replaced by the same underlying compiler, pinned directly at 6.0.3, after a live Vue diagnostic probe demonstrated a broken cold-start watcher. These findings and the implementation-specific type boundaries are recorded in the M1 plan. The §11 storage wording now explicitly preserves §3's distinction between preventing inference after a failed read and refusing durable success after a failed write.
+
+### Revision: process-local caches and the Effect patch removed (2026-09-23)
+
+A user-directed revision replaced the M1 caching and patch decisions.
+
+- The `effect@4.0.0-rc.115` patch is rejected. `patchedDependencies` and `patches/effect@4.0.0-rc.115.patch` are gone, and the exact published Effect RC is used unpatched. Cross-request promise safety stays enabled. The `workerCache` probe and its real-`workerd` fixture were removed with the patched cache they covered.
+- Every process-local Effect `Cache` is removed: npm manifest, OSV comparison, Bundlephobia measurement, GitHub release/directory/changelog reads, tarball inspection, and the briefing inference runtime. Briefing in-flight coalescing is removed with them.
+- Provider evidence is fetched per request; nothing is shared across requests, isolates, or restarts. Only a request-local `Effect.cached` manifest memoization inside a single request remains.
+- No KV store, cache service, or new dependency replaces the removed caches. A deployment-native provider cache (for example Cloudflare's Cache API) is deliberately deferred to a later, separately approved change.
+- Unchanged: the exact evidence hash, the read-before-configuration D1 lookup, no TTL or model/prompt/credential invalidation, first-writer-wins persistence, and every provider URL/redirect/credential control, archive integrity/path/size bound, timeout, error/partial semantic, and the no-retry rule. The revision removes caching only; it adds no retries and weakens no validation.
+- Consequence: a concurrent D1 miss can produce independent provider calls and independent spend even inside one isolate. D1 decides which stored result is canonical, not how much is spent.
+- Re-verified locally: 177 tests across 23 files, type checking, lint (zero errors; eight style warnings), and the Cloudflare build passed. Four concurrent built-Worker requests independently reached the gated local provider and returned the same canonical D1 result, with one stored row. Repeat and configuration-free restart requests reused it without another provider call. Real minimist tarball inspection returned 21/24 files. No paid provider call or remote deployment occurred; the earlier M1 execution record remains historical.
 
 ## 13. References
 

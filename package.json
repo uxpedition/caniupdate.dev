@@ -58,8 +58,5 @@
       "onFail": "ignore"
     }
   },
-  "packageManager": "nub@0.8.3",
-  "patchedDependencies": {
-    "effect@4.0.0-rc.115": "patches/effect@4.0.0-rc.115.patch"
-  }
+  "packageManager": "nub@0.8.3"
 }

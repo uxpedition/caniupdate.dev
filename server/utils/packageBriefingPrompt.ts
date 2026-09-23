@@ -1,6 +1,4 @@
 // Provider-facing instructions and output contract for fresh generations.
-export const PROMPT_VERSION = 'package-briefing-v6';
-
 export const OUTPUT_SHAPE_EXAMPLE = JSON.stringify({
   bullets: [
     {

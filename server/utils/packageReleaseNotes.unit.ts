@@ -1,20 +1,8 @@
 import { Effect } from 'effect';
 import { HttpClient, HttpClientResponse } from 'effect/unstable/http';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import type * as PackageReleaseNotes from './packageReleaseNotes';
-
-let getPackageReleaseNotes: typeof PackageReleaseNotes.getPackageReleaseNotes;
-
-beforeEach(async () => {
-  // Reload the module boundary so each test owns fresh process-local caches.
-  vi.resetModules();
-  ({ getPackageReleaseNotes } = await import('./packageReleaseNotes'));
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
+import { getPackageReleaseNotes } from './packageReleaseNotes';
 
 type ManifestOptions = {
   repository?: string | { type?: string; url: string; directory?: string } | null;
@@ -85,21 +73,6 @@ function releaseAndChangelogResponses(releases: unknown, changelog: string | Res
 }
 
 describe('getPackageReleaseNotes', () => {
-  it('reuses complete GitHub evidence across repeated comparisons', async () => {
-    const from = manifest('1.0.0', { repository: 'https://github.com/acme/widgets' });
-    const to = manifest('1.2.0', {
-      repository: 'https://github.com/acme/widgets',
-      gitHead: 'a'.repeat(40),
-    });
-    const first = run(from, to, releaseAndChangelogResponses([release('v1.1.0')]));
-    const expected = await first.result;
-    expect(first.calls).toHaveLength(3);
-
-    const second = run(from, to, () => new Response('unexpected cache miss', { status: 500 }));
-    await expect(second.result).resolves.toEqual(expected);
-    expect(second.calls).toEqual([]);
-  });
-
   it('matches the semver interval, keeps prereleases, excludes drafts, and reads a gitHead-pinned changelog', async () => {
     const { calls, result } = run(
       manifest('1.0.0', {

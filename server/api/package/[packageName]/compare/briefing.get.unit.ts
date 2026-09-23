@@ -6,9 +6,8 @@ import { mockEvent } from 'h3';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installBriefingSchema, openBriefingD1, type BriefingD1 } from '../../../../../test/helpers/briefingD1';
-import type endpointHandler from './briefing.get';
+import handler from './briefing.get';
 
-let handler: typeof endpointHandler;
 let directory: string;
 let runtime: BriefingD1 | undefined;
 
@@ -71,9 +70,6 @@ describe('AI briefing endpoint', () => {
     vi.stubEnv('AI_BRIEFING_ENDPOINT', 'https://briefing.example/v1/chat/completions');
     vi.stubEnv('AI_BRIEFING_API_KEY', 'test-only-key');
     vi.stubEnv('AI_BRIEFING_MODEL', 'test-model');
-    // A static import cannot drop module-level Effect caches, so each test reloads the boundary explicitly.
-    vi.resetModules();
-    handler = (await import('./briefing.get')).default;
     registry.json.mockReset();
     fetchMock.mockReset();
     // Evidence providers (tarballs, OSV, Bundlephobia, GitHub) answer as unavailable unless a test overrides them;

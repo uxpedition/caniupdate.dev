@@ -1,9 +1,7 @@
 import { mockEvent } from 'h3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type endpointHandler from './index.get';
-
-let handler: typeof endpointHandler;
+import handler from './index.get';
 
 const registry = { json: vi.fn<(path: string) => Promise<unknown>>() };
 
@@ -23,10 +21,7 @@ function startRequest(from: string, to: string, packageName = 'minimist') {
 
 const fetchMock = vi.fn<typeof fetch>();
 
-beforeEach(async () => {
-  // Reload the module boundary so each test owns fresh process-local caches.
-  vi.resetModules();
-  handler = (await import('./index.get')).default;
+beforeEach(() => {
   registry.json.mockReset();
   fetchMock.mockReset();
   // Registry manifests are served from the fetch boundary; tarballs (`/-/`) and evidence providers stay with fetchMock.

@@ -2,7 +2,32 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
-**Status:** Milestone 1 implemented and verified locally; independent spec and quality reviews passed. No production deployment occurred. Later queue/client milestones and production rollout still require their own approval.
+**Status:** Milestone 1 implemented and verified locally; independent spec and quality reviews passed. No production deployment occurred. Later queue/client milestones and production rollout still require their own approval. **Revised 2026-09-23:** the user rejected the Effect dependency patch and directed removal of the process-local caches instead; see the revision section below before following any step in this plan.
+
+## Revision — process-local caches and the Effect patch removed (2026-09-23)
+
+A user-directed revision supersedes the caching and patch prescriptions recorded below. Where a step still describes a process-local cache, a binding-scoped inference runtime, a cache-capacity/TTL setting, or the retained Effect patch, that prescription is **superseded**; the step is preserved as the record of what was executed before the revision.
+
+Decisions:
+
+- The `effect@4.0.0-rc.115` patch is rejected. `patchedDependencies` and `patches/effect@4.0.0-rc.115.patch` are removed, and the exact published Effect RC is used unpatched. Cross-request promise safety stays enabled.
+- Every process-local Effect `Cache` is removed: npm manifest, OSV comparison, Bundlephobia measurement, GitHub release listing/directory listing/changelog text, tarball inspection, and the briefing inference runtime. Briefing in-flight coalescing is removed with them.
+- The `workerCache` probe and its real-`workerd` fixture (`server/utils/workerCache.unit.ts`, `test/fixtures/workerCache.ts`) are removed; they existed only to cover the patched shared-`Cache` behaviour.
+- Provider evidence is fetched per request. Nothing is shared across requests, isolates, or restarts.
+- Request-local `Effect.cached` manifest memoization inside a single request remains: each comparison side's manifest is fetched once and shared across that request's branches. The sides fetch independently even for equal version strings; nothing is shared across requests.
+- No KV store, cache service, or new dependency replaces the removed caches. A deployment-native cache (for example Cloudflare's Cache API) is deliberately deferred to a later, separately approved change.
+
+Unchanged contracts:
+
+- The D1 briefing store keeps its exact semantics: key is SHA-256 of `JSON.stringify(buildBriefingEvidence(input))`, the persistent read happens before provider configuration, there is no TTL or model/prompt/credential invalidation, and the first validated stored result for a hash is canonical.
+- All provider URL/redirect/credential controls, archive integrity/path/size bounds, request timeouts, error and partial-result semantics, and the no-retry rule are unchanged. The revision removes caching only; it adds no retries and weakens no validation.
+
+Consequences:
+
+- A concurrent D1 miss for the same evidence hash can produce independent provider calls and independent spend even inside one isolate. D1 resolves only which persisted result becomes canonical (first writer wins); it is not a spend-coalescing mechanism.
+- Each request now waits for its own upstream calls, so warm or overlapping comparisons no longer reuse earlier provider evidence.
+
+Revision verification (2026-09-23): the frozen lockfile installed the original dependency versions without the Effect patch. The revised tree passed 177 tests across 23 files, type checking, lint (zero errors; eight style warnings), and the Cloudflare build. Four concurrent requests to the actual built Worker reached a gated local provider independently, returned HTTP 200, and all received the same first-writer D1 result; one evidence hash produced one stored row. Repeating the request and restarting the Worker without provider configuration reused that result with the provider count still four. The measurements route inspected the real minimist tarballs (21 and 24 files). Only the paid-provider boundary was synthetic; no paid call, remote resource, or production deployment was used.
 
 **Goal:** Run the real application under local Cloudflare `workerd`, with public npm transport and D1 briefing persistence, while retaining Nuxt HMR and all current briefing/evidence contracts.
 
@@ -30,7 +55,7 @@ Additional execution rules:
 - Planning is on `main`; implementation defaults to a dedicated worktree after approval, unless the user explicitly chooses otherwise. Do not change branch while only reviewing these documents.
 - Use `nub` and `nub.lock`, not npm/pnpm lockfiles. Run Nuxt under plain Node (`nub run --node ...`); Node 26 is already pinned by `.node-version`.
 - Unit tests stub external HTTP. D1 tests use actual local Miniflare databases in isolated temporary directories. Dispose runtimes and restore globals/timers even on failure.
-- Request bindings never become a mutable global `currentDatabase`. Scope the existing in-memory inference caches to the D1 binding so different databases cannot share results or writes.
+- Request bindings never become a mutable global `currentDatabase`. ~~Scope the existing in-memory inference caches to the D1 binding so different databases cannot share results or writes.~~ **Superseded 2026-09-23:** the in-memory inference caches were removed, so no cross-binding cache remains to scope; the request binding still never becomes a mutable global.
 - Missing binding, missing schema, corrupt persisted JSON, and write failure remain failures, not cache misses.
 - No no-op native-module aliases, fake tarball fallback, or compatibility shims that suppress failures. Keep `nodejs_compat` for supported Node APIs and verify their actual behaviour.
 - Run format/lint/type checks once after integrated changes; agents do not run project-wide validation concurrently. Targeted behavioural tests belong to the owning task. A conventional commit is made only after each task's gate/review; never commit a half-migrated API/storage boundary.
@@ -41,7 +66,7 @@ Additional execution rules:
 The actual application gate exposed two Worker incompatibilities, not ordinary upstream failures:
 
 - `workerd` rejects `fetch`'s `redirect: 'error'`. Tarball, GitHub, and provider requests use `manual` with their existing non-2xx rejection and explicit zero-follow policy. Real tarballs and a redirect fixture verified inspection and no target contact.
-- Effect 4.0.0-rc.115's pending `Cache` waiters use a fiber observer that loses the waiting request's context. Four concurrent application requests produced one 200 and three 500/hung responses. `patches/effect@4.0.0-rc.115.patch` bridges the shared pending Exit through a native promise while retaining cache/refcount semantics. Cross-request promise safety stays enabled. A real-workerd regression covers concurrent callers and initiating-caller cancellation; it fails against the original implementation. Existing Node/stubbed suites cannot expose this platform boundary, so the regression has its own suite and test-only Worker fixture.
+- Effect 4.0.0-rc.115's pending `Cache` waiters use a fiber observer that loses the waiting request's context. While a shared process-local `Cache` was in use, four concurrent application requests produced one 200 and three 500/hung responses. The original response was a dependency patch bridging the shared pending Exit through a native promise, covered by a real-`workerd` regression and a test-only Worker fixture. **Superseded 2026-09-23:** the user rejected the patch; the patch and the process-local caches that triggered this boundary were both removed, Effect is used unpatched, and the regression plus its fixture were deleted with the caches. This removes the trigger rather than re-verifying the revised tree.
 
 The Vite checker also failed on the one-line `@typescript/typescript6` facade and missed a deliberate Vue type error. Pinning `typescript@6.0.3`, the compiler that facade already loaded, restored cold-start diagnostics without a compiler/framework upgrade. The existing Nuxt Node type project now includes offline scripts and test helpers/fixtures. `shared/cloudflare.d.ts` types the request-bound D1 context across Nuxt's server and typed-route consumer projects without an unsafe assertion or runtime shim.
 
@@ -52,7 +77,7 @@ The copied storage constraint is clarified to match the original spec §3 contra
 | Task | Owns | Reviewable result |
 | --- | --- | --- |
 | 1 | npm transport, its three production callers, four existing registry-mocked suites, transport regression tests, registry dependencies | Registry paths work without the native-capable npm HTTP stack |
-| 2 | D1 store/inference cache integration, briefing route, old store plugin removal, D1 test harness, local Wrangler/Nitro config, local scripts and ignore rules | Existing briefing route backed only by real local D1, including safe failures |
+| 2 | D1 store integration and briefing route (the inference cache this row originally included was removed 2026-09-23), old store plugin removal, D1 test harness, local Wrangler/Nitro config, local scripts and ignore rules | Existing briefing route backed only by real local D1, including safe failures |
 | 3 | Read-only cache exporter and its regression tests | Existing successes can be imported without overwriting D1 winners or altering the source |
 | 4 | Actual production-runtime smoke verification; narrowly scoped runtime fixes only if evidenced | Real application executes in local `workerd`, not just Nuxt dev |
 | 5 | README/environment documentation and final validation | Reproducible supported workflow, accurate limitations, no obsolete local-store instructions |
@@ -68,8 +93,8 @@ Execution ownership refinement: Main owns all `package.json`, `nub.lock`, and `.
 - `test/helpers/briefingD1.ts` — actual Miniflare D1 harness, outside the application runtime graph.
 - `scripts/export-briefings.ts` and `scripts/export-briefings.unit.ts` — explicit offline migration of the old SQLite data, using Node's built-in SQLite.
 - `shared/cloudflare.d.ts` — ambient request-binding typing shared by Nuxt's server and typed-route consumer projects.
-- `patches/effect@4.0.0-rc.115.patch` — native pending-Exit promise bridge for workerd request contexts.
-- `server/utils/workerCache.unit.ts` and `test/fixtures/workerCache.ts` — deterministic real-workerd regression for the discovered shared-cache failure.
+- ~~`patches/effect@4.0.0-rc.115.patch` — native pending-Exit promise bridge for workerd request contexts.~~ **Removed 2026-09-23** with the process-local caches it supported.
+- ~~`server/utils/workerCache.unit.ts` and `test/fixtures/workerCache.ts` — deterministic real-workerd regression for the discovered shared-cache failure.~~ **Removed 2026-09-23** with the patched shared cache.
 
 ### Modified files
 
@@ -203,7 +228,7 @@ return Effect.runPromise(packageMetadata.pipe(Effect.provide(FetchHttpClient.lay
 
 Import the existing H3 `createError`, `FetchHttpClient`, and helper from `../../../utils/npmRegistry`. Validate a scoped package through the actual route in Task 4; do not double-encode `%2F`.
 
-In `packageComparisonFacts.ts` replace only the request body and add service acquisition at cache lookup:
+~~In `packageComparisonFacts.ts` replace only the request body and add service acquisition at cache lookup:~~ **Superseded 2026-09-23:** the request body replacement stands, but there is no cache lookup to acquire services at.
 
 ```ts
 const registryVersionManifestRequest = (packageName: string, version: string) =>
@@ -214,11 +239,11 @@ const registryVersionManifestRequest = (packageName: string, version: string) =>
     return yield* Schema.decodeUnknownEffect(RegistryVersionManifestSchema)(response, { errors: 'all' });
   }).pipe(Effect.mapError(registryRequestError));
 
-// Add inside the existing manifest Cache.makeWith options:
-requireServicesAt: 'lookup',
+~~// Add inside the existing manifest Cache.makeWith options:
+requireServicesAt: 'lookup',~~
 ```
 
-Keep manifest cache capacity 128, exact-version success TTL five minutes, and tags/ranges/failures TTL zero. Its new HTTP requirement must come from the current request's layer, not be captured while the module constructs the cache.
+~~Keep manifest cache capacity 128, exact-version success TTL five minutes, and tags/ranges/failures TTL zero. Its new HTTP requirement must come from the current request's layer, not be captured while the module constructs the cache.~~ **Superseded 2026-09-23:** the manifest cache and its `requireServicesAt: 'lookup'` option were removed. The registry request now acquires `HttpClient.HttpClient` from the current request's layer directly, and request-local `Effect.cached` memoization keeps one manifest fetch per request without sharing across requests.
 
 - [x] **Step 4: Update existing registry-mocked suites at the real HTTP boundary.**
 
@@ -324,7 +349,7 @@ export async function openBriefingD1(persistPath: string) {
 }
 ```
 
-Create one isolated temporary directory/runtime per test lifecycle, or per suite with explicit row resets and module-cache isolation. The persistence regression must dispose/reopen the **same directory**, while independent tests must not share it. Do not import this helper into production files.
+Create one isolated temporary directory/runtime per test lifecycle, or per suite with explicit row resets. ~~module-cache isolation~~ **Superseded 2026-09-23:** module-cache isolation is no longer needed because no process-local cache exists. The persistence regression must dispose/reopen the **same directory**, while independent tests must not share it. Do not import this helper into production files.
 
 - [x] **Step 2: Replace the old SQLite-lock implementation test with result-preservation tests against D1.**
 
@@ -427,7 +452,9 @@ No custom `SQLITE_BUSY` retry loop, global database connection, environment file
 
 - [x] **Step 4: Pass the database through the existing inference path without cross-binding cache leakage.**
 
-Before changing exported symbols, use LSP references and migrate every caller. Keep `requestBriefing`, evidence packing, `briefingCacheIdentity`, `BriefingCacheKey`, timeout, and validation unchanged. Move only the existing `requestRecords`, `rememberRequest`, and `briefingCache` definitions into a database-scoped factory:
+**Superseded 2026-09-23:** the database-scoped inference cache, the request-record map, the `WeakMap` runtime lookup, and `briefingCacheIdentity`/`BriefingCacheKey` were all removed. `getPackageBriefing` now reads D1, returns the stored result if present, reads provider configuration, calls `requestBriefing` directly, and saves the validated result — with no in-flight coalescing and no per-binding runtime. The cross-binding leakage this step guarded against cannot occur without an in-memory cache. Everything below is the pre-revision record.
+
+Before changing exported symbols, use LSP references and migrate every caller. ~~Keep `requestBriefing`, evidence packing, `briefingCacheIdentity`, `BriefingCacheKey`, timeout, and validation unchanged. Move only the existing `requestRecords`, `rememberRequest`, and `briefingCache` definitions into a database-scoped factory:~~
 
 ```ts
 function createBriefingRuntime(database: D1Database) {
@@ -472,7 +499,7 @@ function runtimeFor(database: D1Database) {
 }
 ```
 
-Apply these exact integration changes inside `getPackageBriefing`, preserving the rest of its current control flow:
+~~Apply these exact integration changes inside `getPackageBriefing`, preserving the rest of its current control flow:~~ **Superseded 2026-09-23** — see the step note above; the retained control flow is D1 read → configuration → provider → save, with no `Cache.get`.
 
 ```ts
 export function getPackageBriefing(
@@ -512,7 +539,7 @@ export function getPackageBriefing(
 }
 ```
 
-No provider call is moved before the persistent lookup. WeakMap scoping is necessary even when two bindings happen to use identical evidence/provider settings; D1 errors from one environment must not be hidden by another's in-memory cache.
+~~No provider call is moved before the persistent lookup. WeakMap scoping is necessary even when two bindings happen to use identical evidence/provider settings; D1 errors from one environment must not be hidden by another's in-memory cache.~~ **Superseded 2026-09-23:** the persistent lookup still precedes any provider call, and it now precedes provider configuration as well; with no in-memory cache there is no runtime to scope.
 
 At the route boundary:
 
@@ -526,7 +553,7 @@ Delete `server/plugins/briefingStore.ts` and all imports/usages of `closeBriefin
 
 - [x] **Step 5: Migrate the existing inference/route tests to real local D1.**
 
-In `packageBriefing.unit.ts` and `briefing.get.unit.ts`, replace `AI_BRIEFING_CACHE_PATH` and `closeStore` setup with `openBriefingD1(tempDirectory)`; retain module resets for process-local cache isolation. Open the runtime before stubbing HTTP or enabling fake timers. Unit helper callers explicitly supply `store.database`. Route test events supply:
+In `packageBriefing.unit.ts` and `briefing.get.unit.ts`, replace `AI_BRIEFING_CACHE_PATH` and `closeStore` setup with `openBriefingD1(tempDirectory)`. ~~retain module resets for process-local cache isolation~~ **Superseded 2026-09-23:** there is no process-local cache left to isolate, so module resets are no longer required for that purpose. Open the runtime before stubbing HTTP or enabling fake timers. Unit helper callers explicitly supply `store.database`. Route test events supply:
 
 ```ts
 event.context.cloudflare = { env: { BRIEFINGS_DB: store.database } };
@@ -544,7 +571,7 @@ await expect(runBriefing(input())).resolves.toEqual({
 expect(fetchMock).not.toHaveBeenCalled();
 ```
 
-Add a missing-binding test using `getPackageBriefing(input(), undefined)` with a configured provider and the same no-fetch assertion. Add one cross-binding regression: generate/store using binding A; open a separate empty database B, drop B's table, invoke the identical input using B; expect `cache-error` and no extra provider request, never A's cached success. This guards a plausible environment-isolation bug.
+Add a missing-binding test using `getPackageBriefing(input(), undefined)` with a configured provider and the same no-fetch assertion. Add one cross-binding regression: generate/store using binding A; open a separate empty database B, drop B's table, invoke the identical input using B; expect `cache-error` and no extra provider request, never A's cached success. ~~This guards a plausible environment-isolation bug.~~ **Superseded 2026-09-23:** the in-memory cache that could have leaked A's result into B is gone; the scenario now asserts that a broken binding fails closed on its own D1 state.
 
 For write failure, make the provider fixture drop `package_briefings` after its initial read but before returning valid output. Assert `cache-error`, not `available`; recreate the schema through the helper/migration for subsequent tests. Restore real timers before disposing Miniflare.
 
@@ -844,7 +871,7 @@ Replace the README's local-libSQL persistence paragraphs and Node production-pre
 - Remove `AI_BRIEFING_CACHE_PATH` from active instructions and `.env.example`; explain the explicit exporter for any old custom-path source.
 - Document Task 3's source-preserving export, local migration, and import commands; import does not overwrite an existing success.
 - Explain that npm now uses the public HTTPS registry, not npm CLI proxy/auth configuration.
-- The GET briefing endpoint is still synchronous in M1. D1 alone does not prevent cross-instance duplicate inference. Queueing, global budgets, and push notifications are subsequent milestones; do not claim they are implemented.
+- The GET briefing endpoint is still synchronous in M1. D1 alone does not prevent duplicate inference: concurrent misses for the same evidence hash can each generate a result — even inside one isolate — and D1 only decides which stored result wins. Queueing, global budgets, and push notifications are subsequent milestones; do not claim they are implemented.
 - The local-only Wrangler config cannot be used as the production deployment config. Production resource creation and launch remain M4.
 
 Do not edit old historical plans merely because they describe the old implementation; current README/example/config are the active cutover surface.
@@ -883,16 +910,18 @@ Review against spec §§3 and 11: hash unchanged, first paid success preserved, 
 
 | Shared surface | Producer → consumer | Consistency check |
 | --- | --- | --- |
-| Registry helper | Task 1 helper → search, metadata, comparison facts | All callers provide FetchHttpClient; manifest cache acquires it at lookup |
+| Registry helper | Task 1 helper → search, metadata, comparison facts | All callers provide FetchHttpClient; the manifest cache that originally acquired it at lookup was removed 2026-09-23 |
 | Dependencies | Task 1 removals → Task 2 tooling/removal → Task 5 final build | Serialize package/lockfile changes; no unenv/native alias remains |
 | D1 schema | Task 2 migration → test helper, Task 3 exporter, Task 4 runtime | Same three columns; immutable SHA primary key; conflict never overwrites |
 | Store API | Task 2 explicit database argument → inference and route tests | All callers migrate; missing binding intentionally maps to cache-error |
-| Cache scope | Task 2 binding-local runtime → multi-binding regression | No module-global mutable database and no cross-environment result reuse |
+| Removed inference cache | No binding-local runtime remains after the 2026-09-23 revision | The request binding never becomes module-global mutable state |
 | Local paths | Task 2 Nitro/CLI config → Task 4 restart/cross-runtime smoke | Dev v3 directory versus CLI parent directory is explicit and must be exercised |
 | Existing data | Task 3 read-only export → local D1 import | Source retained; schema decoder accepts legacy valid stored responses |
 | Public contract | Spec M1 → Tasks 1–5 | GET shape unchanged; no M2/M3 endpoint states silently introduced |
 | Runtime claims | Task 4 observations → Task 5 docs | Build, boot, real API behaviour and HMR are separate acceptance observations |
 
-Task self-consistency: Task 1 changes transport but not registry schema/caches; Task 2 changes store and its binding/callers together; Task 3 is offline-only and cannot reintroduce native runtime imports; Task 4 explicitly distinguishes fixture-provider coverage from real inference; Task 5 documents only demonstrated results.
+Task self-consistency: Task 1 changes transport but not registry schema (the manifest cache it originally kept was removed 2026-09-23); Task 2 changes store and its binding/callers together; Task 3 is offline-only and cannot reintroduce native runtime imports; Task 4 explicitly distinguishes fixture-provider coverage from real inference; Task 5 documents only demonstrated results.
 
 M1 execution is complete. Scoped DeepSeek V4.1 implementation and independent reviews used a per-plan execution ledger. Final verification passed 198 tests, type checking, lint (zero errors; nine style warnings), formatting, and the Cloudflare build. The final artifact booted and served health, scoped metadata, real tarballs, and a stored briefing without provider settings. HMR retained document identity and ten navigation/disconnect cycles passed. Owned fixture services, credentials, source/export fixtures, and local D1 state were removed; original developer data was not migrated or modified. Observed NUXT_E8001/E8002 experimental SSR-streaming warnings remain visible and were not suppressed. M2/M3/M4 implementation and deployment remain outside this milestone.
+
+**Revision record (2026-09-23):** the paragraph above records the pre-revision tree, including its former cache-specific tests and patch. Current unpatched-Worker concurrency, permanent D1 reuse, and 177-test verification are recorded in the revision section at the top of this plan.

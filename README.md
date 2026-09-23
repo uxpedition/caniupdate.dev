@@ -54,7 +54,7 @@ Registry search and manifests come from the public `https://registry.npmjs.org` 
 
 #### Measurement evidence
 
-Both npm manifest requests start concurrently. When both inputs are full, unprefixed versions, OSV starts alongside npm; tags and noncanonical inputs wait for registry resolution before OSV is queried. On an OSV cache miss, the measurements route makes one batch request for both versions, then one detail request per unique returned ID, shared across versions. Detail requests run concurrently with a limit of five. No automatic retries or pagination are performed.
+Both npm manifest requests start concurrently. When both inputs are full, unprefixed versions, OSV starts alongside npm; tags and noncanonical inputs wait for registry resolution before OSV is queried. The measurements route makes one batch request for both versions, then one detail request per unique returned ID, shared across versions. Detail requests run concurrently with a limit of five. No automatic retries or pagination are performed.
 
 The measurements response keeps `sizes` and `advisories` under `comparison`:
 
@@ -74,7 +74,7 @@ For example, `minimist` versions `1.2.5` and `1.2.8` currently return counts of 
 
 ### Briefing route
 
-`GET /api/package/{encodedPackageName}/compare/briefing?from={versionOrTag}&to={versionOrTag}` returns the AI briefing for the same pair as `{ packageName, from, to, briefing }`, where `from` and `to` are the resolved versions. It accepts the same parameters and validation as the comparison route, collects evidence server-side through the same providers and caches, and never trusts browser-supplied facts. Keeping it separate lets clients render the factual comparison without waiting for inference.
+`GET /api/package/{encodedPackageName}/compare/briefing?from={versionOrTag}&to={versionOrTag}` returns the AI briefing for the same pair as `{ packageName, from, to, briefing }`, where `from` and `to` are the resolved versions. It accepts the same parameters and validation as the comparison route, collects evidence server-side through the same providers, and never trusts browser-supplied facts. Keeping it separate lets clients render the factual comparison without waiting for inference.
 
 #### Briefing release-note collection
 
@@ -84,25 +84,15 @@ Non-GitHub hosts, missing/malformed repository metadata, and repository/director
 
 Optionally set `GITHUB_TOKEN` in the server environment to increase GitHub's authenticated rate allowance. It is sent only to `api.github.com`, never included in the response, and redirects are rejected. Public requests work without a token but are subject to GitHub's lower unauthenticated limits.
 
-### Process-local evidence caches
+### Provider evidence and caching
 
-The comparison server uses the existing Effect `Cache` API in memory—no Redis, database, new dependency, or cache service is required. Caches are created once per loaded server module, share pending same-key lookups, and evict least-recently-used entries when their entry capacities are exceeded. Cancelling one caller does not cancel a shared lookup while another caller is still waiting.
+The comparison server keeps no process-local evidence cache. npm manifests, OSV records, Bundlephobia estimates, GitHub release/directory/file reads, and tarball inspections are fetched again by every request that needs them, and nothing is shared between requests, isolates, or restarts. Within a single request, each comparison side's manifest is fetched once and shared across that request's branches; that sharing never outlives the request. The two sides fetch independently even when their version strings are equal.
 
-| Evidence                 | Key                                                                             | Successful lifetime                                     | Maximum entries |
-| ------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------- | --------------- |
-| npm manifest             | Package + requested exact version                                               | 5 minutes                                               | 128             |
-| OSV comparison           | Package + ordered resolved version pair                                         | 5 minutes, only when both sides are complete            | 128             |
-| Bundlephobia measurement | Package + exact version                                                         | 1 hour                                                  | 128             |
-| GitHub release listing   | Repository + credential identity                                                | 5 minutes, only when pagination is complete             | 16              |
-| GitHub directory listing | Repository + path + ref + credential identity                                   | 24 hours for full commit SHAs; 5 minutes for other refs | 32              |
-| GitHub changelog text    | Repository + path + ref + credential identity                                   | 24 hours for full commit SHAs; 5 minutes for other refs | 16              |
-| Tarball inspection       | Validated normalized URL + integrity/shasum mode and value + inspection version | 24 hours                                                | 16              |
+Warm and overlapping comparisons therefore reuse no earlier provider evidence: each request waits for its own upstream calls; the application no longer retains mutable evidence such as OSV or Bundlephobia results between requests. There is no KV store, cache service, or new dependency. A deployment-native cache for provider evidence (for example Cloudflare's Cache API) is deliberately deferred; when it is added, it must not be an isolate-local `Cache`.
 
-Tags and ranges resolve afresh on each request; they are only shared while a lookup is in flight or within that request. Expiration is measured from lookup completion. Successful empty results can be cached. Failed lookups, unavailable measurements, and incomplete OSV/release-list results have zero lifetime, so the next request can recover without waiting for a success TTL. Deterministic partial tarball evidence (for example, truncated changelog text with a complete inventory) is cacheable.
+The single durable cache is the briefing result store described below: a successful briefing is permanent, keyed by the exact evidence hash, and read before provider configuration. No other briefing evidence is cached — a later request rebuilds the factual evidence, repacks the packet, and reuses the stored response only when that hash still matches.
 
-Caches retain parsed evidence, not HTTP response objects or raw archives. Tarball URL validation still runs before cache lookup, and changed integrity metadata cannot reuse a previously verified entry. GitHub caches are isolated by credential identity; credentials never appear in the API response. Bundlephobia cache hits retain the original `retrievedAt`, rather than presenting cached measurements as newly fetched.
-
-The declarations and measurements routes read these same process-local caches, so a page load collects each version's manifest once even though they are separate requests. The briefing route shares the same caches while assembling complete server-side facts. Warm and overlapping comparisons reuse cached provider evidence, but an uncached comparison still waits for upstream services. OSV and other mutable evidence can lag by their configured TTL. Cache entries are local to each server process, disappear on restart/module reload, and are not shared across multiple instances. This caches evidence, not complete HTTP responses, and does not introduce retries or stale-while-revalidate behavior.
+Deterministic provider failures and unavailable measurements are never retained; the next request makes a fresh attempt.
 
 ### Local comparison
 
@@ -147,13 +137,13 @@ Unavailable briefings have empty bullets/sources and a sanitized reason: `not-co
 
 Evidence packaging is bounded to 48 KiB and 64 sources, with maintainer excerpts capped at 4 KiB. Advisory evidence keeps computed match groups, IDs/aliases, summaries, severity, source links, and coverage status; it explicitly excludes full affected-version ranges and reference lists, which remain available from the factual comparison endpoint. Sources are admitted in priority order with coverage space reserved, skipping sources that cannot fit rather than evicting every smaller fact. Omitted or truncated evidence becomes an explicit coverage limitation. Conservative Markdown version-heading matching excludes unversioned, unreleased, and out-of-range changelog sections. The AI stage has one 75-second total deadline across both attempts, including body decoding and validation, a 128 KiB response limit per attempt enforced while reading, and no redirects. HTTPS is required except for HTTP loopback development endpoints.
 
-The persistent store is paired with a process-local Effect cache that shares identical in-flight lookups. Raw credentials are not exposed. Failures are not retained as successful cache entries, and credentials or raw provider error bodies never enter either endpoint's response.
+Raw credentials are not exposed, and credentials or raw provider error bodies never enter either endpoint's response.
 
-The briefing route is still synchronous: its response waits for evidence collection, inference, and storage. In-flight coalescing is isolate-local—the Effect cache shares identical pending lookups inside one running instance, and D1 keeps completed snapshots—so two instances can still generate the same snapshot concurrently. Queueing, global inference budgets, and push notifications are later milestones and are not part of this runtime.
+The briefing route is still synchronous: its response waits for evidence collection, inference, and storage. Inference is not coalesced — two concurrent requests that miss D1 for the same evidence hash, even inside the same isolate, may each call the provider and pay for a generation. D1 decides only which persisted result becomes canonical (first writer wins); it is not a spend limiter. Queueing, global inference budgets, and push notifications are later milestones and are not part of this runtime.
 
 ### Published npm tarballs
 
-Each tarball lookup starts as soon as its own npm manifest resolves, without waiting for the other manifest, GitHub, OSV, or Bundlephobia. The downloads can overlap; verified cache hits skip download and inspection entirely. GitHub still waits for both manifests to validate repository agreement, but does not wait for either tarball.
+Each tarball lookup starts as soon as its own npm manifest resolves, without waiting for the other manifest, GitHub, OSV, or Bundlephobia. The downloads can overlap; every lookup downloads and verifies its own artifact instead of reusing an earlier inspection. GitHub still waits for both manifests to validate repository agreement, but does not wait for either tarball.
 
 The browser-facing `/compare/measurements` response exposes `from.tarball` and `to.tarball` summaries:
 
@@ -180,7 +170,7 @@ nub run --node db:migrate:local
 
 `nub run --node dev` runs that migration before starting Nuxt dev, so development normally needs no separate step. The database files are git-ignored under `.wrangler/state`, are local-only, and are never synced to a remote service. The binding is not optional: without it, or against a database missing the schema, the briefing route answers `cache-error`.
 
-The pinned Effect patch in `patches/effect@4.0.0-rc.115.patch` adds a native promise bridge so pending `Cache` waiters keep their `workerd` request context. Keep it in place; do not work around a shared-lookup request-context error by disabling cross-request promise safety.
+Effect `4.0.0-rc.115` is used exactly as published. The repository carries no dependency patch and configures no `patchedDependencies`; a patch that bridged shared `Cache` waiters through a native promise existed only while the process-local caches did. Cross-request promise safety stays enabled.
 
 ## Moving existing briefing snapshots
 

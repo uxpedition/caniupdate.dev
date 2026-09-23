@@ -4,11 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  effect@4.0.0-rc.115:
-    hash: 955a192084d98d47c2cf3e1acb9c0d3e40bd0fde5dfae57ccb4be16c03122a68
-    path: patches/effect@4.0.0-rc.115.patch
-
 importers:
 
   .:
@@ -33,7 +28,7 @@ importers:
         version: 0.3.0
       effect:
         specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115(patch_hash=955a192084d98d47c2cf3e1acb9c0d3e40bd0fde5dfae57ccb4be16c03122a68)
+        version: 4.0.0-rc.115
       h3:
         specifier: ^2.0.1-rc.32
         version: 2.0.1-rc.32(crossws@0.4.12(srvx@0.11.22))
@@ -5252,7 +5247,7 @@ snapshots:
 
   '@effect/ai-openai-compat@4.0.0-rc.115(effect@4.0.0-rc.115)':
     dependencies:
-      effect: 4.0.0-rc.115(patch_hash=955a192084d98d47c2cf3e1acb9c0d3e40bd0fde5dfae57ccb4be16c03122a68)
+      effect: 4.0.0-rc.115
 
   '@emnapi/runtime@1.11.3':
     dependencies:
@@ -7313,7 +7308,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  effect@4.0.0-rc.115(patch_hash=955a192084d98d47c2cf3e1acb9c0d3e40bd0fde5dfae57ccb4be16c03122a68): {}
+  effect@4.0.0-rc.115: {}
 
   electron-to-chromium@1.5.428: {}
 

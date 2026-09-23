@@ -10,7 +10,7 @@ import {
 } from '../../../../utils/packageComparisonFacts';
 
 // The AI summary is served separately from the factual comparison so clients can render facts without waiting for
-// inference. Evidence comes from the same server-side collection and caches as the comparison route.
+// inference. Evidence comes from the same server-side collection as the comparison route.
 export default defineEventHandler(async (event) => {
   const { packageName } = await getValidatedRouterParams(event, decodePackageComparisonRouterParams);
   const { from, to } = await getValidatedQuery(event, decodePackageComparisonQuery);

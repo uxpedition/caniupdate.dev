@@ -2,7 +2,7 @@
 // package/version manifests; complete evidence (tarball inventory, advisories, bundle sizes, and release notes) is
 // collected only for the AI briefing pipeline.
 
-import { Cache, Data, Effect, Exit, Schema } from 'effect';
+import { Data, Effect, Schema } from 'effect';
 import type { HttpClient } from 'effect/unstable/http';
 
 import type { BriefingInput } from '#shared/briefing.defs';
@@ -14,7 +14,12 @@ import type {
   PackageMeasurementsResponse,
   TarballSummary,
 } from '#shared/comparison.defs';
-import { PackageNameSchema, RegistryVersionManifestSchema, toPackageVersion } from '#shared/package.defs';
+import {
+  PackageNameSchema,
+  RegistryVersionManifestSchema,
+  toPackageVersion,
+  type RegistryVersionManifest,
+} from '#shared/package.defs';
 
 import type { PackageTarball } from '../../shared/tarball.defs';
 import { getRegistryJson } from './npmRegistry';
@@ -58,28 +63,37 @@ const registryVersionManifestRequest = (packageName: string, version: string) =>
     return yield* Schema.decodeUnknownEffect(RegistryVersionManifestSchema)(response, { errors: 'all' });
   }).pipe(Effect.mapError(registryRequestError));
 
-class ManifestKey extends Data.Class<{ packageName: string; version: string }> {}
-
-const manifestCache = Effect.runSync(
-  Cache.makeWith(({ packageName, version }: ManifestKey) => registryVersionManifestRequest(packageName, version), {
-    capacity: 128,
-    requireServicesAt: 'lookup',
-    // Tags/ranges must resolve afresh; only exact-version successes survive the current lookup.
-    timeToLive: (exit, key) => (Exit.isSuccess(exit) && isExactSemver(key.version) ? '5 minutes' : 0),
-  }),
-);
-
-// Per-version lookup, shared within a request and reused across requests by `manifestCache`. Kept separate from the
-// pair so each tarball can start as soon as its own manifest resolves.
+// Each comparison side shares its request-local manifest effect across branches. Keep the sides separate
+// so each tarball can start as soon as its own manifest resolves.
 const getManifest = (packageName: string, version: string) =>
-  Effect.cached(Cache.get(manifestCache, new ManifestKey({ packageName, version })));
+  Effect.cached(registryVersionManifestRequest(packageName, version));
 
-const getResolvedManifests = (packageName: string, from: string, to: string) =>
+type ManifestLookups = {
+  readonly from: Effect.Effect<RegistryVersionManifest, RegistryRequestError, HttpClient.HttpClient>;
+  readonly to: Effect.Effect<RegistryVersionManifest, RegistryRequestError, HttpClient.HttpClient>;
+};
+
+const allocateManifestLookups = (packageName: string, from: string, to: string) =>
   Effect.gen(function* () {
-    const fromManifest = yield* getManifest(packageName, from);
-    const toManifest = yield* getManifest(packageName, to);
-    const manifests = yield* Effect.cached(Effect.all({ from: fromManifest, to: toManifest }, { concurrency: 2 }));
-    return yield* manifests;
+    return {
+      from: yield* getManifest(packageName, from),
+      to: yield* getManifest(packageName, to),
+    } satisfies ManifestLookups;
+  });
+
+const resolveManifestPair = ({ from, to }: ManifestLookups) => Effect.all({ from, to }, { concurrency: 2 });
+
+const declarationsFrom = (packageName: string, lookups: ManifestLookups) =>
+  Effect.gen(function* () {
+    const manifests = yield* resolveManifestPair(lookups);
+    const fromVersion = toPackageVersion(manifests.from);
+    const toVersion = toPackageVersion(manifests.to);
+    return {
+      packageName,
+      from: fromVersion,
+      to: toVersion,
+      comparison: compareDeclarations(fromVersion, toVersion),
+    };
   });
 
 /** Manifest-only comparison; the payload the first paint depends on. */
@@ -88,33 +102,23 @@ export function getComparisonDeclarations(
   from: string,
   to: string,
 ): Effect.Effect<PackageDeclarationsResponse, RegistryRequestError, HttpClient.HttpClient> {
-  return getResolvedManifests(packageName, from, to).pipe(
-    Effect.map((manifests) => {
-      const fromVersion = toPackageVersion(manifests.from);
-      const toVersion = toPackageVersion(manifests.to);
-      return {
-        packageName,
-        from: fromVersion,
-        to: toVersion,
-        comparison: compareDeclarations(fromVersion, toVersion),
-      };
-    }),
-  );
+  return Effect.gen(function* () {
+    const lookups = yield* allocateManifestLookups(packageName, from, to);
+    return yield* declarationsFrom(packageName, lookups);
+  });
 }
 
-const collectMeasurements = (packageName: string, from: string, to: string) =>
+const collectMeasurements = (packageName: string, from: string, to: string, lookups: ManifestLookups) =>
   Effect.gen(function* () {
-    const fromManifest = yield* getManifest(packageName, from);
-    const toManifest = yield* getManifest(packageName, to);
-    const manifests = yield* Effect.cached(Effect.all({ from: fromManifest, to: toManifest }, { concurrency: 2 }));
+    const manifests = resolveManifestPair(lookups);
     // Exact inputs can start measurement work before either manifest resolves; tags and ranges wait for resolution.
     const exact = isExactSemver(from) && isExactSemver(to);
     const evidence = yield* Effect.all(
       {
         tarballs: Effect.all(
           {
-            from: fromManifest.pipe(Effect.flatMap(getPackageTarball)),
-            to: toManifest.pipe(Effect.flatMap(getPackageTarball)),
+            from: lookups.from.pipe(Effect.flatMap(getPackageTarball)),
+            to: lookups.to.pipe(Effect.flatMap(getPackageTarball)),
           },
           { concurrency: 2 },
         ),
@@ -166,14 +170,16 @@ export function getComparisonMeasurements(
   from: string,
   to: string,
 ): Effect.Effect<PackageMeasurementsResponse, RegistryRequestError, HttpClient.HttpClient> {
-  return collectMeasurements(packageName, from, to).pipe(
-    Effect.map(({ from: fromVersion, to: toVersion, comparison }) => ({
+  return Effect.gen(function* () {
+    const lookups = yield* allocateManifestLookups(packageName, from, to);
+    const { from: fromVersion, to: toVersion, comparison } = yield* collectMeasurements(packageName, from, to, lookups);
+    return {
       packageName,
       from: toMeasuredVersion(fromVersion),
       to: toMeasuredVersion(toVersion),
       comparison,
-    })),
-  );
+    };
+  });
 }
 
 /** The complete comparison facts shape consumed only by the briefing pipeline. */
@@ -185,22 +191,24 @@ export function getComparisonFacts(
   from: string,
   to: string,
 ): Effect.Effect<ComparisonFacts, RegistryRequestError, HttpClient.HttpClient> {
-  return Effect.all(
-    {
-      declarations: getComparisonDeclarations(packageName, from, to),
-      measurements: collectMeasurements(packageName, from, to),
-      releaseNotes: getResolvedManifests(packageName, from, to).pipe(
-        Effect.flatMap((pair) => getPackageReleaseNotes(packageName, pair.from, pair.to, process.env.GITHUB_TOKEN)),
-      ),
-    },
-    { concurrency: 3 },
-  ).pipe(
-    Effect.map(({ declarations, measurements, releaseNotes }) => ({
+  return Effect.gen(function* () {
+    const lookups = yield* allocateManifestLookups(packageName, from, to);
+    const { declarations, measurements, releaseNotes } = yield* Effect.all(
+      {
+        declarations: declarationsFrom(packageName, lookups),
+        measurements: collectMeasurements(packageName, from, to, lookups),
+        releaseNotes: resolveManifestPair(lookups).pipe(
+          Effect.flatMap((pair) => getPackageReleaseNotes(packageName, pair.from, pair.to, process.env.GITHUB_TOKEN)),
+        ),
+      },
+      { concurrency: 3 },
+    );
+    return {
       packageName,
       releaseNotes,
       from: measurements.from,
       to: measurements.to,
       comparison: { ...declarations.comparison, ...measurements.comparison },
-    })),
-  );
+    };
+  });
 }

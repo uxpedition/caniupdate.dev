@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { D1Database } from '@cloudflare/workers-types';
-import { Cache, Cause, Data, Duration, Effect, Exit, Layer, Result, Schema } from 'effect';
+import { Cause, Data, Effect, Layer, Result, Schema } from 'effect';
 import { LanguageModel, Prompt } from 'effect/unstable/ai';
 import { FetchHttpClient, HttpClient } from 'effect/unstable/http';
 
@@ -15,7 +15,7 @@ import type {
   PackageBriefing,
 } from '../../shared/briefing.defs';
 import { buildBriefingEvidence } from './packageBriefingEvidence';
-import { PROMPT_VERSION, SYSTEM_PROMPT, USER_PROMPT_LINES } from './packageBriefingPrompt';
+import { SYSTEM_PROMPT, USER_PROMPT_LINES } from './packageBriefingPrompt';
 import {
   readBoundedResponse,
   REQUEST_TIMEOUT,
@@ -35,15 +35,10 @@ const BriefingContentSchema = Schema.Struct({
   bullets: Schema.Array(BriefingBulletSchema),
 });
 
-type ConfiguredBriefing = BriefingProviderTarget & {
-  readonly endpoint: string;
-  readonly credentialIdentity: string;
-};
-
 type BriefingConfig =
   | { readonly status: 'not-configured' }
   | { readonly status: 'invalid-config' }
-  | { readonly status: 'configured'; readonly value: ConfiguredBriefing };
+  | { readonly status: 'configured'; readonly value: BriefingProviderTarget };
 
 const BriefingInvalidResponseError = Data.TaggedError('BriefingInvalidResponseError')<{
   readonly reason?: never;
@@ -109,13 +104,7 @@ const readBriefingConfig = (): BriefingConfig => {
 
   return {
     status: 'configured',
-    value: {
-      endpoint,
-      apiUrl,
-      apiKey,
-      model,
-      credentialIdentity: sha256(apiKey),
-    },
+    value: { apiUrl, apiKey, model },
   };
 };
 
@@ -210,19 +199,8 @@ const isInvalidProviderOutput = (failure: unknown): boolean => {
   );
 };
 
-const briefingCacheIdentity = (key: BriefingCacheKey): string =>
-  JSON.stringify([key.evidenceHash, key.endpoint, key.model, key.credentialIdentity, key.promptVersion]);
-
-class BriefingCacheKey extends Data.Class<{
-  readonly evidenceHash: string;
-  readonly endpoint: string;
-  readonly model: string;
-  readonly credentialIdentity: string;
-  readonly promptVersion: string;
-}> {}
-
 type BriefingRequest = {
-  readonly config: ConfiguredBriefing;
+  readonly config: BriefingProviderTarget;
   readonly evidence: BriefingEvidence;
   readonly session: string;
 };
@@ -272,60 +250,6 @@ const requestBriefing = (request: BriefingRequest): Effect.Effect<PackageBriefin
     }),
   );
 
-type BriefingRuntime = {
-  readonly cache: Cache.Cache<BriefingCacheKey, PackageBriefing, never, HttpClient.HttpClient>;
-  readonly rememberRequest: (key: BriefingCacheKey, request: BriefingRequest) => void;
-};
-
-function createBriefingRuntime(database: D1Database): BriefingRuntime {
-  // Cache keys intentionally carry only a one-way credential identity. The request record is process-local and is
-  // never returned, logged, or used as a diagnostic key; it lets a cache miss still send the original bearer token.
-  const requestRecords = new Map<string, BriefingRequest>();
-  const rememberRequest = (key: BriefingCacheKey, request: BriefingRequest): void => {
-    const identity = briefingCacheIdentity(key);
-    requestRecords.set(identity, request);
-    if (requestRecords.size <= 512) return;
-    const oldest = requestRecords.keys().next().value;
-    if (oldest !== undefined) requestRecords.delete(oldest);
-  };
-
-  const cache = Effect.runSync(
-    Cache.makeWith(
-      (key: BriefingCacheKey) => {
-        const request = requestRecords.get(briefingCacheIdentity(key));
-        if (request === undefined) return Effect.succeed(unavailable('provider-error'));
-        return requestBriefing(request).pipe(
-          Effect.flatMap((briefing) =>
-            briefing.status === 'available'
-              ? Effect.tryPromise<PackageBriefing>(() => saveBriefing(database, key.evidenceHash, briefing))
-              : Effect.succeed(briefing),
-          ),
-          Effect.catch(() => Effect.succeed(unavailable('cache-error'))),
-        );
-      },
-      {
-        capacity: 128,
-        requireServicesAt: 'lookup',
-        timeToLive: (exit) =>
-          Exit.isSuccess(exit) && exit.value.status === 'available' ? Duration.hours(1) : Duration.zero,
-      },
-    ),
-  );
-
-  return { cache, rememberRequest };
-}
-
-// One runtime per database, so a D1 failure in one environment cannot be hidden by another environment's cache.
-const briefingRuntimes = new WeakMap<D1Database, BriefingRuntime>();
-
-function runtimeFor(database: D1Database): BriefingRuntime {
-  const existing = briefingRuntimes.get(database);
-  if (existing !== undefined) return existing;
-  const created = createBriefingRuntime(database);
-  briefingRuntimes.set(database, created);
-  return created;
-}
-
 export function getPackageBriefing(
   input: BriefingInput,
   database: D1Database | undefined,
@@ -351,19 +275,12 @@ export function getPackageBriefing(
     const config = readBriefingConfig();
     if (config.status === 'not-configured') return unavailable('not-configured');
     if (config.status === 'invalid-config') return unavailable('invalid-config');
-    const key = new BriefingCacheKey({
-      evidenceHash,
-      endpoint: config.value.endpoint,
-      model: config.value.model,
-      credentialIdentity: config.value.credentialIdentity,
-      promptVersion: PROMPT_VERSION,
-    });
-    const runtime = runtimeFor(binding);
-    runtime.rememberRequest(key, {
+    const briefing = yield* requestBriefing({
       config: config.value,
       evidence,
       session: sha256(`${evidence.packageName}\n${evidence.from}\n${evidence.to}`),
     });
-    return yield* Cache.get(runtime.cache, key);
+    if (briefing.status !== 'available') return briefing;
+    return yield* Effect.tryPromise(() => saveBriefing(binding, evidenceHash, briefing));
   }).pipe(Effect.catch(() => Effect.succeed(unavailable('cache-error'))));
 }

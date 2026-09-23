@@ -3,14 +3,10 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 
 import { Effect } from 'effect';
 import { pack, type Header } from 'tar-stream';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { RegistryVersionManifest } from '../../shared/package.defs';
-import type { PackageTarball } from '../../shared/tarball.defs';
-
-type GetPackageTarball = (manifest: RegistryVersionManifest) => Effect.Effect<PackageTarball>;
-
-let getPackageTarball: GetPackageTarball;
+import { getPackageTarball } from './packageTarball';
 
 async function archive(entries: { name: string; body?: string; type?: Header['type']; linkname?: string }[]) {
   const output = pack();
@@ -41,14 +37,7 @@ function manifest(body: Buffer, version = '1.0.0') {
 
 const respond = (body: Buffer) => new Response(new Uint8Array(body));
 
-beforeEach(async () => {
-  // Reload the module boundary intentionally so each test gets fresh process-local caches.
-  vi.resetModules();
-  ({ getPackageTarball } = await import('./packageTarball'));
-});
-
 afterEach(() => {
-  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -255,115 +244,14 @@ describe('published tarball evidence', () => {
 
   it('marks truncated changelog text partial without dropping the file inventory', async () => {
     const body = await archive([{ name: 'package/HISTORY.txt', body: 'a'.repeat(256 * 1024 + 1) }]);
-    const fetcher = vi.fn(async () => respond(body));
-    vi.stubGlobal('fetch', fetcher);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(body)),
+    );
     const result = await Effect.runPromise(getPackageTarball(manifest(body)));
-    const repeated = await Effect.runPromise(getPackageTarball(manifest(body)));
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(repeated.status).toBe('partial');
     expect(result.status).toBe('partial');
     expect(result.changelogs[0]?.truncated).toBe(true);
     expect(result.changelogs[0]?.body).toHaveLength(256 * 1024);
     expect(result.files[0]?.size).toBe(256 * 1024 + 1);
-  });
-});
-
-describe('published tarball cache', () => {
-  it('shares an in-flight inspection and reuses its successful result', async () => {
-    const body = await archive([{ name: 'package/index.js', body: 'safe' }]);
-    const gate = Promise.withResolvers<void>();
-    const fetcher = vi.fn(async () => {
-      await gate.promise;
-      return respond(body);
-    });
-    vi.stubGlobal('fetch', fetcher);
-    const version = manifest(body);
-
-    const first = Effect.runPromise(getPackageTarball(version));
-    const second = Effect.runPromise(getPackageTarball(version));
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
-    gate.resolve();
-
-    const [firstResult, secondResult] = await Promise.all([first, second]);
-    expect(firstResult.status).toBe('available');
-    expect(secondResult.status).toBe('available');
-    await Effect.runPromise(getPackageTarball(version));
-    expect(fetcher).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not reuse a good result for changed verification metadata or an unsafe URL', async () => {
-    const body = await archive([{ name: 'package/index.js', body: 'safe' }]);
-    const fetcher = vi.fn(async () => respond(body));
-    vi.stubGlobal('fetch', fetcher);
-    const version = manifest(body);
-
-    const first = await Effect.runPromise(getPackageTarball(version));
-    expect(first.status).toBe('available');
-
-    const changedIntegrity = manifest(body);
-    changedIntegrity.dist.integrity = `sha512-${Buffer.alloc(64).toString('base64')}`;
-    const rejected = await Effect.runPromise(getPackageTarball(changedIntegrity));
-    expect(rejected.status).toBe('unavailable');
-    expect(fetcher).toHaveBeenCalledTimes(2);
-
-    const unsafeUrl = manifest(body);
-    unsafeUrl.dist.tarball = 'https://127.0.0.1/private';
-    const unsafe = await Effect.runPromise(getPackageTarball(unsafeUrl));
-    expect(unsafe.status).toBe('unavailable');
-    expect(fetcher).toHaveBeenCalledTimes(2);
-
-    const reused = await Effect.runPromise(getPackageTarball(version));
-    expect(reused.url).toBe(version.dist.tarball);
-    expect(reused.status).toBe('available');
-    expect(fetcher).toHaveBeenCalledTimes(2);
-  });
-
-  it('retries a transient failed inspection instead of caching it', async () => {
-    const body = await archive([{ name: 'package/index.js', body: 'safe' }]);
-    let attempts = 0;
-    const fetcher = vi.fn(async () => {
-      attempts++;
-      if (attempts === 1) throw new Error('temporary network failure');
-      return respond(body);
-    });
-    vi.stubGlobal('fetch', fetcher);
-    const version = manifest(body);
-
-    const failed = await Effect.runPromise(getPackageTarball(version));
-    expect(failed.status).toBe('unavailable');
-    const recovered = await Effect.runPromise(getPackageTarball(version));
-    expect(recovered.status).toBe('available');
-    expect(fetcher).toHaveBeenCalledTimes(2);
-  });
-
-  it('expires successful inspections after 24 hours', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
-    const body = await archive([{ name: 'package/index.js', body: 'safe' }]);
-    const fetcher = vi.fn(async () => respond(body));
-    vi.stubGlobal('fetch', fetcher);
-    const version = manifest(body);
-
-    await Effect.runPromise(getPackageTarball(version));
-    await Effect.runPromise(getPackageTarball(version));
-    expect(fetcher).toHaveBeenCalledTimes(1);
-
-    vi.advanceTimersByTime(24 * 60 * 60 * 1000 + 1);
-    await Effect.runPromise(getPackageTarball(version));
-    expect(fetcher).toHaveBeenCalledTimes(2);
-  });
-
-  it('evicts the oldest successful key after reaching capacity', async () => {
-    const body = await archive([{ name: 'package/index.js', body: 'safe' }]);
-    const fetcher = vi.fn(async () => respond(body));
-    vi.stubGlobal('fetch', fetcher);
-
-    for (let index = 1; index <= 17; index++) {
-      await Effect.runPromise(getPackageTarball(manifest(body, `${index}.0.0`)));
-    }
-    expect(fetcher).toHaveBeenCalledTimes(17);
-
-    await Effect.runPromise(getPackageTarball(manifest(body, '1.0.0')));
-    expect(fetcher).toHaveBeenCalledTimes(18);
   });
 });

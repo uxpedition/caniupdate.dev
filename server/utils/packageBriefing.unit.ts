@@ -11,9 +11,8 @@ import type { ComparisonVersion, PackageComparison } from '#shared/comparison.de
 import type { PackageReleaseNotes } from '#shared/github.defs';
 
 import { installBriefingSchema, openBriefingD1, type BriefingD1 } from '../../test/helpers/briefingD1';
-import type * as BriefingModule from './packageBriefing';
+import { getPackageBriefing } from './packageBriefing';
 
-let getPackageBriefing: typeof BriefingModule.getPackageBriefing;
 let directory: string;
 let runtime: BriefingD1 | undefined;
 
@@ -164,10 +163,6 @@ describe('getPackageBriefing', () => {
     // One suite runtime, but every test still starts from the authoritative schema and an empty table.
     await installBriefingSchema(database());
     await database().prepare('DELETE FROM package_briefings').run();
-    // A static import cannot drop module-level Effect caches, so each test reloads the boundary explicitly to
-    // exercise database persistence without inheriting process-local state.
-    vi.resetModules();
-    ({ getPackageBriefing } = await import('./packageBriefing'));
     vi.stubEnv('AI_BRIEFING_ENDPOINT', 'https://briefing.example/v1/chat/completions');
     vi.stubEnv('AI_BRIEFING_API_KEY', 'test-key');
     vi.stubEnv('AI_BRIEFING_MODEL', 'test-model');
@@ -362,24 +357,31 @@ describe('getPackageBriefing', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('shares the in-flight retry and caches its successful briefing for identical callers', async () => {
-    const gate = Promise.withResolvers<Response>();
-    fetchMock.mockResolvedValueOnce(response([])).mockImplementation(() => gate.promise);
+  it('returns the durable winner when concurrent misses generate different valid briefings', async () => {
+    const gate = Promise.withResolvers<void>();
+    const texts = ['Run Node >=20 before upgrading.', 'Upgrade Node 18 deployments to at least Node 20.'];
+    let calls = 0;
+    fetchMock.mockImplementation(async () => {
+      const text = texts[calls++];
+      await gate.promise;
+      return response([{ kind: 'migration', basis: 'inference', text, evidenceIds: ['comparison.node'] }]);
+    });
     const value = input();
-
-    const first = runBriefing(value);
-    const second = runBriefing(value);
+    const pending = Promise.all([runBriefing(value), runBriefing(value)]);
     try {
-      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      // Hold both generations before either can persist, forcing the first-writer-wins race.
+      await vi.waitFor(() => expect(calls).toBe(2));
     } finally {
-      gate.resolve(response());
+      gate.resolve();
+      await pending;
     }
 
-    const [firstResult, secondResult] = await Promise.all([first, second]);
+    const [firstResult, secondResult] = await pending;
     expect(firstResult).toMatchObject({ status: 'available' });
+    expect(texts).toContain(firstResult.bullets[0]?.text);
     expect(secondResult).toEqual(firstResult);
     await expect(runBriefing(value)).resolves.toEqual(firstResult);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(calls).toBe(2);
   });
 
   it('retains old snapshots and generates only when the evidence changes', async () => {
@@ -416,13 +418,15 @@ describe('getPackageBriefing', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2040-01-01'));
 
-    // Reloading removes every process-local cache as well.
+    // A static import cannot exercise loading a fresh module against the reopened durable store.
     vi.resetModules();
-    ({ getPackageBriefing } = await import('./packageBriefing'));
+    const reloaded = await import('./packageBriefing');
     vi.stubEnv('AI_BRIEFING_ENDPOINT', '');
     vi.stubEnv('AI_BRIEFING_MODEL', '');
     vi.stubEnv('AI_BRIEFING_API_KEY', '');
-    await expect(runBriefing(value)).resolves.toEqual(original);
+    await expect(
+      Effect.runPromise(reloaded.getPackageBriefing(value, database()).pipe(Effect.provide(FetchHttpClient.layer))),
+    ).resolves.toEqual(original);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

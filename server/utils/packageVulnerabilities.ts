@@ -1,4 +1,4 @@
-import { Cache, Data, Effect, Exit, Result } from 'effect';
+import { Effect, Result } from 'effect';
 
 import type {
   OsvQueryBatchResponse,
@@ -59,7 +59,7 @@ function toVersionVulnerabilities(
 }
 
 /** One batch request, then one detail request per unique returned ID; no retries or pagination. */
-const fetchPackageVulnerabilities = Effect.fn('Osv.getPackageVulnerabilities')(function* (
+export const getPackageVulnerabilities = Effect.fn('Osv.getPackageVulnerabilities')(function* (
   packageName: string,
   fromVersion: string,
   toVersion: string,
@@ -90,23 +90,3 @@ const fetchPackageVulnerabilities = Effect.fn('Osv.getPackageVulnerabilities')(f
     to: toVersionVulnerabilities(packageName, batch.success.results[1], details),
   };
 });
-
-class VulnerabilityKey extends Data.Class<{ packageName: string; fromVersion: string; toVersion: string }> {}
-
-const vulnerabilityCache = Effect.runSync(
-  Cache.makeWith(
-    ({ packageName, fromVersion, toVersion }: VulnerabilityKey) =>
-      fetchPackageVulnerabilities(packageName, fromVersion, toVersion),
-    {
-      capacity: 128,
-      requireServicesAt: 'lookup',
-      timeToLive: (exit) =>
-        Exit.isSuccess(exit) && exit.value.from.status === 'available' && exit.value.to.status === 'available'
-          ? '5 minutes'
-          : 0,
-    },
-  ),
-);
-
-export const getPackageVulnerabilities = (packageName: string, fromVersion: string, toVersion: string) =>
-  Cache.get(vulnerabilityCache, new VulnerabilityKey({ packageName, fromVersion, toVersion }));

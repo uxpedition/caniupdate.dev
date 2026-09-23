@@ -1,4 +1,4 @@
-import { Cache, Data, Effect, Exit, Result } from 'effect';
+import { Effect, Result } from 'effect';
 
 import type { PackageBundleSize } from '../../shared/bundlephobia.defs';
 import { bundlephobiaSizeUrl, getBundlephobiaSize } from './bundlephobia';
@@ -20,22 +20,12 @@ const getVersionBundleSize = Effect.fn('Bundlephobia.getVersionBundleSize')(func
   } satisfies PackageBundleSize;
 });
 
-class BundleSizeKey extends Data.Class<{ packageName: string; version: string }> {}
-
-const bundleSizeCache = Effect.runSync(
-  Cache.makeWith(({ packageName, version }: BundleSizeKey) => getVersionBundleSize(packageName, version), {
-    capacity: 128,
-    requireServicesAt: 'lookup',
-    timeToLive: (exit) => (Exit.isSuccess(exit) && exit.value.status === 'available' ? '1 hour' : 0),
-  }),
-);
-
-/** Cache the evidence with its original retrievedAt; failed builds can recover on the next request. */
+/** Bundle evidence for both versions, fetched concurrently; failures resolve to `unavailable` evidence. */
 export const getPackageBundleSize = (packageName: string, fromVersion: string, toVersion: string) =>
   Effect.all(
     {
-      from: Cache.get(bundleSizeCache, new BundleSizeKey({ packageName, version: fromVersion })),
-      to: Cache.get(bundleSizeCache, new BundleSizeKey({ packageName, version: toVersion })),
+      from: getVersionBundleSize(packageName, fromVersion),
+      to: getVersionBundleSize(packageName, toVersion),
     },
     { concurrency: 2 },
   );

@@ -7,9 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PackageMeasurementsResponse } from '#shared/comparison.defs';
 
-import type endpointHandler from './measurements.get';
-
-let handler: typeof endpointHandler;
+import handler from './measurements.get';
 
 const registry = { json: vi.fn<(path: string) => Promise<unknown>>() };
 
@@ -30,10 +28,7 @@ function startRequest(from: string, to: string, packageName = 'minimist'): Promi
 
 const fetchMock = vi.fn<typeof fetch>();
 
-beforeEach(async () => {
-  // Reload the module boundary so each test owns fresh process-local caches.
-  vi.resetModules();
-  handler = (await import('./measurements.get')).default;
+beforeEach(() => {
   registry.json.mockReset();
   fetchMock.mockReset();
   // Registry manifests are served from the fetch boundary; tarballs (`/-/`) and evidence providers stay with fetchMock.
@@ -51,7 +46,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function cacheFixtureTarball() {
+async function measurementFixtureTarball() {
   const output = pack();
   const chunks: Buffer[] = [];
   const reading = (async () => {
@@ -66,7 +61,7 @@ async function cacheFixtureTarball() {
   return gzipSync(Buffer.concat(chunks));
 }
 
-function installCacheFixtures(tarball: Buffer) {
+function installMeasurementFixtures(tarball: Buffer) {
   registry.json.mockImplementation(async (path) => ({
     ...manifest(path.slice(path.lastIndexOf('/') + 1)),
     dist: {
@@ -89,79 +84,6 @@ function installCacheFixtures(tarball: Buffer) {
     return Response.json([{ name: 'CHANGES.md', path: 'CHANGES.md', type: 'file' }]);
   });
 }
-
-describe('evidence caching', () => {
-  it('expires mutable evidence without refetching pinned content or fresh bundle measurements', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(0);
-    installCacheFixtures(await cacheFixtureTarball());
-    const first = await startRequest('1.0.0', '2.0.0');
-    registry.json.mockClear();
-    fetchMock.mockClear();
-    vi.setSystemTime(300_000);
-    const refreshed = await startRequest('1.0.0', '2.0.0');
-    expect(refreshed.from.bundleSize).toEqual(first.from.bundleSize);
-    expect(refreshed.to.tarball).toEqual(first.to.tarball);
-    expect(registry.json).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls.map(([input, init]) => new Request(input, init).url).sort()).toEqual([
-      'https://api.osv.dev/v1/querybatch',
-    ]);
-    vi.setSystemTime(3_600_000);
-    const rebuilt = await startRequest('1.0.0', '2.0.0');
-    expect(rebuilt.from.bundleSize).toMatchObject({
-      status: 'available',
-      retrievedAt: new Date(3_600_000).toISOString(),
-    });
-  });
-
-  it('resolves mutable tags again while keeping exact manifest lookups cached', async () => {
-    let latest = '2.0.0';
-    registry.json.mockImplementation(async (path) => manifest(path.endsWith('/latest') ? latest : '1.0.0'));
-    fetchMock.mockImplementation(async () => new Response(null, { status: 503 }));
-    expect(await startRequest('1.0.0', 'latest')).toMatchObject({ to: { version: '2.0.0' } });
-    latest = '3.0.0';
-    expect(await startRequest('1.0.0', 'latest')).toMatchObject({ to: { version: '3.0.0' } });
-    expect(registry.json.mock.calls.map(([path]) => path)).toEqual([
-      '/minimist/1.0.0',
-      '/minimist/latest',
-      '/minimist/latest',
-    ]);
-  });
-
-  it('shares concurrent lookups and reuses successful evidence without refetching', async () => {
-    installCacheFixtures(await cacheFixtureTarball());
-    const [first, concurrent] = await Promise.all([startRequest('1.0.0', '2.0.0'), startRequest('1.0.0', '2.0.0')]);
-    expect(first).toMatchObject({
-      from: { tarball: { status: 'available' }, bundleSize: { status: 'available' } },
-      to: { vulnerabilities: { status: 'available' } },
-    });
-    expect(concurrent).toEqual(first);
-    expect(registry.json).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenCalledTimes(5);
-    const repeated = await startRequest('1.0.0', '2.0.0');
-    expect(repeated).toEqual(first);
-    expect(registry.json).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenCalledTimes(5);
-  });
-
-  it('reuses per-version and repository evidence across overlapping comparisons', async () => {
-    installCacheFixtures(await cacheFixtureTarball());
-    await startRequest('1.0.0', '2.0.0');
-    registry.json.mockClear();
-    fetchMock.mockClear();
-    expect(await startRequest('2.0.0', '3.0.0')).toMatchObject({
-      from: { version: '2.0.0' },
-      to: { version: '3.0.0', tarball: { status: 'available' } },
-    });
-    expect(registry.json.mock.calls).toEqual([['/minimist/3.0.0']]);
-    const urls = fetchMock.mock.calls.map(([input, init]) => new Request(input, init).url).sort();
-    expect(urls).toEqual([
-      'https://api.osv.dev/v1/querybatch',
-      'https://bundlephobia.com/api/size?package=minimist%403.0.0',
-      'https://registry.npmjs.org/minimist/-/3.0.0.tgz',
-    ]);
-  });
-});
 
 describe('early tarball scheduling', () => {
   it.each(['2.0.0', 'latest'])(
@@ -194,7 +116,7 @@ describe('early tarball scheduling', () => {
 
 describe('measurement comparison', () => {
   it('reports sizes and advisories independently of declarations', async () => {
-    installCacheFixtures(await cacheFixtureTarball());
+    installMeasurementFixtures(await measurementFixtureTarball());
     const response: PackageMeasurementsResponse = await startRequest('1.0.0', '2.0.0');
 
     expect(response).toMatchObject({

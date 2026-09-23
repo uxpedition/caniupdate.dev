@@ -2,7 +2,7 @@ import { Effect } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { getComparisonFacts as getComparisonFactsType } from './packageComparisonFacts';
+import { getComparisonFacts } from './packageComparisonFacts';
 
 const registry = { json: vi.fn<(path: string) => Promise<unknown>>() };
 
@@ -13,15 +13,11 @@ const manifest = (version: string) => ({
 });
 
 const fetchMock = vi.fn<typeof fetch>();
-let getComparisonFacts: typeof getComparisonFactsType;
 
 const startFacts = (from: string, to: string, packageName = 'minimist') =>
   Effect.runPromise(getComparisonFacts(packageName, from, to).pipe(Effect.provide(FetchHttpClient.layer)));
 
-beforeEach(async () => {
-  // Reload the module boundary so each test owns fresh process-local caches.
-  vi.resetModules();
-  ({ getComparisonFacts } = await import('./packageComparisonFacts'));
+beforeEach(() => {
   registry.json.mockReset();
   fetchMock.mockReset();
   // Registry manifests are served from the fetch boundary; tarballs (`/-/`) and evidence providers stay with fetchMock.
@@ -35,7 +31,6 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
-  vi.useRealTimers();
 });
 
 describe('comparison facts release-note scheduling', () => {
@@ -154,5 +149,20 @@ describe('comparison facts release-note scheduling', () => {
       from: { version: '0.0.8', vulnerabilities: { count: 0 } },
       to: { version: '1.2.8', vulnerabilities: { count: 0 } },
     });
+  });
+});
+
+describe('comparison facts manifest resolution', () => {
+  it.each(['1.2.8', 'latest'])('resolves each manifest once per request for %s', async (target) => {
+    registry.json.mockImplementation(async (path) => manifest(path.endsWith('/0.0.8') ? '0.0.8' : '1.2.8'));
+    fetchMock.mockImplementation(async () => Response.json({ results: [{}, {}] }));
+
+    await startFacts('0.0.8', target);
+
+    // Declarations, measurements, and release notes share the request-local manifest effects.
+    expect(registry.json.mock.calls.map(([path]) => path).sort()).toEqual([
+      '/minimist/0.0.8',
+      target === 'latest' ? '/minimist/latest' : '/minimist/1.2.8',
+    ]);
   });
 });
