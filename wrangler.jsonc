@@ -4,7 +4,7 @@
   "compatibility_date": "2026-09-16",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
-  // Local-only binding: this id is a placeholder, not a remote resource. No account id, route, or secret is defined.
+  // Default environment is local-only: this placeholder must never be deployed.
   "d1_databases": [
     {
       "binding": "BRIEFINGS_DB",
@@ -14,4 +14,20 @@
       "remote": false,
     },
   ],
+  "env": {
+    "preview": {
+      "name": "can-i-update-preview",
+      "account_id": "8a0be24aad326a55ba610b94b106be81",
+      "workers_dev": true,
+      "preview_urls": false,
+      "d1_databases": [
+        {
+          "binding": "BRIEFINGS_DB",
+          "database_name": "can-i-update-preview-briefings",
+          "database_id": "351da802-5296-4e6a-a186-f9d1e99036b6",
+          "migrations_dir": "migrations",
+        },
+      ],
+    },
+  },
 }

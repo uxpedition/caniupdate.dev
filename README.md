@@ -242,4 +242,35 @@ cp .dev.vars .output/server/.dev.vars
 
 `nub run --node dev` reads `.env` instead. Keep the same intentional server-only settings in whichever local file the runtime you use reads; neither file is committed, and neither should hold real credentials for a fixture-based check.
 
-The root `wrangler.jsonc` is a local-only development configuration. Its `database_id` is a placeholder, `remote` is disabled, and no account id, route, or secret is defined, so it is not deployable as-is: do not run `wrangler deploy` against it. Remote resources and the production launch gate belong to M4, which is a separate milestone. Nuxt-side deployment options are described in the [Nuxt deployment documentation](https://nuxt.com/docs/getting-started/deployment).
+The default environment in `wrangler.jsonc` remains local-only: its database ID is a placeholder and `remote` is disabled. Never deploy the default environment. The separately approved remote trial uses the explicitly named `preview` environment below; it is not the full production rollout or the later queue/client milestones.
+
+### Remote preview trial
+
+- Site: <https://can-i-update-preview.caniupdate-dev.workers.dev>
+- Account: `caniupdate.dev` (`8a0be24aad326a55ba610b94b106be81`).
+- Worker: `can-i-update-preview`.
+- D1: `can-i-update-preview-briefings`, bound as `BRIEFINGS_DB`. Remote migrations use the root config so `migrations_dir` resolves to the repository's migrations.
+- No AI credentials, custom-domain routes, KV, Queues, or paid-plan upgrade are part of this trial. The default local environment and its existing data stay separate.
+
+Deployment credentials live outside the repository in `~/.config/can-i-update/cloudflare.env` (directory mode `700`, file mode `600`), with `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. The token is scoped to this account: Workers Scripts Edit, D1 Edit, and Workers Tail Read for live diagnostics. Do not put deployment credentials in app `.env` or `.dev.vars` files. Explicit token authentication leaves other projects' Wrangler OAuth login unchanged.
+
+Stop the local preview before rebuilding its output. Build without loading deployment credentials, then migrate and deploy with the restricted credentials in a subshell:
+
+```bash
+nub run --node build
+(
+  set -a
+  . "$HOME/.config/can-i-update/cloudflare.env"
+  set +a
+  export CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false
+  export CLOUDFLARE_INCLUDE_PROCESS_ENV=false
+  nub x --node wrangler d1 migrations apply BRIEFINGS_DB --remote --config wrangler.jsonc --env preview &&
+    nub x --node wrangler deploy --config .output/server/wrangler.json --env preview
+)
+```
+
+`--env preview` is required for both remote commands. `nub run --node preview` still starts the local Worker; its name does not select the remote environment. Restart it after the build if needed.
+
+The first deployed browser smoke passed search and minimist comparison in Firefox and Chromium, including Firefox search-to-comparison navigation and direct reload. The remote briefing endpoint returned `not-configured`, not a storage error. This did not exercise paid inference or sustained load.
+
+Live tail samples nevertheless showed CPU times above the [documented Workers Free 10 ms allowance](https://developers.cloudflare.com/workers/platform/limits/#cpu-time): for example, 35 ms for measurements and 140 ms for a briefing evidence request, both returning 200. Cloudflare documents limited flexibility for occasional overruns; successful smoke requests do not prove sustained Free-tier suitability. Profile CPU and larger-package workloads before treating this trial as production-ready. Do not enable public paid inference without separately addressing access and spending controls.
