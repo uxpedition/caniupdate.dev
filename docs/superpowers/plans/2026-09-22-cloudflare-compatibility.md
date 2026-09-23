@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
-**Status:** Milestone 1 implemented and verified locally; independent spec and quality reviews passed. No production deployment occurred. Later queue/client milestones and production rollout still require their own approval. **Revised 2026-09-23:** the user rejected the Effect dependency patch and directed removal of the process-local caches instead; see the revision section below before following any step in this plan.
+**Status:** Milestone 1 implemented and verified locally; independent spec and quality reviews passed. A subsequently approved, AI-disabled remote preview is deployed and browser-verified; this is not the full production rollout. **Revised 2026-09-23:** the user rejected the Effect dependency patch and directed removal of the process-local caches instead; see the revision section below before following any step in this historical plan. Firefox bootstrap repair and deployed CPU/logging observations are covered by the [current handoff](../../cloudflare-handoff.md). CPU investigation is next; later queue/client milestones and production rollout require their own plans and approval.
 
 ## Revision — process-local caches and the Effect patch removed (2026-09-23)
 

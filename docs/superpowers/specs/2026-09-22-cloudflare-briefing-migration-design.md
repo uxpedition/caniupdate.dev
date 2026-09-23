@@ -1,7 +1,7 @@
 # Cloudflare deployment and durable briefing generation
 
 **Date:** 2026-09-22  
-**Status:** Approved design; milestone 1 implemented and verified locally, with independent spec/quality review passed. Later milestone implementation and production deployment require their own approval. **Revised 2026-09-23:** the user rejected the Effect dependency patch and directed removal of the current process-local caches instead, with a Cloudflare-native replacement deferred. See §12; the M1 verification record predates that revision.  
+**Status:** Approved design; milestone 1 implemented and verified locally, with independent spec/quality review passed. The user subsequently approved an AI-disabled remote preview; browser checks passed, but CPU usage requires investigation before claiming Free-tier suitability. **Revised 2026-09-23:** process-local caches and the rejected Effect patch are removed; a Cloudflare-native replacement is deferred. The [current handoff](../../cloudflare-handoff.md) records the Firefox fix, deployed evidence, logging gap, and next steps. Later milestone implementation and full production rollout require their own plans and approval; §12 retains historical verification records.  
 **First implementation plan:** `docs/superpowers/plans/2026-09-22-cloudflare-compatibility.md`
 
 ## 1. Goal and decision record
@@ -219,7 +219,7 @@ Exercise search, scoped package metadata, declarations, measurements, tarball de
 
 Run the equivalent scenario in a separate Cloudflare environment after the relevant local gates pass. Use separate databases, queues, DO namespaces, and secrets. Report payload/runtime differences rather than claiming perfect emulation. Actual free-plan CPU, subrequest, memory, hibernation, and regional behaviour require deployed observation.
 
-The first milestone stops at local compatibility; the full app is not publicly rolled out while its briefing endpoint still performs synchronous inference.
+M1's original scope stopped at local compatibility. The user subsequently approved the isolated public preview recorded in the [current handoff](../../cloudflare-handoff.md), with AI credentials absent. This does not authorize public paid synchronous inference or mark the production rollout complete. CPU investigation is the immediate next gate.
 
 ## 10. Milestone roadmap
 

@@ -246,6 +246,8 @@ The default environment in `wrangler.jsonc` remains local-only: its database ID 
 
 ### Remote preview trial
 
+**Current status and next work:** [Cloudflare handoff](docs/cloudflare-handoff.md) records completed changes, the CPU samples and logging gap, the profiling sequence, and the later durable-generation/rollout gates. Stored dashboard logs are not enabled yet; the earlier measurements came from a temporary live tail connection.
+
 - Site: <https://can-i-update-preview.caniupdate-dev.workers.dev>
 - Account: `caniupdate.dev` (`8a0be24aad326a55ba610b94b106be81`).
 - Worker: `can-i-update-preview`.
