@@ -232,6 +232,8 @@ nub run --node preview
 
 `build` emits the Worker entry, assets, and the generated `.output/server/wrangler.json`, which carries the built `main`/`assets` alongside the same local `BRIEFINGS_DB` binding as the root `wrangler.jsonc`. `preview` runs that generated config with `wrangler dev --local` (real `workerd`), serving on port `5173` from all interfaces and persisting to `.wrangler/state`. Dev and preview therefore share one physical local D1 database: run them sequentially, never concurrently.
 
+Nuxt's entry-import-map optimization is disabled: Firefox can load modules from HTTP preload headers before the HTML import map is registered, leaving the server-rendered page non-interactive with an unresolved `#entry` error. Direct chunk imports avoid that startup failure while retaining SSR streaming. After changing the Nuxt build configuration, check search, search-to-comparison navigation, and a direct comparison-page reload in both Firefox and Chromium—not only the API responses.
+
 Use `.output/server/.dev.vars` for this preview's server-only settings. Wrangler also supports dotenv fallback, so do not assume an absent `.dev.vars` disables credentials. A build recreates the output directory; copy the intentionally configured, git-ignored file after every build:
 
 ```bash

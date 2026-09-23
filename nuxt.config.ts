@@ -11,6 +11,8 @@ export default defineNuxtConfig({
     },
   },
   experimental: {
+    // Firefox can preload modules from HTTP Link headers before the entry import map is registered.
+    entryImportMap: false,
     // Stream the shell before the awaited declarations prefetch resolves; Nuxt excludes crawler user agents.
     ssrStreaming: true,
   },
