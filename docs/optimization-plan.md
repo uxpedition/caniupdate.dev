@@ -57,6 +57,16 @@ The backend validates request names/versions. The frontend must require its requ
 
 Do not revisit native DecompressionStream, WebCrypto hashing, decoder reuse, or complex packet packing without new evidence: previous experiments showed no convincing benefit. AI generation coalescing/budgets remain separate from evidence coalescing.
 
+## Package metadata profiling
+
+Profiled the install-v1 packuments for `@types/node` (2,373 versions; 2.33 MB), `typescript` (3,834; 8.70 MB), and `lodash` (117; 69.6 KB) locally with Bun. Schema decoding medians were 1.9 ms, 2.9 ms, and 0.08 ms. The old metadata conversion medians were 3.86 ms, 9.24 ms, and 0.08 ms; conversion using a per-call parsed-version sort measured 0.57 ms, 1.69 ms, and 0.02 ms, with identical output in all three samples. The two large packuments therefore reduced conversion CPU by 85% and 82%; the small-package percentage is noise-sensitive.
+
+Client-side computed projections were measured separately: on `typescript`, building the version lookup and select options took about 0.3 ms and 0.2 ms. Filtering options from a selected lower bound measured 2.865 ms before and 1.707 ms after reusing a parsed lower bound (40.4% lower), with identical options. This Vue-computed profile ran locally under Bun; it excludes browser rendering and does not represent deployed CPU.
+
+`toPackageMetadata` now uses an in-place descending sort that parses each version once. It preserves prerelease precedence, stable ordering for compare-equal build metadata, and the existing numeric-locale fallback for non-semver strings. `compareSemver` also compares parsed core fields without allocating a tuple array on every comparison.
+
+Verification: the local Nuxt `GET /api/package/typescript` smoke returned HTTP 200 with 3,834 versions and descending semver order. Chromium selected TypeScript `beta` (`6.0.0-beta`) as the lower bound; target options included the boundary release and showed no `5.0.0` match. The browser reported no errors. The full suite passed (180 tests across 24 files); type checks, formatting, and the production build passed. Lint exited with zero errors and the same five warnings in untouched files. No deployment was performed.
+
 ## Evidence and status
 
 Investigation: `.data/cpu-investigation/2026-09-23/investigation-results.json`.

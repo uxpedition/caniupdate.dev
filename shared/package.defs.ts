@@ -1,6 +1,6 @@
 import { Schema } from 'effect';
 
-import { compareSemver } from './compareSemver';
+import { sortSemverDescendingInPlace } from './compareSemver';
 
 const PACKAGE_NAME_MAX_LENGTH = 214;
 
@@ -51,13 +51,14 @@ const ParsedPackageMetadataSchema = Schema.Struct({
 export type ParsedPackageMetadata = typeof ParsedPackageMetadataSchema.Type;
 
 export function toPackageMetadata(response: RegistryPackageMetadata): ParsedPackageMetadata {
+  const versions = Object.values(response.versions).map(({ version }) => version);
+  sortSemverDescendingInPlace(versions);
+
   return {
     name: response.name,
     modified: response.modified,
     distTags: response['dist-tags'],
-    versions: Object.values(response.versions)
-      .map(({ version }) => version)
-      .sort((left, right) => compareSemver(right, left)),
+    versions,
   };
 }
 

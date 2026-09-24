@@ -78,6 +78,20 @@ const comparePrerelease = (left: readonly PrereleaseIdentifier[], right: readonl
   return left.length - right.length;
 };
 
+const compareParsedSemver = (left: ParsedSemver, right: ParsedSemver): number => {
+  if (left.major !== right.major) {
+    return left.major - right.major;
+  }
+  if (left.minor !== right.minor) {
+    return left.minor - right.minor;
+  }
+  if (left.patch !== right.patch) {
+    return left.patch - right.patch;
+  }
+
+  return comparePrerelease(left.prerelease, right.prerelease);
+};
+
 export const compareSemver = (left: string, right: string): number => {
   const leftVersion = parseSemver(left);
   const rightVersion = parseSemver(right);
@@ -86,17 +100,35 @@ export const compareSemver = (left: string, right: string): number => {
     return left.localeCompare(right, undefined, { numeric: true });
   }
 
-  const coreVersionParts = [
-    [leftVersion.major, rightVersion.major],
-    [leftVersion.minor, rightVersion.minor],
-    [leftVersion.patch, rightVersion.patch],
-  ] as const;
+  return compareParsedSemver(leftVersion, rightVersion);
+};
 
-  for (const [leftPart, rightPart] of coreVersionParts) {
-    if (leftPart !== rightPart) {
-      return leftPart - rightPart;
+export const sortSemverDescendingInPlace = (versions: string[]): void => {
+  const parsedVersions = versions.map((version) => ({ version, parsed: parseSemver(version) }));
+
+  parsedVersions.sort((left, right) => {
+    if (left.parsed === null || right.parsed === null) {
+      return right.version.localeCompare(left.version, undefined, { numeric: true });
     }
-  }
 
-  return comparePrerelease(leftVersion.prerelease, rightVersion.prerelease);
+    return compareParsedSemver(right.parsed, left.parsed);
+  });
+
+  for (const [index, entry] of parsedVersions.entries()) {
+    versions[index] = entry.version;
+  }
+};
+
+export const createSemverAtLeastPredicate = (minimum: string): ((candidate: string) => boolean) => {
+  const parsedMinimum = parseSemver(minimum);
+
+  return (candidate: string): boolean => {
+    const parsedCandidate = parseSemver(candidate);
+
+    if (parsedCandidate === null || parsedMinimum === null) {
+      return compareSemver(candidate, minimum) >= 0;
+    }
+
+    return compareParsedSemver(parsedCandidate, parsedMinimum) >= 0;
+  };
 };

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 
 import { navigateTo } from '#imports';
-import { compareSemver } from '#shared/compareSemver';
+import { createSemverAtLeastPredicate } from '#shared/compareSemver';
 import Button from '~/components/element/Button.vue';
 import Combobox, { type ComboboxOption } from '~/components/form/Combobox.vue';
 import type { SelectOption, SelectSearch } from '~/components/form/select.defs';
@@ -92,10 +92,11 @@ const toVersionOptions = computed<readonly SelectOption[]>(() => {
     return versionOptions.value;
   }
 
+  const isAtLeastFromVersion = createSemverAtLeastPredicate(fromVersion);
   const filteredOptions = versionOptions.value.filter((option) => {
     const version = versionByOptionValue.value.get(option.value);
 
-    return version !== undefined && compareSemver(version, fromVersion) >= 0;
+    return version !== undefined && isAtLeastFromVersion(version);
   });
   const firstVersionIndex = filteredOptions.findIndex((option) => option.value.startsWith(VERSION_OPTION_PREFIX));
 
