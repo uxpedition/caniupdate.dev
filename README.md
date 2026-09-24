@@ -252,7 +252,7 @@ The default environment in `wrangler.jsonc` remains local-only: its database ID 
 
 ### Remote preview trial
 
-**Current status and next work:** The frontend and private evidence backend were deployed to preview on 2026-09-24. [Cloudflare handoff](docs/cloudflare-handoff.md) records deployed versions, successful API/browser checks, and remaining frontend CPU overages. [Optimization plan](docs/optimization-plan.md) records the implementation and remaining SSR/hash/tracing work. Stored dashboard logs are not enabled yet; the earlier measurements came from a temporary live tail connection.
+**Current status and next work:** The frontend and private evidence backend were deployed to preview on 2026-09-24. [Cloudflare handoff](docs/cloudflare-handoff.md) records deployed versions, successful API/browser checks, and remaining frontend CPU overages. [Optimization plan](docs/optimization-plan.md) records the implementation and remaining SSR/hash/tracing work. Both Wrangler configs now enable stored Workers Logs with 100% sampling under `env.preview`; rebuild and deploy both Workers to activate them. The earlier measurements came from a temporary live tail connection.
 
 - Site: <https://can-i-update-preview.caniupdate-dev.workers.dev>
 - Account: `caniupdate.dev` (`8a0be24aad326a55ba610b94b106be81`).

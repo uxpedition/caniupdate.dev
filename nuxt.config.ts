@@ -21,6 +21,9 @@ export default defineNuxtConfig({
   pages: {
     pattern: ['**/*.vue'],
   },
+  routeRules: {
+    '/': { prerender: true },
+  },
   nitro: {
     ignore: ['**/*.unit.ts'],
     preset: 'cloudflare_module',
@@ -31,15 +34,19 @@ export default defineNuxtConfig({
     },
   },
   css: ['~/assets/css/main.css'],
-  modules: ['@nuxt/fonts'],
-  fonts: {
-    families: [{ name: 'DM Sans', provider: 'fontsource' }],
-    defaults: {
-      weights: ['400 700'],
-      styles: ['normal'],
-      subsets: ['latin'],
-    },
-  },
+  modules: [
+    [
+      '@nuxt/fonts',
+      {
+        families: [{ name: 'DM Sans', provider: 'fontsource' }],
+        defaults: {
+          weights: ['400 700'],
+          styles: ['normal'],
+          subsets: ['latin'],
+        },
+      },
+    ],
+  ],
   vite: {
     plugins: [tailwindcss()],
   },

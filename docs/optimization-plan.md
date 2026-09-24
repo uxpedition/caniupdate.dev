@@ -49,7 +49,7 @@ The backend validates request names/versions. The frontend must require its requ
 
 ## Deferred optimization backlog
 
-- [ ] Prerender the request-independent homepage, preserving hydration, search and API behavior.
+- [x] Prerender the request-independent homepage, preserving hydration, search and API behavior.
 - [ ] Reduce remaining comparison-page SSR work and verify its CPU separately. Archive offload alone does not establish Free-tier suitability for the Nuxt Worker.
 - [ ] Retire unused per-file SHA-256 fields/computation deliberately across types/tests/docs. Keep whole-archive integrity verification. Prior isolated probe showed about 19% lower local archive wall time.
 - [ ] Filter redundant Effect response-header trace attributes while retaining business headers, spans and propagation. Synthetic benefit measured; deployed end-to-end saving not yet proven.
