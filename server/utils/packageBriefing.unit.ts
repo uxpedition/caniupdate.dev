@@ -6,9 +6,7 @@ import { Effect } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { BriefingInput } from '#shared/briefing.defs';
-import type { ComparisonVersion, PackageComparison } from '#shared/comparison.defs';
-import type { PackageReleaseNotes } from '#shared/github.defs';
+import type { BriefingEvidence } from '#shared/briefing.defs';
 
 import { installBriefingSchema, openBriefingD1, type BriefingD1 } from '../../test/helpers/briefingD1';
 import { getPackageBriefing } from './packageBriefing';
@@ -25,7 +23,7 @@ function database() {
   return runtime.database;
 }
 
-const runBriefing = (value: BriefingInput, target = database()) =>
+const runBriefing = (value: BriefingEvidence, target = database()) =>
   Effect.runPromise(getPackageBriefing(value, target).pipe(Effect.provide(FetchHttpClient.layer)));
 
 async function withOtherBinding(body: (other: BriefingD1) => Promise<void>): Promise<void> {
@@ -39,93 +37,32 @@ async function withOtherBinding(body: (other: BriefingD1) => Promise<void>): Pro
   }
 }
 
-const comparison = (nodeTo = '>=20'): PackageComparison => ({
-  dependencies: [],
-  peers: [],
-  node: { changed: true, from: '>=18', to: nodeTo, fromDeclared: true, toDeclared: true },
-  moduleFormat: {
-    changed: false,
-    from: { type: 'commonjs' },
-    to: { type: 'commonjs' },
-    fromDeclared: true,
-    toDeclared: true,
-  },
-  exports: { changed: false, from: null, to: null, fromDeclared: false, toDeclared: false },
-  types: { changed: false, from: null, to: null, fromDeclared: false, toDeclared: false },
-  licenses: { changed: false, from: ['MIT'], to: ['MIT'], added: [], removed: [] },
-  installScripts: [],
-  sizes: {
-    unpacked: {
-      status: 'unavailable',
-      from: null,
-      to: null,
-      delta: null,
-      percent: null,
-      reasons: ['fixture'],
-      sources: { from: null, to: null },
-    },
-    bundle: {
-      provider: 'bundlephobia',
-      methodology: 'provider-estimate',
-      minified: { status: 'unavailable', from: null, to: null, delta: null, percent: null, reasons: [] },
-      gzip: { status: 'unavailable', from: null, to: null, delta: null, percent: null, reasons: [] },
-    },
-  },
-  advisories: {
-    status: 'unavailable',
-    coverage: { from: 'unavailable', to: 'unavailable' },
-    reasons: ['fixture'],
-    fromOnly: [],
-    both: [],
-    toOnly: [],
-    uncertain: [],
-  },
-});
-
-const version = (packageName: string, value: string): ComparisonVersion => ({
-  name: packageName,
-  version: value,
-  dist: { tarball: `https://registry.npmjs.org/${packageName}/-/${value}.tgz` },
-  licenses: ['MIT'],
-  deprecated: false,
-  engines: { node: '>=18' },
-  dependencies: {},
-  peerDependencies: {},
-  optionalDependencies: {},
-  optionalPeers: [],
-  installScripts: [],
-  installScriptCommands: {},
-  moduleFormat: { type: 'commonjs' },
-  vulnerabilities: { status: 'unavailable', count: null, advisories: [] },
-  bundleSize: {
-    provider: 'bundlephobia',
-    url: `https://bundlephobia.com/package/${packageName}@${value}`,
-    status: 'unavailable',
-    size: null,
-    gzip: null,
-  },
-  tarball: {
-    status: 'unavailable',
-    reasons: ['fixture'],
-    url: `https://registry.npmjs.org/${packageName}/-/${value}.tgz`,
-    files: [],
-    changelogs: [],
-  },
-});
-
-const input = (nodeTo = '>=20'): BriefingInput => {
+const input = (nodeTo = '>=20'): BriefingEvidence => {
   const packageName = `briefing-fixture-${sequence++}`;
   return {
     packageName,
-    from: version(packageName, '1.0.0'),
-    to: version(packageName, '2.0.0'),
-    comparison: comparison(nodeTo),
-    releaseNotes: {
-      status: 'unavailable',
-      reasons: ['fixture'],
-      releases: [],
-      changelog: null,
-    } satisfies PackageReleaseNotes,
+    from: '1.0.0',
+    to: '2.0.0',
+    sources: [
+      {
+        id: 'comparison.node',
+        kind: 'fact',
+        label: 'Computed Node engine declaration comparison',
+        urls: [
+          `https://registry.npmjs.org/${encodeURIComponent(packageName)}/1.0.0`,
+          `https://registry.npmjs.org/${encodeURIComponent(packageName)}/2.0.0`,
+        ],
+        text: JSON.stringify({ changed: true, from: '>=18', to: nodeTo }),
+      },
+      {
+        id: 'coverage',
+        kind: 'coverage',
+        label: 'Evidence coverage and limitations',
+        urls: [],
+        text: JSON.stringify({ gaps: ['fixture'] }),
+      },
+    ],
+    gaps: ['fixture'],
   };
 };
 
@@ -390,7 +327,14 @@ describe('getPackageBriefing', () => {
     const original = await runBriefing(value);
     expect(original).toMatchObject({ status: 'available' });
 
-    const changedEvidence = { ...value, comparison: comparison('>=22') };
+    const changedEvidence: BriefingEvidence = {
+      ...value,
+      sources: value.sources.map((source) =>
+        source.id === 'comparison.node'
+          ? { ...source, text: JSON.stringify({ changed: true, from: '>=18', to: '>=22' }) }
+          : source,
+      ),
+    };
     const changed = await runBriefing(changedEvidence);
     expect(changed).toMatchObject({ status: 'available' });
     expect(changed.sources.find(({ id }) => id === 'comparison.node')?.text).toContain('>=22');
@@ -430,32 +374,17 @@ describe('getPackageBriefing', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does not regenerate when only a bundle retrieval timestamp changes', async () => {
+  it('rejects an evidence packet that exceeds the shared byte bound before provider configuration', async () => {
     fetchMock.mockImplementation(async () => response());
-    const value = input();
-    const measured = {
-      ...value,
-      from: {
-        ...value.from,
-        bundleSize: {
-          ...value.from.bundleSize,
-          status: 'available',
-          name: value.packageName,
-          version: value.from.version,
-          size: 100,
-          gzip: 50,
-          retrievedAt: '2026-01-01T00:00:00.000Z',
-        },
-      },
-    } satisfies BriefingInput;
-    const original = await runBriefing(measured);
-    expect(original).toMatchObject({ status: 'available' });
-    const refreshed = {
-      ...measured,
-      from: { ...measured.from, bundleSize: { ...measured.from.bundleSize, retrievedAt: '2026-02-01T00:00:00.000Z' } },
-    };
-    await expect(runBriefing(refreshed)).resolves.toEqual(original);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const oversized: BriefingEvidence = { ...input(), gaps: ['x'.repeat(48 * 1024)] };
+
+    await expect(runBriefing(oversized)).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'invalid-response',
+      bullets: [],
+      sources: [],
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('does not spend an AI request when the schema is missing', async () => {

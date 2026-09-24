@@ -18,10 +18,21 @@ export const BundlephobiaBuildSchema = Schema.Struct({
 export type BundlephobiaBuild = typeof BundlephobiaBuildSchema.Type;
 
 /** Standalone provider build, including bundled dependencies; not application impact or unpacked size. */
-export type PackageBundleSize = {
-  readonly provider: 'bundlephobia';
-  readonly url: string;
-} & (
-  | ({ readonly status: 'available'; readonly retrievedAt: string } & BundlephobiaBuild)
-  | { readonly status: 'unavailable'; readonly size: null; readonly gzip: null }
-);
+export const PackageBundleSizeSchema = Schema.Union([
+  Schema.Struct({
+    ...BundlephobiaBuildSchema.fields,
+    provider: Schema.Literal('bundlephobia'),
+    url: Schema.String,
+    status: Schema.Literal('available'),
+    retrievedAt: Schema.String,
+  }),
+  Schema.Struct({
+    provider: Schema.Literal('bundlephobia'),
+    url: Schema.String,
+    status: Schema.Literal('unavailable'),
+    size: Schema.Null,
+    gzip: Schema.Null,
+  }),
+]);
+
+export type PackageBundleSize = typeof PackageBundleSizeSchema.Type;

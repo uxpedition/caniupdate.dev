@@ -22,7 +22,7 @@ Open `http://<tailscale-ip>:5173` from another device. Get this device's current
 
 Nub's `--node` mode keeps Nub as the package/script runner while disabling its runtime augmentation for Nuxt worker processes. Node 26 is pinned by `.node-version` and TypeScript 6.0.3 is pinned in `package.json`; run project scripts as `nub run --node ...` so the Nuxt and Nitro processes execute on plain Node.
 
-`dev` applies the local D1 migrations first, then starts Nuxt dev with HMR. Nitro's Cloudflare dev proxy emulates the `BRIEFINGS_DB` binding, so local development needs no Cloudflare account, API token, or remote resource. Local state is git-ignored under `.wrangler/state`: the dev proxy writes `.wrangler/state/v3`, the Wrangler CLI uses the parent `.wrangler/state`, and both paths address the same physical database.
+`dev` applies the local D1 migrations, starts the private evidence Worker on port `8790` (inspector `9230`), waits for readiness, then starts Nuxt with HMR on port `5173`. Nitro's Cloudflare dev proxy provides `BRIEFINGS_DB` and connects the HTTP `PACKAGE_EVIDENCE` binding to that Wrangler session. The launcher stops both processes on shutdown or sibling failure. No Cloudflare account, API token, or remote resource is needed. Local D1 and Durable Object state is git-ignored under `.wrangler/state`: the dev proxy uses its `v3` subdirectory while the CLI takes the parent path.
 
 Nuxt development reads `.env` (see `.env.example`). Run `dev` and the production preview sequentially, never at the same time: two runtimes must not own that local D1 state concurrently.
 
@@ -50,7 +50,7 @@ Registry search and manifests come from the public `https://registry.npmjs.org` 
 
 ### Measurements route
 
-`GET /api/package/{encodedPackageName}/compare/measurements?from={version}&to={version}` returns `{ packageName, from, to, comparison: { sizes, advisories } }` for a resolved pair. The page calls it with the exact versions resolved by the declarations response; each returned version includes a `tarball` summary with `status`, `reasons`, `url`, `fileCount`, and `changelogCount`. The per-file inventory and changelog bodies stay server-side for briefing evidence packing.
+`GET /api/package/{encodedPackageName}/compare/measurements?from={version}&to={version}` returns `{ packageName, from, to, comparison: { sizes, advisories } }` for a resolved pair. The page calls it with the exact versions resolved by the declarations response; each returned version includes a `tarball` summary with `status`, `reasons`, `url`, `fileCount`, and `changelogCount`. The per-file inventory, changelog bodies, and briefing evidence packing stay in the private Durable Object backend.
 
 #### Measurement evidence
 
@@ -82,17 +82,21 @@ GitHub collection starts after both npm manifests resolve their repository metad
 
 Non-GitHub hosts, missing/malformed repository metadata, and repository/directory changes return unavailable release evidence without GitHub requests; npm and OSV results remain intact. GitHub failures, missing notes, and rate limits also preserve the rest of the comparison. This does not fetch GitLab/Bitbucket notes. Published tarball evidence is returned separately, as described below.
 
-Optionally set `GITHUB_TOKEN` in the server environment to increase GitHub's authenticated rate allowance. It is sent only to `api.github.com`, never included in the response, and redirects are rejected. Public requests work without a token but are subject to GitHub's lower unauthenticated limits.
+Optionally set `GITHUB_TOKEN` in the evidence Worker environment to increase GitHub's authenticated rate allowance. For local dev and preview, put it in the git-ignored `workers/evidence/.dev.vars`; for a deployment, use a secret on the evidence Worker, not the Nuxt Worker. It is sent only to `api.github.com`, never included in the response, and redirects are rejected. Public requests work without a token but are subject to GitHub's lower unauthenticated limits.
 
 ### Provider evidence and caching
 
-The comparison server keeps no process-local evidence cache. npm manifests, OSV records, Bundlephobia estimates, GitHub release/directory/file reads, and tarball inspections are fetched again by every request that needs them, and nothing is shared between requests, isolates, or restarts. Within a single request, each comparison side's manifest is fetched once and shared across that request's branches; that sharing never outlives the request. The two sides fetch independently even when their version strings are equal.
+Measurements and briefing evidence use the required `PACKAGE_EVIDENCE` binding to a separate private Worker. One SQLite-backed `PackageEvidence` Durable Object per npm package owns reusable evidence across version pairs, requests, and runtime restarts. The declarations route remains independent and uncached.
 
-Warm and overlapping comparisons therefore reuse no earlier provider evidence: each request waits for its own upstream calls; the application no longer retains mutable evidence such as OSV or Bundlephobia results between requests. There is no KV store, cache service, or new dependency. A deployment-native cache for provider evidence (for example Cloudflare's Cache API) is deliberately deferred; when it is added, it must not be an isolate-local `Cache`.
+- Verified archive inspections persist without a TTL, keyed by `archive-inspector-v2` and the manifest integrity policy. Present SRI always takes precedence over legacy shasum, including malformed SRI. Changed integrity or inspector revision causes a miss. Identical integrity can reuse an inspection across versions and URLs, but the current URL must still pass validation.
+- Successfully decoded manifests, complete OSV evidence, successful Bundlephobia estimates, and complete GitHub evidence expire after five minutes. Keys include `comparison-evidence-v1` and all result-affecting inputs. Changed mutable evidence is observed after expiry; failed/unavailable results and provider results containing transient partial failures are not persisted.
+- Identical in-flight misses share native promises within their owning object. Completed evidence is read from SQLite rather than retained indefinitely in JavaScript memory. There is no shared Effect Cache or patched runtime.
+- Large inspection JSON is split into Unicode-safe chunks below SQLite row limits and replaced atomically. Stored values are checked against provider result schemas on read. Expired mutable records are reclaimed on cache access. Immutable records have no automatic eviction policy: monitor account storage and request/duration quotas.
+- Each backend isolate admits at most two archive inspections, two distinct collection/response jobs, and sixteen pending HTTP requests (including coalesced callers). Excess work receives a temporary 503 rather than waiting on another object's I/O. These are per-isolate bounds, not an account-wide concurrency or memory guarantee. Caller disconnects do not cancel shared DO-owned cache population; existing provider deadlines still apply.
 
-The single durable cache is the briefing result store described below: a successful briefing is permanent, keyed by the exact evidence hash, and read before provider configuration. No other briefing evidence is cached — a later request rebuilds the factual evidence, repacks the packet, and reuses the stored response only when that hash still matches.
+The frontend receives only measurement summaries or a briefing packet capped at 48 KiB / 64 sources. Missing bindings, storage failures, and backend failures return a sanitized 503; they never trigger archive work in the frontend. The backend has no public HTTP application endpoint.
 
-Deterministic provider failures and unavailable measurements are never retained; the next request makes a fresh attempt.
+The separate D1 briefing-result cache remains permanent and keyed by the exact model-visible evidence hash. Requests rebuild the bounded packet from fresh-or-reused evidence, then check D1 before provider configuration. Evidence coalescing does not coalesce AI generations or prevent duplicate inference charges.
 
 ### Local comparison
 
@@ -129,7 +133,7 @@ After evidence collection and local comparison finish, a non-streaming AI reques
 
 An available `briefing` contains `status`, `model`, `bullets`, and collected `sources`. Fresh generations return one to five distinct, comparison-relevant insights about consequential changes, security findings, and specific migration actions, preferring fewer useful points over padding. Each generated bullet has `kind` (`change` or `migration`), `basis` (`fact`, `maintainer`, or `inference`), text, and `evidenceIds`. Fresh output validation rejects coverage bullets; the prompt focuses on specific insights rather than generic disclaimers, unchanged-metadata inventories, or repeated points. The prompt requires timeless, exact-version wording: advisory matches do not establish discovery time or the first affected release, and recency or latest-release status must not be inferred. Coverage remains a structured source in the response even when no bullet cites it. Existing permanent snapshots remain unchanged and may contain the previous `coverage` bullet kind. Source records contain IDs, labels, provenance URLs, and evidence text. Internal coverage evidence has no external URL. The model cannot supply new citation URLs or inline links. Local validation checks structure and reference membership, not whether every interpretation is semantically correct; this is not a verified safety or compatibility verdict.
 
-Successful briefings are stored permanently in the Cloudflare D1 binding `BRIEFINGS_DB`, which is required. The key is SHA-256 of the bounded evidence packet sent to the model. A later request still refreshes factual evidence enough to build that packet, then reuses the stored response when the hash matches. Changed advisories, release notes, measurements, or other model-visible evidence create a new snapshot and may generate a new briefing. API-key, endpoint, model, and prompt changes do not invalidate an existing snapshot; this preserves the already-generated result.
+Successful briefings are stored permanently in the Cloudflare D1 binding `BRIEFINGS_DB`, which is required. The key is SHA-256 of the bounded evidence packet sent to the model. A later request obtains factual evidence under the freshness policy above, rebuilds that packet in the evidence backend, then reuses the stored response when the hash matches. Changed advisories, release notes, measurements, or other model-visible evidence create a new snapshot and may generate a new briefing. API-key, endpoint, model, and prompt changes do not invalidate an existing snapshot; this preserves the already-generated result.
 
 Storage is first-writer-wins: the first validated response stored for a hash stays in place, and a later duplicate insert for the same hash is ignored. `created_at` defaults to the insert time but is not part of the key, so it never affects reuse. A missing binding, an unapplied schema, or a failed read returns `cache-error` before any provider request. A write failure also returns `cache-error`, but can occur after the provider has already generated a result; D1 persistence cannot undo that spend. Install the schema with `nub run --node db:migrate:local`.
 
@@ -143,7 +147,7 @@ The briefing route is still synchronous: its response waits for evidence collect
 
 ### Published npm tarballs
 
-Each tarball lookup starts as soon as its own npm manifest resolves, without waiting for the other manifest, GitHub, OSV, or Bundlephobia. The downloads can overlap; every lookup downloads and verifies its own artifact instead of reusing an earlier inspection. GitHub still waits for both manifests to validate repository agreement, but does not wait for either tarball.
+Each tarball lookup starts as soon as its own npm manifest resolves, without waiting for the other manifest, GitHub, OSV, or Bundlephobia. On an inspection-cache miss, downloads can overlap within the backend admission limit; warm requests reuse the verified persisted inspection. GitHub still waits for both manifests to validate repository agreement, but does not wait for either tarball.
 
 The browser-facing `/compare/measurements` response exposes `from.tarball` and `to.tarball` summaries:
 
@@ -158,7 +162,7 @@ A complete archive with no matching changelog is `available` with `changelogCoun
 
 Inspection accepts only `https://registry.npmjs.org` URLs without credentials or fragments, rejects redirects, sends no registry/GitHub credentials, and performs no retries. It verifies the strongest supported manifest integrity digest (SHA-512, SHA-384, SHA-256), or the legacy SHA-1 `shasum` only when integrity is absent. A present but unsupported or invalid integrity value never falls back to SHA-1.
 
-Limits per version: ten seconds, 10 MiB downloaded, 32 MiB decompressed archive, 10,000 entries, 4,096 characters per archive path/link target, 256 KiB captured per changelog, and 1 MiB total captured changelog text. Archives must use npm's `package/` root; malformed/truncated archives, duplicate paths, unsafe paths or link targets, and unsupported entry types are rejected. Parsing uses in-memory archive data only: no filesystem extraction, package installation, lifecycle scripts, or package imports. This is artifact evidence, not a claim that the package is safe to execute.
+Limits per version: ten seconds, 10 MiB downloaded, 32 MiB decompressed archive, 10,000 entries, 4,096 characters per archive path/link target, 256 KiB captured per changelog, and 1 MiB total captured changelog text. Archives must use npm's `package/` root; malformed/truncated archives, duplicate paths, unsafe paths or link targets, and unsupported entry types are rejected. The bounded compressed download is verified before a 64 KiB streaming gunzip/tar pipeline inspects it with backpressure; the complete decompressed archive is never buffered. There is no filesystem extraction, package installation, lifecycle script execution, or package import. This is artifact evidence, not a claim that the package is safe to execute.
 
 ## Local D1 persistence
 
@@ -216,7 +220,7 @@ nub run --node test
 nub run --node test:watch
 ```
 
-Vitest discovers `*.unit.ts` files under `app/`, `server/`, `shared/`, and `scripts/`, using a Node environment with `~`, `@`, and `#shared` aliases. Import test helpers explicitly from `vitest`. Nuxt and Nitro ignore these files during application discovery, and `pages.pattern` keeps page routes to `.vue` files so page-owned modules such as `versionSearch.ts` are not routed. The local `npmx.dev/` reference checkout is not part of the suite.
+Vitest discovers `*.unit.ts` files under `app/`, `server/`, `shared/`, `scripts/`, and `workers/`, using a Node environment with `~`, `@`, and `#shared` aliases. Import test helpers explicitly from `vitest`. Nuxt and Nitro ignore these files during application discovery, and `pages.pattern` keeps page routes to `.vue` files so page-owned modules such as `versionSearch.ts` are not routed. The local `npmx.dev/` reference checkout is not part of the suite.
 
 `Select` keeps search opt-in: pass a `search` prop (`{ filter, placeholder?, emptyMessage? }`) to render the filter input, or omit it for a plain list. The version-select filter lives with the page that owns it and is covered by local fixtures for ranking, numeric/hash/date matches, tag descriptions, normalization, stable ordering, and input preservation. The suite does not start Nuxt or call the npm registry.
 
@@ -230,7 +234,9 @@ nub run --node db:migrate:local
 nub run --node preview
 ```
 
-`build` emits the Worker entry, assets, and the generated `.output/server/wrangler.json`, which carries the built `main`/`assets` alongside the same local `BRIEFINGS_DB` binding as the root `wrangler.jsonc`. `preview` runs that generated config with `wrangler dev --local` (real `workerd`), serving on port `5173` from all interfaces and persisting to `.wrangler/state`. Dev and preview therefore share one physical local D1 database: run them sequentially, never concurrently.
+`build` emits the Nuxt Worker entry, assets, and `.output/server/wrangler.json`, then dry-runs the backend bundle from `workers/evidence/wrangler.jsonc` without deploying it. `type-check` checks both Nuxt and the standalone backend TypeScript project.
+
+`preview` passes both configs to one `wrangler dev --local` session (real `workerd`). The generated frontend config carries `BRIEFINGS_DB` and the external `PACKAGE_EVIDENCE` binding; the second config supplies the private backend. The application serves on port `5173` from all interfaces and persists D1/DO state to `.wrangler/state`. Dev and preview share this state: run them sequentially, never concurrently. Backend SQLite tables initialize inside the object; its first deployment also requires the configured `v1` SQLite-class migration.
 
 Nuxt's entry-import-map optimization is disabled: Firefox can load modules from HTTP preload headers before the HTML import map is registered, leaving the server-rendered page non-interactive with an unresolved `#entry` error. Direct chunk imports avoid that startup failure while retaining SSR streaming. After changing the Nuxt build configuration, check search, search-to-comparison navigation, and a direct comparison-page reload in both Firefox and Chromium—not only the API responses.
 
@@ -246,11 +252,11 @@ The default environment in `wrangler.jsonc` remains local-only: its database ID 
 
 ### Remote preview trial
 
-**Current status and next work:** [Cloudflare handoff](docs/cloudflare-handoff.md) records completed changes, the CPU samples and logging gap, the profiling sequence, and the later durable-generation/rollout gates. Stored dashboard logs are not enabled yet; the earlier measurements came from a temporary live tail connection.
+**Current status and next work:** The frontend and private evidence backend were deployed to preview on 2026-09-24. [Cloudflare handoff](docs/cloudflare-handoff.md) records deployed versions, successful API/browser checks, and remaining frontend CPU overages. [Optimization plan](docs/optimization-plan.md) records the implementation and remaining SSR/hash/tracing work. Stored dashboard logs are not enabled yet; the earlier measurements came from a temporary live tail connection.
 
 - Site: <https://can-i-update-preview.caniupdate-dev.workers.dev>
 - Account: `caniupdate.dev` (`8a0be24aad326a55ba610b94b106be81`).
-- Worker: `can-i-update-preview`.
+- Frontend Worker: `can-i-update-preview`. The deployed private backend is `can-i-update-preview-evidence`.
 - D1: `can-i-update-preview-briefings`, bound as `BRIEFINGS_DB`. Remote migrations use the root config so `migrations_dir` resolves to the repository's migrations.
 - No AI credentials, custom-domain routes, KV, Queues, or paid-plan upgrade are part of this trial. The default local environment and its existing data stay separate.
 
@@ -267,11 +273,12 @@ nub run --node build
   export CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false
   export CLOUDFLARE_INCLUDE_PROCESS_ENV=false
   nub x --node wrangler d1 migrations apply BRIEFINGS_DB --remote --config wrangler.jsonc --env preview &&
+    nub x --node wrangler deploy --config workers/evidence/wrangler.jsonc --env preview &&
     nub x --node wrangler deploy --config .output/server/wrangler.json --env preview
 )
 ```
 
-`--env preview` is required for both remote commands. `nub run --node preview` still starts the local Worker; its name does not select the remote environment. Restart it after the build if needed.
+These commands were run with explicit approval for the 2026-09-24 preview rollout; future deployments still require approval. Deploy the backend before the frontend so the namespace exists when its binding is installed. `--env preview` is required for every remote command. `nub run --node preview` still starts the local Worker; its name does not select the remote environment. Restart it after the build if needed.
 
 The first deployed browser smoke passed search and minimist comparison in Firefox and Chromium, including Firefox search-to-comparison navigation and direct reload. The remote briefing endpoint returned `not-configured`, not a storage error. This did not exercise paid inference or sustained load.
 

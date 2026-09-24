@@ -12,6 +12,6 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['{app,server,shared,scripts}/**/*.unit.ts'],
+    include: ['{app,server,shared,scripts,workers}/**/*.unit.ts'],
   },
 });

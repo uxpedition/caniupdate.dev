@@ -5,16 +5,14 @@ import { Cause, Data, Effect, Layer, Result, Schema } from 'effect';
 import { LanguageModel, Prompt } from 'effect/unstable/ai';
 import { FetchHttpClient, HttpClient } from 'effect/unstable/http';
 
-import { BriefingBulletSchema } from '../../shared/briefing.defs';
+import { BriefingBulletSchema, BriefingEvidenceSchema } from '../../shared/briefing.defs';
 import type {
   BriefingBullet,
   BriefingEvidence,
-  BriefingInput,
   BriefingSource,
   BriefingUnavailableReason,
   PackageBriefing,
 } from '../../shared/briefing.defs';
-import { buildBriefingEvidence } from './packageBriefingEvidence';
 import { SYSTEM_PROMPT, USER_PROMPT_LINES } from './packageBriefingPrompt';
 import {
   readBoundedResponse,
@@ -251,7 +249,7 @@ const requestBriefing = (request: BriefingRequest): Effect.Effect<PackageBriefin
   );
 
 export function getPackageBriefing(
-  input: BriefingInput,
+  input: BriefingEvidence,
   database: D1Database | undefined,
 ): Effect.Effect<PackageBriefing, never, HttpClient.HttpClient> {
   // Absence is deliberate: without the request's binding there is no store, and no local fallback is substituted.
@@ -261,7 +259,9 @@ export function getPackageBriefing(
   return Effect.gen(function* () {
     let evidence: BriefingEvidence;
     try {
-      evidence = buildBriefingEvidence(input);
+      // The packet arrived across an internal HTTP boundary. Validate it again before hashing or prompting so a
+      // malformed response can never become a cache key or model input merely because its TypeScript type matched.
+      evidence = Schema.decodeUnknownSync(BriefingEvidenceSchema)(input, { errors: 'all' });
     } catch {
       return unavailable('invalid-response');
     }

@@ -8,7 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RegistryVersionManifest } from '../../shared/package.defs';
 import { getPackageTarball } from './packageTarball';
 
-async function archive(entries: { name: string; body?: string; type?: Header['type']; linkname?: string }[]) {
+async function archive(
+  entries: { name: string; body?: string | Uint8Array; type?: Header['type']; linkname?: string }[],
+) {
   const output = pack();
   const chunks: Buffer[] = [];
   const reading = (async () => {
@@ -36,6 +38,7 @@ function manifest(body: Buffer, version = '1.0.0') {
 }
 
 const respond = (body: Buffer) => new Response(new Uint8Array(body));
+const MAX_ARCHIVE_BYTES = 32 * 1024 * 1024;
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -147,6 +150,36 @@ describe('published tarball evidence', () => {
 
   it('bounds decompression instead of trusting the compressed size', async () => {
     const body = gzipSync(Buffer.alloc(32 * 1024 * 1024 + 1));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(body)),
+    );
+    const result = await Effect.runPromise(getPackageTarball(manifest(body)));
+    expect(result).toMatchObject({ status: 'unavailable', files: [] });
+  });
+
+  it('accepts an archive whose aggregate tar output is exactly 32 MiB', async () => {
+    const payload = Buffer.alloc(MAX_ARCHIVE_BYTES - 1_536);
+    const body = await archive([{ name: 'package/payload', body: payload }]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(body)),
+    );
+    const result = await Effect.runPromise(getPackageTarball(manifest(body)));
+    expect(result.status).toBe('available');
+    expect(result.files).toContainEqual({
+      path: 'payload',
+      type: 'file',
+      size: payload.length,
+      sha256: createHash('sha256').update(payload).digest('hex'),
+    });
+  });
+
+  it('rejects aggregate decompression bombs even when each entry is individually bounded', async () => {
+    const body = await archive([
+      { name: 'package/first', body: Buffer.alloc(16 * 1024 * 1024) },
+      { name: 'package/second', body: Buffer.alloc(16 * 1024 * 1024) },
+    ]);
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => respond(body)),

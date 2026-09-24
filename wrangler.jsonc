@@ -4,6 +4,15 @@
   "compatibility_date": "2026-09-16",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PACKAGE_EVIDENCE",
+        "class_name": "PackageEvidence",
+        "script_name": "can-i-update-local-evidence",
+      },
+    ],
+  },
   // Default environment is local-only: this placeholder must never be deployed.
   "d1_databases": [
     {
@@ -20,6 +29,15 @@
       "account_id": "8a0be24aad326a55ba610b94b106be81",
       "workers_dev": true,
       "preview_urls": false,
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "PACKAGE_EVIDENCE",
+            "class_name": "PackageEvidence",
+            "script_name": "can-i-update-preview-evidence",
+          },
+        ],
+      },
       "d1_databases": [
         {
           "binding": "BRIEFINGS_DB",

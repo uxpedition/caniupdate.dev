@@ -21,13 +21,32 @@ export const BriefingSourceSchema = Schema.Struct({
 
 export type BriefingSource = typeof BriefingSourceSchema.Type;
 
-export type BriefingEvidence = {
-  packageName: string;
-  from: string;
-  to: string;
-  sources: readonly BriefingSource[];
-  gaps: readonly string[];
-};
+export const BRIEFING_EVIDENCE_MAX_BYTES = 48 * 1024;
+const BRIEFING_EVIDENCE_MAX_SOURCES = 64;
+const textEncoder = new TextEncoder();
+
+const EvidenceIdentitySchema = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.makeFilter((value) => value.trim() !== '', { expected: 'a nonblank evidence identity' }),
+);
+
+/** Internal packet returned by the evidence Durable Object and sent to the briefing model. */
+export const BriefingEvidenceSchema = Schema.Struct({
+  packageName: EvidenceIdentitySchema,
+  from: EvidenceIdentitySchema,
+  to: EvidenceIdentitySchema,
+  sources: Schema.Array(BriefingSourceSchema),
+  gaps: Schema.Array(Schema.String),
+}).check(
+  Schema.makeFilter(
+    (evidence) =>
+      evidence.sources.length <= BRIEFING_EVIDENCE_MAX_SOURCES &&
+      textEncoder.encode(JSON.stringify(evidence)).byteLength <= BRIEFING_EVIDENCE_MAX_BYTES,
+    { expected: 'bounded briefing evidence' },
+  ),
+);
+
+export type BriefingEvidence = typeof BriefingEvidenceSchema.Type;
 
 export const BriefingBulletSchema = Schema.Struct({
   kind: Schema.Literals(['change', 'migration', 'coverage']),

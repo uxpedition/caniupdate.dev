@@ -1,375 +1,174 @@
-import { createHash } from 'node:crypto';
-import { gzipSync } from 'node:zlib';
-
 import { mockEvent } from 'h3';
-import { pack } from 'tar-stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { PackageMeasurementsResponse } from '#shared/comparison.defs';
+import type { MeasuredPackageVersion, PackageMeasurementsResponse } from '#shared/comparison.defs';
+import type { PackageEvidenceNamespace, PackageEvidenceObject } from '#shared/packageEvidence.defs';
 
 import handler from './measurements.get';
 
-const registry = { json: vi.fn<(path: string) => Promise<unknown>>() };
+const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
+const idFromName = vi.fn((name: string) => ({ name }));
+const objectFetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
+const getObject = vi.fn<(id: object) => PackageEvidenceObject>(() => ({ fetch: objectFetch }));
+const namespace: PackageEvidenceNamespace = { idFromName, get: getObject };
 
-const modified = '2026-03-13T22:11:31.390433Z';
-const manifest = (version: string) => ({
+const measuredVersion = (version: string): MeasuredPackageVersion => ({
   name: 'minimist',
   version,
-  dist: { tarball: `https://registry.npmjs.org/minimist/-/minimist-${version}.tgz`, shasum: 'abc' },
+  dist: { tarball: `https://registry.npmjs.org/minimist/-/${version}.tgz` },
+  licenses: [],
+  deprecated: false,
+  engines: {},
+  dependencies: {},
+  peerDependencies: {},
+  optionalDependencies: {},
+  optionalPeers: [],
+  installScripts: [],
+  installScriptCommands: {},
+  moduleFormat: {},
+  vulnerabilities: { status: 'unavailable', count: null, advisories: [] },
+  bundleSize: {
+    provider: 'bundlephobia',
+    url: `https://bundlephobia.com/package/minimist@${version}`,
+    status: 'unavailable',
+    size: null,
+    gzip: null,
+  },
+  tarball: {
+    status: 'available',
+    reasons: [],
+    url: `https://registry.npmjs.org/minimist/-/${version}.tgz`,
+    fileCount: 1,
+    changelogCount: 0,
+  },
 });
 
-function startRequest(from: string, to: string, packageName = 'minimist'): Promise<PackageMeasurementsResponse> {
+const measurementResponse = (): PackageMeasurementsResponse => ({
+  packageName: 'minimist',
+  from: measuredVersion('1.0.0'),
+  to: measuredVersion('2.0.0'),
+  comparison: {
+    sizes: {
+      unpacked: {
+        status: 'unavailable',
+        from: null,
+        to: null,
+        delta: null,
+        percent: null,
+        reasons: [],
+        sources: { from: null, to: null },
+      },
+      bundle: {
+        provider: 'bundlephobia',
+        methodology: 'provider-estimate',
+        minified: { status: 'unavailable', from: null, to: null, delta: null, percent: null, reasons: [] },
+        gzip: { status: 'unavailable', from: null, to: null, delta: null, percent: null, reasons: [] },
+      },
+    },
+    advisories: {
+      status: 'unavailable',
+      coverage: { from: 'unavailable', to: 'unavailable' },
+      reasons: [],
+      fromOnly: [],
+      both: [],
+      toOnly: [],
+      uncertain: [],
+    },
+  },
+});
+
+function eventFor(
+  from = '1.0.0',
+  to = '2.0.0',
+  packageName = 'minimist',
+  binding: PackageEvidenceNamespace | undefined = namespace,
+) {
   const event = mockEvent(
     `http://localhost/api/package/${encodeURIComponent(packageName)}/compare/measurements?${new URLSearchParams({ from, to })}`,
   );
   event.context.params = { packageName: encodeURIComponent(packageName) };
-  return Promise.resolve(handler(event));
+  event.context.cloudflare = { env: { PACKAGE_EVIDENCE: binding } };
+  return event;
 }
 
-const fetchMock = vi.fn<typeof fetch>();
-
 beforeEach(() => {
-  registry.json.mockReset();
+  idFromName.mockClear();
+  getObject.mockClear();
+  objectFetch.mockReset();
   fetchMock.mockReset();
-  // Registry manifests are served from the fetch boundary; tarballs (`/-/`) and evidence providers stay with fetchMock.
-  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(new Request(input, init).url);
-    if (url.origin === 'https://registry.npmjs.org' && !url.pathname.includes('/-/')) {
-      return Response.json(await registry.json(url.pathname));
-    }
-    return fetchMock(input, init);
-  });
+  vi.stubGlobal('fetch', fetchMock);
 });
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
-  vi.useRealTimers();
 });
 
-async function measurementFixtureTarball() {
-  const output = pack();
-  const chunks: Buffer[] = [];
-  const reading = (async () => {
-    for await (const chunk of output) {
-      if (!Buffer.isBuffer(chunk)) throw new Error('Invalid fixture chunk');
-      chunks.push(chunk);
-    }
-  })();
-  output.entry({ name: 'package/CHANGES.md' }, 'Published fixes');
-  output.finalize();
-  await reading;
-  return gzipSync(Buffer.concat(chunks));
-}
+describe('measurement evidence boundary', () => {
+  it('selects the package object and forwards the compact request', async () => {
+    objectFetch.mockResolvedValue(Response.json(measurementResponse()));
 
-function installMeasurementFixtures(tarball: Buffer) {
-  registry.json.mockImplementation(async (path) => ({
-    ...manifest(path.slice(path.lastIndexOf('/') + 1)),
-    dist: {
-      tarball: `https://registry.npmjs.org/minimist/-/${path.slice(path.lastIndexOf('/') + 1)}.tgz`,
-      shasum: createHash('sha1').update(tarball).digest('hex'),
-    },
-    repository: 'https://github.com/minimistjs/minimist',
-    gitHead: 'a'.repeat(40),
-  }));
-  fetchMock.mockImplementation(async (input, init) => {
-    const url = new URL(new Request(input, init).url);
-    if (url.hostname === 'api.osv.dev') return Response.json({ results: [{}, {}] });
-    if (url.hostname === 'bundlephobia.com') {
-      const version = url.searchParams.get('package')?.split('@').at(-1);
-      return Response.json({ name: 'minimist', version, size: 100, gzip: 50 });
-    }
-    if (url.hostname === 'registry.npmjs.org') return new Response(new Uint8Array(tarball));
-    if (url.pathname.endsWith('/releases')) return Response.json([]);
-    if (url.pathname.endsWith('/CHANGES.md')) return new Response('Published fixes');
-    return Response.json([{ name: 'CHANGES.md', path: 'CHANGES.md', type: 'file' }]);
+    const result = await handler(eventFor());
+
+    expect(result).toEqual(measurementResponse());
+    expect(idFromName).toHaveBeenCalledWith('minimist');
+    expect(getObject).toHaveBeenCalledTimes(1);
+    const call = objectFetch.mock.calls[0];
+    if (call === undefined) throw new Error('Expected a Durable Object request');
+    const request = new Request(call[0], call[1]);
+    expect(request.url).toBe('https://package-evidence/measurements');
+    expect(request.method).toBe('POST');
+    expect(request.headers.get('content-type')).toBe('application/json');
+    await expect(request.json()).resolves.toEqual({ packageName: 'minimist', from: '1.0.0', to: '2.0.0' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
-}
 
-describe('early tarball scheduling', () => {
-  it.each(['2.0.0', 'latest'])(
-    'downloads a resolved version while the other manifest is pending (%s)',
-    async (target) => {
-      const gate = Promise.withResolvers<void>();
-      const downloads: string[] = [];
-      registry.json.mockImplementation(async (path) => {
-        if (!path.endsWith('/1.0.0')) await gate.promise;
-        return manifest(path.endsWith('/1.0.0') ? '1.0.0' : '2.0.0');
-      });
-      fetchMock.mockImplementation(async (input, init) => {
-        const url = new URL(new Request(input, init).url);
-        if (url.hostname === 'registry.npmjs.org') downloads.push(url.pathname);
-        return url.hostname === 'api.osv.dev'
-          ? Response.json({ results: [{}, {}] })
-          : new Response(null, { status: 503 });
-      });
-      const pending = startRequest('1.0.0', target);
-      try {
-        await vi.waitFor(() => expect(downloads).toEqual(['/minimist/-/minimist-1.0.0.tgz']));
-      } finally {
-        gate.resolve();
-        await pending;
-      }
-      expect(downloads).toEqual(['/minimist/-/minimist-1.0.0.tgz', '/minimist/-/minimist-2.0.0.tgz']);
-    },
-  );
-});
-
-describe('measurement comparison', () => {
-  it('reports sizes and advisories independently of declarations', async () => {
-    installMeasurementFixtures(await measurementFixtureTarball());
-    const response: PackageMeasurementsResponse = await startRequest('1.0.0', '2.0.0');
-
-    expect(response).toMatchObject({
-      from: { version: '1.0.0', tarball: { status: 'available', fileCount: 1 } },
-      to: { version: '2.0.0', bundleSize: { status: 'available' } },
-      comparison: {
-        sizes: { unpacked: { status: 'available' }, bundle: { provider: 'bundlephobia' } },
-        advisories: { status: 'available' },
-      },
+  it('returns a sanitized unavailable status when the binding is missing', async () => {
+    await expect(handler(eventFor('1.0.0', '2.0.0', 'minimist', undefined))).rejects.toMatchObject({
+      statusCode: 503,
+      statusMessage: 'Evidence service unavailable',
     });
-    expect(response).not.toHaveProperty('releaseNotes');
-    expect(JSON.stringify(response)).not.toContain('"files"');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
-});
 
-describe('tarball evidence', () => {
-  it.each(['1.2.8', 'latest'])('inspects both resolved tarballs while OSV is pending for %s', async (target) => {
-    const output = pack();
-    const chunks: Buffer[] = [];
-    const reading = (async () => {
-      for await (const chunk of output) {
-        if (!Buffer.isBuffer(chunk)) throw new Error('Invalid fixture chunk');
-        chunks.push(chunk);
-      }
-    })();
-    output.entry({ name: 'package/CHANGES.md' }, 'Published fixes');
-    output.finalize();
-    await reading;
-    const tarball = gzipSync(Buffer.concat(chunks));
-    const osvGate = Promise.withResolvers<Response>();
-    const tarballGate = Promise.withResolvers<void>();
-    const downloads: string[] = [];
-    registry.json.mockImplementation(async (path) => {
-      const result = manifest(path.endsWith('/0.0.8') ? '0.0.8' : '1.2.8');
-      result.dist.shasum = createHash('sha1').update(tarball).digest('hex');
-      return result;
+  it('returns a sanitized unavailable status for backend failures without a local fallback', async () => {
+    objectFetch.mockResolvedValue(new Response('backend internals', { status: 429 }));
+
+    await expect(handler(eventFor())).rejects.toMatchObject({
+      statusCode: 503,
+      statusMessage: 'Evidence service unavailable',
     });
-    fetchMock.mockImplementation(async (input, init) => {
-      const url = new URL(new Request(input, init).url);
-      if (url.hostname === 'api.osv.dev') return osvGate.promise;
-      if (url.hostname === 'registry.npmjs.org') {
-        downloads.push(url.pathname);
-        await tarballGate.promise;
-        return new Response(new Uint8Array(tarball));
-      }
-      return new Response(null, { status: 404 });
-    });
-    const pending = startRequest('0.0.8', target);
-    try {
-      await vi.waitFor(() =>
-        expect(downloads.sort()).toEqual(['/minimist/-/minimist-0.0.8.tgz', '/minimist/-/minimist-1.2.8.tgz']),
-      );
-    } finally {
-      tarballGate.resolve();
-      osvGate.resolve(Response.json({ results: [{}, {}] }));
-    }
-    expect(await pending).toMatchObject({
-      from: { tarball: { status: 'available', changelogCount: 1 }, vulnerabilities: { count: 0 } },
-      to: { version: '1.2.8', tarball: { status: 'available', changelogCount: 1 }, vulnerabilities: { count: 0 } },
-    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
-});
 
-describe('Bundlephobia evidence', () => {
-  it.each(['1.2.8', 'latest'])('fetches both scoped versions independently of pending OSV for %s', async (target) => {
-    const npmGate = Promise.withResolvers<void>();
-    const osvGate = Promise.withResolvers<Response>();
-    const packages: string[] = [];
-    registry.json.mockImplementation(async (path) => {
-      await npmGate.promise;
-      return { ...manifest(path.endsWith('/0.0.8') ? '0.0.8' : '1.2.8'), name: '@example/pkg' };
-    });
-    fetchMock.mockImplementation(async (input, init) => {
-      const url = new URL(new Request(input, init).url);
-      if (url.hostname === 'api.osv.dev') return osvGate.promise;
-      if (url.hostname !== 'bundlephobia.com' || url.pathname !== '/api/size')
-        return new Response(null, { status: 404 });
-      const pkg = url.searchParams.get('package');
-      if (pkg === null) return new Response(null, { status: 400 });
-      packages.push(pkg);
-      const version = pkg.slice(pkg.lastIndexOf('@') + 1);
-      return Response.json({
-        name: '@example/pkg',
-        version,
-        size: version === '0.0.8' ? 100 : 120,
-        gzip: 60,
-        hasJSModule: true,
-        ignoredMissingDependencies: ['optional-native'],
-      });
-    });
-    const pending = startRequest('0.0.8', target, '@example/pkg');
-    try {
-      if (target === 'latest') {
-        await vi.waitFor(() => expect(registry.json).toHaveBeenCalledTimes(2));
-        expect(packages).toEqual([]);
-        npmGate.resolve();
-      }
-      await vi.waitFor(() => expect(packages.sort()).toEqual(['@example/pkg@0.0.8', '@example/pkg@1.2.8']));
-    } finally {
-      npmGate.resolve();
-      osvGate.resolve(Response.json({ results: [{}, {}] }));
-    }
-    expect(await pending).toMatchObject({
-      from: { bundleSize: { status: 'available', provider: 'bundlephobia', size: 100, gzip: 60 } },
-      to: {
-        version: '1.2.8',
-        bundleSize: {
-          status: 'available',
-          size: 120,
-          gzip: 60,
-          hasJSModule: true,
-          ignoredMissingDependencies: ['optional-native'],
+  it('rejects malformed route input before selecting an object', async () => {
+    await expect(handler(eventFor('', '2.0.0'))).rejects.toMatchObject({ statusCode: 400 });
+    expect(idFromName).not.toHaveBeenCalled();
+    expect(objectFetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stale exact-version response from the object', async () => {
+    objectFetch.mockResolvedValue(Response.json(measurementResponse()));
+
+    await expect(handler(eventFor('1.1.0', '2.0.0'))).rejects.toMatchObject({ statusCode: 503 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an inventory-shaped response instead of forwarding full archive evidence', async () => {
+    const response = measurementResponse();
+    const invalid: unknown = {
+      ...response,
+      from: {
+        ...response.from,
+        tarball: {
+          ...response.from.tarball,
+          files: [{ path: 'package/index.js', type: 'file', size: 1, sha256: null }],
         },
       },
-    });
-  });
+    };
+    objectFetch.mockResolvedValue(Response.json(invalid));
 
-  it.each([
-    { label: 'wrong package', body: { name: 'other', version: '0.0.8', size: 100, gzip: 50 }, status: 200 },
-    { label: 'wrong version', body: { name: 'minimist', version: '9.0.0', size: 100, gzip: 50 }, status: 200 },
-    { label: 'invalid bytes', body: { name: 'minimist', version: '0.0.8', size: -1, gzip: 50 }, status: 200 },
-    { label: 'missing measurement', body: { name: 'minimist', version: '0.0.8', size: 100 }, status: 200 },
-    { label: 'build failure', body: { type: 'BuildError' }, status: 422 },
-    { label: 'rate limit', body: { message: 'Too many requests' }, status: 429 },
-  ])('preserves the other measurement and evidence on $label', async ({ body, status }) => {
-    registry.json.mockImplementation(async (path) => manifest(path.endsWith('/0.0.8') ? '0.0.8' : '1.2.8'));
-    fetchMock.mockImplementation(async (input, init) => {
-      const url = new URL(new Request(input, init).url);
-      if (url.hostname === 'api.osv.dev') return Response.json({ results: [{}, {}] });
-      return url.searchParams.get('package') === 'minimist@0.0.8'
-        ? Response.json(body, { status })
-        : Response.json({ name: 'minimist', version: '1.2.8', size: 0, gzip: 0 });
-    });
-    expect(await startRequest('0.0.8', '1.2.8')).toMatchObject({
-      from: { bundleSize: { status: 'unavailable', size: null, gzip: null }, vulnerabilities: { count: 0 } },
-      to: { bundleSize: { status: 'available', size: 0, gzip: 0 }, vulnerabilities: { count: 0 } },
-    });
-  });
-
-  it('bounds a stalled measurement without losing the completed version', async () => {
-    vi.useFakeTimers();
-    registry.json.mockImplementation(async (path) => manifest(path.endsWith('/0.0.8') ? '0.0.8' : '1.2.8'));
-    let stalledSignal: AbortSignal | undefined;
-    fetchMock.mockImplementation(async (input, init) => {
-      const request = new Request(input, init);
-      const url = new URL(request.url);
-      if (url.hostname === 'api.osv.dev') return Response.json({ results: [{}, {}] });
-      if (url.searchParams.get('package') === 'minimist@0.0.8') {
-        stalledSignal = request.signal;
-        return new Promise<Response>((_, reject) =>
-          request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true }),
-        );
-      }
-      return Response.json({ name: 'minimist', version: '1.2.8', size: 120, gzip: 60 });
-    });
-    const pending = startRequest('0.0.8', '1.2.8');
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(await pending).toMatchObject({
-      from: { bundleSize: { status: 'unavailable', size: null, gzip: null } },
-      to: { bundleSize: { status: 'available', size: 120, gzip: 60 } },
-    });
-    expect(stalledSignal?.aborted).toBe(true);
-  });
-});
-
-describe('comparison request scheduling', () => {
-  it('starts both npm requests and finishes unique OSV lookups while npm is still pending', async () => {
-    const fromGate = Promise.withResolvers<unknown>();
-    const toGate = Promise.withResolvers<unknown>();
-    registry.json.mockImplementation((path) => (path.endsWith('/0.0.8') ? fromGate.promise : toGate.promise));
-    const urls: string[] = [];
-    const batches: unknown[] = [];
-    fetchMock.mockImplementation(async (input, init) => {
-      const request = new Request(input, init);
-      urls.push(request.url);
-      if (request.method === 'POST') {
-        batches.push(await request.json());
-        return Response.json({
-          results: [
-            {
-              vulns: [
-                { id: 'A', modified },
-                { id: 'B', modified },
-              ],
-            },
-            { vulns: [{ id: 'B', modified }] },
-          ],
-        });
-      }
-      return Response.json({ id: request.url.endsWith('/A') ? 'A' : 'B', modified });
-    });
-
-    const pending = startRequest('0.0.8', '1.2.5');
-    try {
-      await vi.waitFor(() => {
-        expect(registry.json.mock.calls.map(([path]) => path).sort()).toEqual(['/minimist/0.0.8', '/minimist/1.2.5']);
-        const osvUrls = urls.filter((url) => url.startsWith('https://api.osv.dev/'));
-        expect(osvUrls[0]).toBe('https://api.osv.dev/v1/querybatch');
-        expect(osvUrls.slice(1).sort()).toEqual(['https://api.osv.dev/v1/vulns/A', 'https://api.osv.dev/v1/vulns/B']);
-      });
-    } finally {
-      fromGate.resolve(manifest('0.0.8'));
-      toGate.resolve(manifest('1.2.5'));
-      await pending;
-    }
-
-    expect(batches).toEqual([
-      {
-        queries: [
-          { package: { name: 'minimist', ecosystem: 'npm' }, version: '0.0.8' },
-          { package: { name: 'minimist', ecosystem: 'npm' }, version: '1.2.5' },
-        ],
-      },
-    ]);
-    expect(await pending).toMatchObject({
-      from: { version: '0.0.8', vulnerabilities: { count: 2 } },
-      to: { version: '1.2.5', vulnerabilities: { count: 1 } },
-    });
-  });
-
-  it('fetches both manifests concurrently but resolves tags before its single OSV batch', async () => {
-    const fromGate = Promise.withResolvers<unknown>();
-    const toGate = Promise.withResolvers<unknown>();
-    registry.json.mockImplementation((path) => (path.endsWith('/0.0.8') ? fromGate.promise : toGate.promise));
-    const batches: unknown[] = [];
-    fetchMock.mockImplementation(async (input, init) => {
-      const request = new Request(input, init);
-      if (request.url.startsWith('https://api.osv.dev/')) batches.push(await request.json());
-      return Response.json({ results: [{}, {}] });
-    });
-
-    const pending = startRequest('0.0.8', 'latest');
-    try {
-      await vi.waitFor(() =>
-        expect(registry.json.mock.calls.map(([path]) => path).sort()).toEqual(['/minimist/0.0.8', '/minimist/latest']),
-      );
-      expect(batches).toEqual([]);
-    } finally {
-      fromGate.resolve(manifest('0.0.8'));
-      toGate.resolve(manifest('1.2.8'));
-      await pending;
-    }
-
-    expect(batches).toEqual([
-      {
-        queries: [
-          { package: { name: 'minimist', ecosystem: 'npm' }, version: '0.0.8' },
-          { package: { name: 'minimist', ecosystem: 'npm' }, version: '1.2.8' },
-        ],
-      },
-    ]);
-    expect(await pending).toMatchObject({
-      to: { version: '1.2.8', vulnerabilities: { status: 'available', count: 0 } },
-    });
+    await expect(handler(eventFor())).rejects.toMatchObject({ statusCode: 503 });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -2,28 +2,32 @@
 // package/version manifests; complete evidence (tarball inventory, advisories, bundle sizes, and release notes) is
 // collected only for the AI briefing pipeline.
 
-import { Data, Effect, Schema } from 'effect';
-import type { HttpClient } from 'effect/unstable/http';
+import { createHash } from 'node:crypto';
 
-import type { BriefingInput } from '#shared/briefing.defs';
-import { isExactSemver } from '#shared/compareSemver';
+import { Data, Effect, Schema } from 'effect';
+import { HttpClient } from 'effect/unstable/http';
+
+import type { BriefingInput } from '../../shared/briefing.defs';
+import { PackageBundleSizeSchema } from '../../shared/bundlephobia.defs';
+import { isExactSemver } from '../../shared/compareSemver';
 import type {
   ComparisonVersion,
   MeasuredPackageVersion,
   PackageDeclarationsResponse,
   PackageMeasurementsResponse,
   TarballSummary,
-} from '#shared/comparison.defs';
+} from '../../shared/comparison.defs';
+import { PackageReleaseNotesSchema } from '../../shared/github.defs';
+import { PackageVulnerabilitiesSchema } from '../../shared/osv.defs';
 import {
   PackageNameSchema,
   RegistryVersionManifestSchema,
   toPackageVersion,
   type RegistryVersionManifest,
-} from '#shared/package.defs';
-
-import type { PackageTarball } from '../../shared/tarball.defs';
+} from '../../shared/package.defs';
+import { PackageTarballSchema, type PackageTarball } from '../../shared/tarball.defs';
 import { getRegistryJson } from './npmRegistry';
-import { getPackageBundleSize } from './packageBundleSize';
+import { getVersionBundleSize } from './packageBundleSize';
 import { compareDeclarations, compareMeasurements } from './packageComparison';
 import { getPackageReleaseNotes } from './packageReleaseNotes';
 import { getPackageTarball } from './packageTarball';
@@ -55,6 +59,94 @@ export type RegistryRequestError = InstanceType<typeof RegistryRequestError>;
 
 const registryRequestError = (cause: unknown): RegistryRequestError => new RegistryRequestError({ cause });
 
+export const EVIDENCE_CACHE_MAX_AGE_MS = 300_000;
+export const EVIDENCE_COLLECTOR_REVISION = 'comparison-evidence-v1';
+export const ARCHIVE_INSPECTOR_REVISION = 'archive-inspector-v2';
+
+export type ComparisonEvidenceCacheOptions<T> = {
+  readonly ttlMs: number | null;
+  readonly cacheable: (value: T) => boolean;
+  readonly isValid: (value: unknown) => value is T;
+};
+
+/**
+ * Persistence/coalescing is deliberately supplied by the caller. The comparison collector never owns a process
+ * global cache, so a Durable Object can scope this service to one package object and tests can use an uncached stub.
+ */
+export type ComparisonEvidenceCache = {
+  load<T>(key: string, loader: () => Promise<T>, options: ComparisonEvidenceCacheOptions<T>): Promise<T>;
+};
+
+export type ArchiveAdmission = {
+  acquire(): Promise<() => void>;
+};
+
+export type ComparisonEvidenceServices = {
+  readonly cache?: ComparisonEvidenceCache;
+  readonly archiveAdmission?: ArchiveAdmission;
+  readonly githubToken?: string;
+};
+
+const cacheKey = (scope: string, input: unknown): string => {
+  const serialized = JSON.stringify(input) ?? 'undefined';
+  const digest = createHash('sha256').update(serialized).digest('hex');
+  return `${scope}:${digest}`;
+};
+
+const runCached = <T>(
+  key: string,
+  effect: Effect.Effect<T, unknown, HttpClient.HttpClient>,
+  services: ComparisonEvidenceServices | undefined,
+  options: ComparisonEvidenceCacheOptions<T>,
+): Effect.Effect<T, RegistryRequestError, HttpClient.HttpClient> => {
+  const cache = services?.cache;
+  if (cache === undefined) return effect.pipe(Effect.mapError(registryRequestError));
+  return Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient;
+    return yield* Effect.tryPromise({
+      try: () =>
+        cache.load(
+          key,
+          () => Effect.runPromise(effect.pipe(Effect.provideService(HttpClient.HttpClient, client))),
+          options,
+        ),
+      catch: registryRequestError,
+    });
+  });
+};
+
+const safeTarballUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.origin === 'https://registry.npmjs.org' &&
+      parsed.username === '' &&
+      parsed.password === '' &&
+      parsed.hash === ''
+    );
+  } catch {
+    return false;
+  }
+};
+
+const archiveIntegrityPolicy = (manifest: RegistryVersionManifest) =>
+  manifest.dist.integrity === undefined
+    ? { algorithm: 'sha1', value: manifest.dist.shasum }
+    : { algorithm: 'sri', value: manifest.dist.integrity };
+
+const withArchiveAdmission = (
+  manifest: RegistryVersionManifest,
+  services: ComparisonEvidenceServices | undefined,
+): Effect.Effect<PackageTarball, unknown, HttpClient.HttpClient> => {
+  const inspect = getPackageTarball(manifest);
+  const admission = services?.archiveAdmission;
+  if (admission === undefined) return inspect;
+  return Effect.gen(function* () {
+    const release = yield* Effect.tryPromise({ try: () => admission.acquire(), catch: (cause) => cause });
+    return yield* inspect.pipe(Effect.ensuring(Effect.sync(release)));
+  });
+};
+
 // The registry does not negotiate content on this route: `install-v1+json` and `application/json` return the
 // same full manifest. Only the packument route abbreviates, so no `Accept` header is sent here.
 const registryVersionManifestRequest = (packageName: string, version: string) =>
@@ -65,19 +157,32 @@ const registryVersionManifestRequest = (packageName: string, version: string) =>
 
 // Each comparison side shares its request-local manifest effect across branches. Keep the sides separate
 // so each tarball can start as soon as its own manifest resolves.
-const getManifest = (packageName: string, version: string) =>
-  Effect.cached(registryVersionManifestRequest(packageName, version));
+const getManifest = (packageName: string, version: string, services?: ComparisonEvidenceServices) => {
+  const request = registryVersionManifestRequest(packageName, version);
+  const cached = runCached(
+    cacheKey('manifest', { revision: EVIDENCE_COLLECTOR_REVISION, packageName, version }),
+    request,
+    services,
+    { ttlMs: EVIDENCE_CACHE_MAX_AGE_MS, cacheable: () => true, isValid: Schema.is(RegistryVersionManifestSchema) },
+  );
+  return Effect.cached(cached);
+};
 
 type ManifestLookups = {
   readonly from: Effect.Effect<RegistryVersionManifest, RegistryRequestError, HttpClient.HttpClient>;
   readonly to: Effect.Effect<RegistryVersionManifest, RegistryRequestError, HttpClient.HttpClient>;
 };
 
-const allocateManifestLookups = (packageName: string, from: string, to: string) =>
+const allocateManifestLookups = (
+  packageName: string,
+  from: string,
+  to: string,
+  services?: ComparisonEvidenceServices,
+) =>
   Effect.gen(function* () {
     return {
-      from: yield* getManifest(packageName, from),
-      to: yield* getManifest(packageName, to),
+      from: yield* getManifest(packageName, from, services),
+      to: yield* getManifest(packageName, to, services),
     } satisfies ManifestLookups;
   });
 
@@ -101,41 +206,136 @@ export function getComparisonDeclarations(
   packageName: string,
   from: string,
   to: string,
+  services?: ComparisonEvidenceServices,
 ): Effect.Effect<PackageDeclarationsResponse, RegistryRequestError, HttpClient.HttpClient> {
   return Effect.gen(function* () {
-    const lookups = yield* allocateManifestLookups(packageName, from, to);
+    const lookups = yield* allocateManifestLookups(packageName, from, to, services);
     return yield* declarationsFrom(packageName, lookups);
   });
 }
 
-const collectMeasurements = (packageName: string, from: string, to: string, lookups: ManifestLookups) =>
-  Effect.gen(function* () {
-    const manifests = resolveManifestPair(lookups);
-    // Exact inputs can start measurement work before either manifest resolves; tags and ranges wait for resolution.
-    const exact = isExactSemver(from) && isExactSemver(to);
-    const evidence = yield* Effect.all(
-      {
-        tarballs: Effect.all(
-          {
-            from: lookups.from.pipe(Effect.flatMap(getPackageTarball)),
-            to: lookups.to.pipe(Effect.flatMap(getPackageTarball)),
-          },
-          { concurrency: 2 },
+const cachedTarball = (
+  manifest: RegistryVersionManifest,
+  services?: ComparisonEvidenceServices,
+): Effect.Effect<PackageTarball, RegistryRequestError, HttpClient.HttpClient> => {
+  const validUrl = safeTarballUrl(manifest.dist.tarball);
+  const inspect = validUrl ? withArchiveAdmission(manifest, services) : getPackageTarball(manifest);
+  if (services?.cache === undefined || !validUrl) {
+    return inspect.pipe(Effect.mapError(registryRequestError));
+  }
+  const result = runCached(
+    cacheKey('archive', {
+      revision: ARCHIVE_INSPECTOR_REVISION,
+      integrity: archiveIntegrityPolicy(manifest),
+    }),
+    inspect,
+    services,
+    { ttlMs: null, cacheable: (value) => value.status !== 'unavailable', isValid: Schema.is(PackageTarballSchema) },
+  );
+  return result.pipe(Effect.map((value) => ({ ...value, url: manifest.dist.tarball })));
+};
+
+const cachedVulnerabilities = (
+  packageName: string,
+  fromVersion: string,
+  toVersion: string,
+  services?: ComparisonEvidenceServices,
+) =>
+  runCached(
+    cacheKey('osv', { revision: EVIDENCE_COLLECTOR_REVISION, packageName, fromVersion, toVersion }),
+    getPackageVulnerabilities(packageName, fromVersion, toVersion),
+    services,
+    {
+      ttlMs: EVIDENCE_CACHE_MAX_AGE_MS,
+      cacheable: (value) => value.from.status === 'available' && value.to.status === 'available',
+      isValid: Schema.is(Schema.Struct({ from: PackageVulnerabilitiesSchema, to: PackageVulnerabilitiesSchema })),
+    },
+  );
+
+const cachedBundleVersion = (packageName: string, version: string, services?: ComparisonEvidenceServices) =>
+  runCached(
+    cacheKey('bundle', { revision: EVIDENCE_COLLECTOR_REVISION, packageName, version }),
+    getVersionBundleSize(packageName, version),
+    services,
+    {
+      ttlMs: EVIDENCE_CACHE_MAX_AGE_MS,
+      cacheable: (value) => value.status === 'available',
+      isValid: Schema.is(PackageBundleSizeSchema),
+    },
+  );
+
+const cachedReleaseNotes = (
+  packageName: string,
+  from: RegistryVersionManifest,
+  to: RegistryVersionManifest,
+  services?: ComparisonEvidenceServices,
+) =>
+  runCached(
+    cacheKey('github', { revision: EVIDENCE_COLLECTOR_REVISION, packageName, from, to }),
+    getPackageReleaseNotes(
+      packageName,
+      from,
+      to,
+      services?.githubToken ?? (typeof process === 'undefined' ? undefined : process.env.GITHUB_TOKEN),
+    ),
+    services,
+    {
+      ttlMs: EVIDENCE_CACHE_MAX_AGE_MS,
+      cacheable: (value) => value.status === 'available',
+      isValid: Schema.is(PackageReleaseNotesSchema),
+    },
+  );
+
+const collectMeasurementEvidence = (
+  packageName: string,
+  from: string,
+  to: string,
+  lookups: ManifestLookups,
+  services?: ComparisonEvidenceServices,
+) => {
+  // Exact inputs start providers immediately; tags and ranges wait for registry resolution.
+  const versions =
+    isExactSemver(from) && isExactSemver(to)
+      ? Effect.succeed({ from, to })
+      : resolveManifestPair(lookups).pipe(Effect.map((pair) => ({ from: pair.from.version, to: pair.to.version })));
+  return Effect.all(
+    {
+      tarballs: Effect.all(
+        {
+          from: lookups.from.pipe(Effect.flatMap((manifest) => cachedTarball(manifest, services))),
+          to: lookups.to.pipe(Effect.flatMap((manifest) => cachedTarball(manifest, services))),
+        },
+        { concurrency: 2 },
+      ),
+      vulnerabilities: versions.pipe(
+        Effect.flatMap((pair) => cachedVulnerabilities(packageName, pair.from, pair.to, services)),
+      ),
+      bundleSize: versions.pipe(
+        Effect.flatMap((pair) =>
+          Effect.all(
+            {
+              from: cachedBundleVersion(packageName, pair.from, services),
+              to: cachedBundleVersion(packageName, pair.to, services),
+            },
+            { concurrency: 2 },
+          ),
         ),
-        vulnerabilities: exact
-          ? getPackageVulnerabilities(packageName, from, to)
-          : manifests.pipe(
-              Effect.flatMap((pair) => getPackageVulnerabilities(packageName, pair.from.version, pair.to.version)),
-            ),
-        bundleSize: exact
-          ? getPackageBundleSize(packageName, from, to)
-          : manifests.pipe(
-              Effect.flatMap((pair) => getPackageBundleSize(packageName, pair.from.version, pair.to.version)),
-            ),
-      },
-      { concurrency: 3 },
-    );
-    const resolvedManifests = yield* manifests;
+      ),
+    },
+    { concurrency: 3 },
+  );
+};
+
+const collectMeasurements = (
+  packageName: string,
+  from: string,
+  to: string,
+  lookups: ManifestLookups,
+  services?: ComparisonEvidenceServices,
+) =>
+  Effect.gen(function* () {
+    const evidence = yield* collectMeasurementEvidence(packageName, from, to, lookups, services);
+    const resolvedManifests = yield* resolveManifestPair(lookups);
     const fromVersion = {
       ...toPackageVersion(resolvedManifests.from),
       vulnerabilities: evidence.vulnerabilities.from,
@@ -169,10 +369,15 @@ export function getComparisonMeasurements(
   packageName: string,
   from: string,
   to: string,
+  services?: ComparisonEvidenceServices,
 ): Effect.Effect<PackageMeasurementsResponse, RegistryRequestError, HttpClient.HttpClient> {
   return Effect.gen(function* () {
-    const lookups = yield* allocateManifestLookups(packageName, from, to);
-    const { from: fromVersion, to: toVersion, comparison } = yield* collectMeasurements(packageName, from, to, lookups);
+    const lookups = yield* allocateManifestLookups(packageName, from, to, services);
+    const {
+      from: fromVersion,
+      to: toVersion,
+      comparison,
+    } = yield* collectMeasurements(packageName, from, to, lookups, services);
     return {
       packageName,
       from: toMeasuredVersion(fromVersion),
@@ -190,15 +395,16 @@ export function getComparisonFacts(
   packageName: string,
   from: string,
   to: string,
+  services?: ComparisonEvidenceServices,
 ): Effect.Effect<ComparisonFacts, RegistryRequestError, HttpClient.HttpClient> {
   return Effect.gen(function* () {
-    const lookups = yield* allocateManifestLookups(packageName, from, to);
+    const lookups = yield* allocateManifestLookups(packageName, from, to, services);
     const { declarations, measurements, releaseNotes } = yield* Effect.all(
       {
         declarations: declarationsFrom(packageName, lookups),
-        measurements: collectMeasurements(packageName, from, to, lookups),
+        measurements: collectMeasurements(packageName, from, to, lookups, services),
         releaseNotes: resolveManifestPair(lookups).pipe(
-          Effect.flatMap((pair) => getPackageReleaseNotes(packageName, pair.from, pair.to, process.env.GITHUB_TOKEN)),
+          Effect.flatMap((pair) => cachedReleaseNotes(packageName, pair.from, pair.to, services)),
         ),
       },
       { concurrency: 3 },

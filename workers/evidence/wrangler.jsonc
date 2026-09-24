@@ -1,0 +1,19 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "can-i-update-local-evidence",
+  "main": "index.ts",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["nodejs_compat", "no_nodejs_compat_v2"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PackageEvidence"] }],
+  // Local-only default. Deploy the explicit preview environment before its frontend.
+  "env": {
+    "preview": {
+      "name": "can-i-update-preview-evidence",
+      "account_id": "8a0be24aad326a55ba610b94b106be81",
+      "workers_dev": false,
+      "preview_urls": false,
+    },
+  },
+}

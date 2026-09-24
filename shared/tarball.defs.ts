@@ -1,21 +1,29 @@
-export type PublishedFile = {
-  path: string;
-  type: 'file' | 'directory' | 'symlink' | 'link';
-  size: number;
-  sha256: string | null;
-  linkTarget?: string;
-};
+import { Schema } from 'effect';
 
-export type ShippedChangelog = {
-  path: string;
-  body: string;
-  truncated: boolean;
-};
+const PublishedFileSchema = Schema.Struct({
+  path: Schema.String,
+  type: Schema.Literals(['file', 'directory', 'symlink', 'link']),
+  size: Schema.Number,
+  sha256: Schema.NullOr(Schema.String),
+  linkTarget: Schema.optionalKey(Schema.String),
+});
 
-export type PackageTarball = {
-  status: 'available' | 'partial' | 'unavailable';
-  reasons: readonly string[];
-  url: string;
-  files: readonly PublishedFile[];
-  changelogs: readonly ShippedChangelog[];
-};
+export type PublishedFile = typeof PublishedFileSchema.Type;
+
+const ShippedChangelogSchema = Schema.Struct({
+  path: Schema.String,
+  body: Schema.String,
+  truncated: Schema.Boolean,
+});
+
+export type ShippedChangelog = typeof ShippedChangelogSchema.Type;
+
+export const PackageTarballSchema = Schema.Struct({
+  status: Schema.Literals(['available', 'partial', 'unavailable']),
+  reasons: Schema.Array(Schema.String),
+  url: Schema.String,
+  files: Schema.Array(PublishedFileSchema),
+  changelogs: Schema.Array(ShippedChangelogSchema),
+});
+
+export type PackageTarball = typeof PackageTarballSchema.Type;

@@ -1,15 +1,14 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { createHash, timingSafeEqual, type Hash } from 'node:crypto';
 import { posix } from 'node:path';
-import { promisify } from 'node:util';
-import { gunzip } from 'node:zlib';
 
 import { Effect } from 'effect';
-import { extract, type Header } from 'tar-stream';
+import { type Header } from 'tar-stream';
 
 import type { RegistryVersionManifest } from '../../shared/package.defs';
 import type { PackageTarball, PublishedFile, ShippedChangelog } from '../../shared/tarball.defs';
+import { inspectTarball, type TarParser } from './packageTarballStreaming';
 
-const decompress = promisify(gunzip);
 const MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES = 32 * 1024 * 1024;
 const MAX_ENTRIES = 10_000;
@@ -19,8 +18,33 @@ const TIMEOUT_MS = 10_000;
 const CHANGELOG_NAME = /^(changelog|changes|history)(\.(md|markdown|txt|rst))?$/i;
 
 type InspectedTarball = Omit<PackageTarball, 'url'>;
+type InspectionResult = Omit<InspectedTarball, 'status'>;
+type Outcome<T> = { ok: true; value: T } | { ok: false; cause: unknown };
 
-function verifyIntegrity(body: Buffer, dist: Pick<RegistryVersionManifest['dist'], 'integrity' | 'shasum'>) {
+type ContentResult = {
+  text: Buffer;
+  sha256: string | null;
+};
+
+type TarEntry = AsyncIterable<unknown> & { header: Header };
+
+type EntryResult = {
+  file: PublishedFile;
+  text: Buffer;
+  isChangelog: boolean;
+};
+
+type EntryInspectionState = {
+  files: PublishedFile[];
+  changelogs: ShippedChangelog[];
+  paths: Set<string>;
+  reasons: Set<string>;
+  tasks: Array<Promise<Outcome<EntryResult>>>;
+  changelogBytes: number;
+  firstTaskFailure: unknown;
+};
+
+function verifyIntegrity(body: Buffer, dist: Pick<RegistryVersionManifest['dist'], 'integrity' | 'shasum'>): void {
   if (dist.integrity !== undefined) {
     // SRI requires the strongest supported algorithm; never downgrade to shasum on failure.
     const tokens = dist.integrity.trim().split(/\s+/);
@@ -120,7 +144,7 @@ function inspectHeader(header: Header): PublishedFile {
   }
   validateEntrySize(header);
   const file: PublishedFile = { path: archivePath(header.name, type === 'directory'), type, size, sha256: null };
-  if (type === 'link' || type === 'symlink') file.linkTarget = inspectLink(header);
+  if (type === 'link' || type === 'symlink') return { ...file, linkTarget: inspectLink(header) };
   return file;
 }
 
@@ -142,30 +166,42 @@ function inspectLink(header: Header): string {
   return target;
 }
 
+type ContentState = {
+  hash: Hash | null;
+  text: Buffer[];
+  captured: number;
+  actual: number;
+  allowance: number;
+};
+
+function consumeContentChunk(value: unknown, state: ContentState, signal: AbortSignal): void {
+  if (!Buffer.isBuffer(value)) throw new Error('Invalid tarball content chunk');
+  const chunk = value;
+  signal.throwIfAborted();
+  state.actual += chunk.length;
+  state.hash?.update(chunk);
+  if (state.captured >= state.allowance) return;
+  const part = chunk.subarray(0, state.allowance - state.captured);
+  state.text.push(part);
+  state.captured += part.length;
+}
+
 async function inspectContent(
   entry: AsyncIterable<unknown>,
   file: PublishedFile,
   allowance: number,
   signal: AbortSignal,
-) {
-  const hash = file.type === 'file' ? createHash('sha256') : null;
-  const text: Buffer[] = [];
-  let captured = 0;
-  let actual = 0;
-  for await (const chunk of entry) {
-    if (!Buffer.isBuffer(chunk)) throw new Error('Invalid tarball content chunk');
-    signal.throwIfAborted();
-    actual += chunk.length;
-    hash?.update(chunk);
-    if (captured < allowance) {
-      const part = chunk.subarray(0, allowance - captured);
-      text.push(part);
-      captured += part.length;
-    }
-  }
-  if (actual !== file.size) throw new Error('Incomplete tarball entry');
-  file.sha256 = hash?.digest('hex') ?? null;
-  return Buffer.concat(text, captured);
+): Promise<ContentResult> {
+  const state: ContentState = {
+    hash: file.type === 'file' ? createHash('sha256') : null,
+    text: [],
+    captured: 0,
+    actual: 0,
+    allowance,
+  };
+  for await (const value of entry) consumeContentChunk(value, state, signal);
+  if (state.actual !== file.size) throw new Error('Incomplete tarball entry');
+  return { text: Buffer.concat(state.text, state.captured), sha256: state.hash?.digest('hex') ?? null };
 }
 
 function decodeChangelog(file: PublishedFile, text: Buffer, reasons: Set<string>): ShippedChangelog | null {
@@ -181,48 +217,89 @@ function decodeChangelog(file: PublishedFile, text: Buffer, reasons: Set<string>
   }
 }
 
-async function inspectEntries(parser: ReturnType<typeof extract>, signal: AbortSignal) {
-  const files: PublishedFile[] = [];
-  const changelogs: ShippedChangelog[] = [];
-  const paths = new Set<string>();
-  const reasons = new Set<string>();
-  let changelogBytes = 0;
-  for await (const entry of parser) {
-    signal.throwIfAborted();
-    if (paths.size >= MAX_ENTRIES) throw new Error('Tarball exceeds entry limit');
-    const file = inspectHeader(entry.header);
-    if (paths.has(file.path)) throw new Error('Duplicate tarball path');
-    paths.add(file.path);
-    const isChangelog = file.type === 'file' && CHANGELOG_NAME.test(posix.basename(file.path));
-    const allowance = isChangelog ? Math.min(MAX_CHANGELOG_BYTES, MAX_CHANGELOG_TOTAL_BYTES - changelogBytes) : 0;
-    const text = await inspectContent(entry, file, allowance, signal);
-    if (file.path) files.push(file);
-    if (isChangelog) {
-      const changelog = decodeChangelog(file, text, reasons);
-      if (changelog) changelogs.push(changelog);
-      changelogBytes += text.length;
-    }
-  }
-  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  changelogs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return { files, changelogs, reasons: [...reasons] };
+function createEntryState(): EntryInspectionState {
+  return {
+    files: [],
+    changelogs: [],
+    paths: new Set<string>(),
+    reasons: new Set<string>(),
+    tasks: [],
+    changelogBytes: 0,
+    firstTaskFailure: undefined,
+  };
 }
 
-async function inspectTarball(body: Buffer, signal: AbortSignal) {
-  const bytes = await decompress(body, { maxOutputLength: MAX_ARCHIVE_BYTES });
+function changelogAllowance(file: PublishedFile, isChangelog: boolean, reserved: number): number {
+  if (!isChangelog) return 0;
+  return Math.min(MAX_CHANGELOG_BYTES, MAX_CHANGELOG_TOTAL_BYTES - reserved, file.size);
+}
+
+function inspectEntry(
+  entry: TarEntry,
+  state: EntryInspectionState,
+  parser: TarParser,
+  signal: AbortSignal,
+): Promise<Outcome<EntryResult>> {
   signal.throwIfAborted();
-  if (bytes.length < 1024 || bytes.length % 512 !== 0 || bytes.subarray(-1024).some((byte) => byte !== 0)) {
-    throw new Error('Incomplete tarball archive');
+  if (state.paths.size >= MAX_ENTRIES) throw new Error('Tarball exceeds entry limit');
+  const file = inspectHeader(entry.header);
+  if (state.paths.has(file.path)) throw new Error('Duplicate tarball path');
+  state.paths.add(file.path);
+  const isChangelog = file.type === 'file' && CHANGELOG_NAME.test(posix.basename(file.path));
+  const allowance = changelogAllowance(file, isChangelog, state.changelogBytes);
+  state.changelogBytes += allowance;
+  const task: Promise<Outcome<EntryResult>> = inspectContent(entry, file, allowance, signal).then(
+    ({ text, sha256 }): Outcome<EntryResult> => ({
+      ok: true,
+      value: { file: { ...file, sha256 }, text, isChangelog },
+    }),
+    (cause): Outcome<EntryResult> => {
+      state.firstTaskFailure ??= cause;
+      parser.destroy(toError(cause));
+      return { ok: false, cause };
+    },
+  );
+  return task;
+}
+
+async function collectEntryResults(
+  parser: TarParser,
+  signal: AbortSignal,
+  state: EntryInspectionState,
+): Promise<Array<Outcome<EntryResult>>> {
+  for await (const entry of parser) state.tasks.push(inspectEntry(entry, state, parser, signal));
+  return Promise.all(state.tasks);
+}
+
+function finalizeEntries(results: Array<Outcome<EntryResult>>, state: EntryInspectionState): InspectionResult {
+  for (const result of results) {
+    if (!result.ok) throw result.cause;
+    const { file, text, isChangelog } = result.value;
+    if (file.path) state.files.push(file);
+    if (isChangelog) {
+      const changelog = decodeChangelog(file, text, state.reasons);
+      if (changelog) state.changelogs.push(changelog);
+    }
   }
-  const parser = extract();
-  // Iteration installs error handling before feeding the parser. No extraction APIs are used.
-  const reading = inspectEntries(parser, signal);
-  parser.end(bytes);
+  state.files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  state.changelogs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return { files: state.files, changelogs: state.changelogs, reasons: [...state.reasons] };
+}
+
+async function inspectEntries(parser: TarParser, signal: AbortSignal): Promise<InspectionResult> {
+  const state = createEntryState();
   try {
-    return await reading;
-  } finally {
-    parser.destroy();
+    const results = await collectEntryResults(parser, signal, state);
+    return finalizeEntries(results, state);
+  } catch (cause) {
+    parser.destroy(toError(state.firstTaskFailure ?? cause));
+    await Promise.all(state.tasks);
+    throw state.firstTaskFailure ?? cause;
   }
+}
+
+function toError(cause: unknown, fallback = 'Tarball stream failed'): Error {
+  return cause instanceof Error ? cause : new Error(typeof cause === 'string' ? cause : fallback);
 }
 
 const unavailableTarball = (url: string, cause: unknown): PackageTarball => ({
@@ -241,7 +318,7 @@ const inspectPackageTarball = (
     try: async (signal): Promise<InspectedTarball> => {
       const body = await downloadTarball(url, signal);
       verifyIntegrity(body, dist);
-      const result = await inspectTarball(body, signal);
+      const result = await inspectTarball(body, signal, inspectEntries);
       return { status: result.reasons.length ? 'partial' : 'available', ...result };
     },
     catch: (cause) => cause,

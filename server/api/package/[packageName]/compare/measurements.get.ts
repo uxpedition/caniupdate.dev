@@ -1,19 +1,22 @@
-import { Effect } from 'effect';
-import { FetchHttpClient } from 'effect/unstable/http';
-import { defineEventHandler, getValidatedQuery, getValidatedRouterParams } from 'h3';
+import { createError, defineEventHandler, getValidatedQuery, getValidatedRouterParams } from 'h3';
 
 import {
   decodePackageComparisonQuery,
   decodePackageComparisonRouterParams,
-  getComparisonMeasurements,
 } from '../../../../utils/packageComparisonFacts';
+import { getPackageMeasurements, PackageEvidenceClientError } from '../../../../utils/packageEvidenceClient';
 
-// Sizes, advisories, and inspected-archive summaries for a resolved pair. Kept off the comparison route so a slow
-// provider cannot delay declarations.
+// Sizes, advisories, and inspected-archive summaries are collected by the private package object so a public request
+// never performs archive/provider work in the Nuxt Worker.
 export default defineEventHandler(async (event) => {
   const { packageName } = await getValidatedRouterParams(event, decodePackageComparisonRouterParams);
   const { from, to } = await getValidatedQuery(event, decodePackageComparisonQuery);
-  return Effect.runPromise(
-    getComparisonMeasurements(packageName, from, to).pipe(Effect.provide(FetchHttpClient.layer)),
-  );
+  try {
+    return await getPackageMeasurements(event.context.cloudflare?.env?.PACKAGE_EVIDENCE, { packageName, from, to });
+  } catch (error) {
+    if (error instanceof PackageEvidenceClientError) {
+      throw createError({ statusCode: 503, statusMessage: 'Evidence service unavailable' });
+    }
+    throw error;
+  }
 });

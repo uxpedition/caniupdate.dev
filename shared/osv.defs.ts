@@ -92,22 +92,40 @@ export const OsvVulnerabilitySchema = Schema.Struct({
 
 export type OsvVulnerability = typeof OsvVulnerabilitySchema.Type;
 
-export type PackageAdvisory = {
-  readonly id: string;
-  readonly url: string;
-} & (
-  | ({ readonly detailsStatus: 'available' } & Pick<
-      OsvVulnerability,
-      'modified' | 'published' | 'summary' | 'aliases' | 'severity' | 'references' | 'affected'
-    >)
-  | { readonly detailsStatus: 'unavailable' }
-);
+const PackageAdvisorySchema = Schema.Union([
+  Schema.Struct({
+    id: Schema.String,
+    url: Schema.String,
+    detailsStatus: Schema.Literal('available'),
+    modified: OsvVulnerabilitySchema.fields.modified,
+    published: OsvVulnerabilitySchema.fields.published,
+    summary: OsvVulnerabilitySchema.fields.summary,
+    aliases: OsvVulnerabilitySchema.fields.aliases,
+    severity: OsvVulnerabilitySchema.fields.severity,
+    references: OsvVulnerabilitySchema.fields.references,
+    affected: OsvVulnerabilitySchema.fields.affected,
+  }),
+  Schema.Struct({
+    id: Schema.String,
+    url: Schema.String,
+    detailsStatus: Schema.Literal('unavailable'),
+  }),
+]);
 
-export type PackageVulnerabilities =
-  | { readonly status: 'unavailable'; readonly count: null; readonly advisories: readonly PackageAdvisory[] }
-  | {
-      readonly status: 'available' | 'partial';
-      /** Unique OSV IDs returned, excluding confirmed withdrawn records. Partial results are not exhaustive. */
-      readonly count: number;
-      readonly advisories: readonly PackageAdvisory[];
-    };
+export type PackageAdvisory = typeof PackageAdvisorySchema.Type;
+
+export const PackageVulnerabilitiesSchema = Schema.Union([
+  Schema.Struct({
+    status: Schema.Literal('unavailable'),
+    count: Schema.Null,
+    advisories: Schema.Array(PackageAdvisorySchema),
+  }),
+  Schema.Struct({
+    status: Schema.Literals(['available', 'partial']),
+    // Unique OSV IDs, excluding confirmed withdrawn records; partial results are not exhaustive.
+    count: Schema.Number,
+    advisories: Schema.Array(PackageAdvisorySchema),
+  }),
+]);
+
+export type PackageVulnerabilities = typeof PackageVulnerabilitiesSchema.Type;

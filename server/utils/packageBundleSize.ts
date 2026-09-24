@@ -3,7 +3,7 @@ import { Effect, Result } from 'effect';
 import type { PackageBundleSize } from '../../shared/bundlephobia.defs';
 import { bundlephobiaSizeUrl, getBundlephobiaSize } from './bundlephobia';
 
-const getVersionBundleSize = Effect.fn('Bundlephobia.getVersionBundleSize')(function* (
+export const getVersionBundleSize = Effect.fn('Bundlephobia.getVersionBundleSize')(function* (
   packageName: string,
   version: string,
 ) {
