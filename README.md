@@ -10,6 +10,8 @@ Install the locked dependency graph with Nub:
 nub ci
 ```
 
+The `preinstall` guard rejects other package managers so `nub.lock` remains canonical.
+
 ## Development
 
 Start the Nuxt development server on port `5173`, exposed on all network interfaces including Tailscale:

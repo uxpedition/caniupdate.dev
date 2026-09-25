@@ -8,6 +8,7 @@
     "dev": "node scripts/dev.ts",
     "generate": "nuxt generate",
     "preview": "wrangler dev --local --config .output/server/wrangler.json --config workers/evidence/wrangler.jsonc --persist-to .wrangler/state --ip 0.0.0.0 --port 5173",
+    "preinstall": "node scripts/check-package-manager.mjs",
     "prepare": "nuxt prepare && lefthook install",
     "postinstall": "nuxt prepare",
     "commitlint": "commitlint",
