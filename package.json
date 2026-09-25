@@ -39,6 +39,7 @@
     "@cloudflare/workers-types": "5.20260922.1",
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",
+    "@effect/platform-node": "4.0.0-rc.115",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.20.2",
     "lefthook": "^2.1.14",
