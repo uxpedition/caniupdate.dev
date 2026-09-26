@@ -24,7 +24,9 @@ Open `http://<tailscale-ip>:5173` from another device. Get this device's current
 
 Nub's `--node` mode keeps Nub as the package/script runner while disabling its runtime augmentation for Nuxt worker processes. Node 26 is pinned by `.node-version` and TypeScript 6.0.3 is pinned in `package.json`; run project scripts as `nub run --node ...` so the Nuxt and Nitro processes execute on plain Node.
 
-The Effect-based `dev` launcher applies the local D1 migrations, starts the private evidence Worker on port `8790` (inspector `9230`), waits for readiness, then starts Nuxt with HMR on port `5173`. Nitro's Cloudflare dev proxy provides `BRIEFINGS_DB` and connects the HTTP `PACKAGE_EVIDENCE` binding to that Wrangler session. The launcher stops both processes on shutdown or sibling failure. No Cloudflare account, API token, or remote resource is needed. Local D1 and Durable Object state is git-ignored under `.wrangler/state`: the dev proxy uses its `v3` subdirectory while the CLI takes the parent path.
+The Effect-based `dev` launcher applies the local D1 migration through `workers/briefing/wrangler.jsonc`, starts the private evidence Worker on port `8790` (inspector `9230`) and the private briefing Worker on port `8791` (inspector `9231`), waits for both to report readiness, then starts Nuxt with HMR on port `5173`. It stops all three processes on Ctrl-C or on any sibling failure, and it holds `launcher.lock` in the persistence root, so `dev` and `preview` cannot own the same local state at once. No Cloudflare account, API token, or remote resource is needed. Local D1 and Durable Object state is git-ignored under `.wrangler/state`: Nitro's dev proxy points at its `v3` subdirectory, and the launcher hands Wrangler the parent path, which appends `v3` itself.
+
+Two browser-facing hostnames: the comparison page on `http://localhost:5173`, and the briefing Worker's public read-only socket on port `8791`, the `eventsUrl` a submission returns. A page opened from another device is served on this machine's own address, so the launcher runs the briefing Worker on every interface and allows every Origin that page can have — the loopback aliases and each non-internal interface address on the frontend port — in its `BRIEFING_ALLOWED_ORIGIN` list. The advertised URL stays `ws://localhost:8791`, and each submission is answered with that same socket re-pointed at the host the request arrived on, because only the request knows which address the device used; the briefing Worker then compares the browser's `Origin` byte-for-byte against its list. The Nuxt Worker reaches both private Workers through bindings resolved locally in Wrangler's dev registry — `PACKAGE_EVIDENCE` for the evidence Durable Object and `BRIEFING_SERVICE` for the briefing Worker's private `BriefingSubmitter` entrypoint — so the private Workers keep their own local sessions and only the briefing Worker owns the local D1 database. `node scripts/dev.ts --preview` starts the built frontend from `.output/server/wrangler.json` on `5173` instead of Nuxt. `--persist-to <dir>`, `--evidence-port`, `--briefing-port`, `--frontend-port`, and `--inspector-base` override the documented defaults; `node scripts/smoke.ts` uses them to run the isolated scenario below beside a live session.
 
 Nuxt development reads `.env` (see `.env.example`). Run `dev` and the production preview sequentially, never at the same time: two runtimes must not own that local D1 state concurrently.
 
@@ -76,7 +78,12 @@ For example, `minimist` versions `1.2.5` and `1.2.8` currently return counts of 
 
 ### Briefing route
 
-`GET /api/package/{encodedPackageName}/compare/briefing?from={versionOrTag}&to={versionOrTag}` returns the AI briefing for the same pair as `{ packageName, from, to, briefing }`, where `from` and `to` are the resolved versions. It accepts the same parameters and validation as the comparison route, collects evidence server-side through the same providers, and never trusts browser-supplied facts. Keeping it separate lets clients render the factual comparison without waiting for inference.
+`POST /api/package/{encodedPackageName}/compare/briefing?from={versionOrTag}&to={versionOrTag}` submits the AI briefing for the same pair, where `from` and `to` are the resolved versions. It accepts the same parameters and validation as the comparison route, collects evidence server-side through the private evidence object, and never trusts browser-supplied facts. The route owns no generation, no store, and no credential: it forwards the bounded packet to the briefing Worker's private entrypoint and answers with one of two envelopes.
+
+- `200 { status: 'available', packageName, from, to, briefing }` — the stored briefing for this exact evidence hash.
+- `202 { status: 'queued' | 'running', packageName, from, to, hash, eventsUrl, revision }` — a job the page follows on the briefing Worker's own hostname (`ws://localhost:8791` locally, re-pointed at the host the request arrived on when the service advertises a loopback URL). The socket sends `queued`/`running` frames carrying a revision, then one terminal `available` frame with the briefing or `unavailable` frame with a sanitized reason, and closes. A reconnect re-reads that snapshot and never starts inference.
+
+A refused submission is an opaque `503`; the page resubmits once after 250 ms, and since submissions are hash-addressed the resubmission can only rejoin the same job. The factual comparison route stays independent and never waits for inference.
 
 #### Briefing release-note collection
 
@@ -98,7 +105,7 @@ Measurements and briefing evidence use the required `PACKAGE_EVIDENCE` binding t
 
 The frontend receives only measurement summaries or a briefing packet capped at 48 KiB / 64 sources. Missing bindings, storage failures, and backend failures return a sanitized 503; they never trigger archive work in the frontend. The backend has no public HTTP application endpoint.
 
-The separate D1 briefing-result cache remains permanent and keyed by the exact model-visible evidence hash. Requests rebuild the bounded packet from fresh-or-reused evidence, then check D1 before provider configuration. Evidence coalescing does not coalesce AI generations or prevent duplicate inference charges.
+The separate D1 briefing-result cache remains permanent and keyed by the exact model-visible evidence hash. Requests rebuild the bounded packet from fresh-or-reused evidence, then check D1 before provider configuration. Evidence coalescing applies to the comparison pipeline's evidence cache; duplicate submissions for one hash rejoin that hash's job object and share a single generation, while distinct evidence hashes can still incur independent inference charges.
 
 ### Local comparison
 
@@ -117,7 +124,7 @@ Declaration change lists contain only differences. Scalar/composite comparisons 
 
 The briefing route keeps collecting complete facts server-side, including release notes, but release notes are inference evidence only. They are not returned as a standalone response field or rendered in a page section; if included in the briefing evidence, they appear solely as `maintainer` sources and support bullets with `basis: 'maintainer'`.
 
-Set these server-only environment variables (see `.env.example`):
+These three settings belong to the private briefing Worker, not to the Nuxt environment: put them in the git-ignored `workers/briefing/.dev.vars` beside its Wrangler config for local runs, or set them as a Worker secret for a deployment. Nuxt reads no AI setting, and nothing needs to be copied into `.output/server/.dev.vars` (see `.env.example`):
 
 ```dotenv
 AI_BRIEFING_ENDPOINT=https://opencode.ai/zen/go/v1/chat/completions
@@ -125,7 +132,7 @@ AI_BRIEFING_API_KEY=your-development-key
 AI_BRIEFING_MODEL=deepseek-v4-flash
 ```
 
-For OpenRouter, replace the endpoint with `https://openrouter.ai/api/v1/chat/completions`, the key with your OpenRouter key, and the model with `deepseek/deepseek-v4-flash`. The endpoint is the complete OpenAI-compatible Chat Completions URL: its path must end with `/chat/completions`, and query parameters are rejected. Production deployments must set the environment explicitly; do not expose these settings in public runtime configuration. Restart the server after changing its environment.
+For OpenRouter, replace the endpoint with `https://openrouter.ai/api/v1/chat/completions`, the key with your OpenRouter key, and the model with `deepseek/deepseek-v4-flash`. The endpoint is the complete OpenAI-compatible Chat Completions URL: its path must end with `/chat/completions`, and query parameters are rejected. Production deployments must set the environment explicitly on the briefing Worker; do not expose these settings in public runtime configuration. Restart the local briefing Worker after changing `.dev.vars`.
 
 To exercise the briefing path without paying for generation, point these three settings at a local OpenAI-compatible fixture endpoint—loopback HTTP is allowed—and treat its output as a test double rather than real inference. Only set real credentials when you intend to pay for real generations; no smoke or development workflow requires them.
 
@@ -135,17 +142,17 @@ After evidence collection and local comparison finish, a non-streaming AI reques
 
 An available `briefing` contains `status`, `model`, `bullets`, and collected `sources`. Fresh generations return one to five distinct, comparison-relevant insights about consequential changes, security findings, and specific migration actions, preferring fewer useful points over padding. Each generated bullet has `kind` (`change` or `migration`), `basis` (`fact`, `maintainer`, or `inference`), text, and `evidenceIds`. Fresh output validation rejects coverage bullets; the prompt focuses on specific insights rather than generic disclaimers, unchanged-metadata inventories, or repeated points. The prompt requires timeless, exact-version wording: advisory matches do not establish discovery time or the first affected release, and recency or latest-release status must not be inferred. Coverage remains a structured source in the response even when no bullet cites it. Existing permanent snapshots remain unchanged and may contain the previous `coverage` bullet kind. Source records contain IDs, labels, provenance URLs, and evidence text. Internal coverage evidence has no external URL. The model cannot supply new citation URLs or inline links. Local validation checks structure and reference membership, not whether every interpretation is semantically correct; this is not a verified safety or compatibility verdict.
 
-Successful briefings are stored permanently in the Cloudflare D1 binding `BRIEFINGS_DB`, which is required. The key is SHA-256 of the bounded evidence packet sent to the model. A later request obtains factual evidence under the freshness policy above, rebuilds that packet in the evidence backend, then reuses the stored response when the hash matches. Changed advisories, release notes, measurements, or other model-visible evidence create a new snapshot and may generate a new briefing. API-key, endpoint, model, and prompt changes do not invalidate an existing snapshot; this preserves the already-generated result.
+Successful briefings are stored permanently in the Cloudflare D1 binding `BRIEFINGS_DB` on the briefing Worker, which is required. One SQLite-backed job Durable Object per evidence hash owns the submission: it stores the bounded packet, claims a generation lease, reconciles against D1 before and after the provider call, and notifies its subscribers. A Cloudflare Queue only wakes that object with a hash and a generation id, so the packet, the prompt, and the credential never travel through it. A queued or running job is a service-binding call and a socket read only; only a POST can start a generation, and a failed generation stays terminal until a later POST. The key is SHA-256 of the bounded evidence packet sent to the model. A later request obtains factual evidence under the freshness policy above, rebuilds that packet in the evidence backend, then reuses the stored response when the hash matches. Changed advisories, release notes, measurements, or other model-visible evidence create a new snapshot and may generate a new briefing. API-key, endpoint, model, and prompt changes do not invalidate an existing snapshot; this preserves the already-generated result.
 
 Storage is first-writer-wins: the first validated response stored for a hash stays in place, and a later duplicate insert for the same hash is ignored. `created_at` defaults to the insert time but is not part of the key, so it never affects reuse. A missing binding, an unapplied schema, or a failed read returns `cache-error` before any provider request. A write failure also returns `cache-error`, but can occur after the provider has already generated a result; D1 persistence cannot undo that spend. Install the schema with `nub run --node db:migrate:local`.
 
-Unavailable briefings have empty bullets/sources and a sanitized reason: `not-configured`, `invalid-config`, `provider-error`, `cache-error`, `timeout`, or `invalid-response`. All three settings absent disables AI; incomplete configuration is invalid. A failed briefing changes only the briefing endpoint's response; the factual comparison route never calls the provider and is unaffected.
+Unavailable briefings have empty bullets/sources and a sanitized reason: `not-configured`, `invalid-config`, `provider-error`, `cache-error`, `timeout`, or `invalid-response`. All three settings absent disables AI; incomplete configuration is invalid, and a submission against an unconfigured or misconfigured briefing Worker is refused with the sanitized `503` before any job exists. A D1 read failure prevents the provider call; a write failure is never reported as durable success. A failed briefing changes only the briefing route's answer; the factual comparison route never calls the provider and is unaffected.
 
 Evidence packaging is bounded to 48 KiB and 64 sources, with maintainer excerpts capped at 4 KiB. Advisory evidence keeps computed match groups, IDs/aliases, summaries, severity, source links, and coverage status; it explicitly excludes full affected-version ranges and reference lists, which remain available from the factual comparison endpoint. Sources are admitted in priority order with coverage space reserved, skipping sources that cannot fit rather than evicting every smaller fact. Omitted or truncated evidence becomes an explicit coverage limitation. Conservative Markdown version-heading matching excludes unversioned, unreleased, and out-of-range changelog sections. The AI stage has one 75-second total deadline across both attempts, including body decoding and validation, a 128 KiB response limit per attempt enforced while reading, and no redirects. HTTPS is required except for HTTP loopback development endpoints.
 
 Raw credentials are not exposed, and credentials or raw provider error bodies never enter either endpoint's response.
 
-The briefing route is still synchronous: its response waits for evidence collection, inference, and storage. Inference is not coalesced — two concurrent requests that miss D1 for the same evidence hash, even inside the same isolate, may each call the provider and pay for a generation. D1 decides only which persisted result becomes canonical (first writer wins); it is not a spend limiter. Queueing, global inference budgets, and push notifications are later milestones and are not part of this runtime.
+Generation is asynchronous: a `202` submission returns as soon as the packet is durable and the Queue has accepted the pointer, and the page follows the job on the socket. The job Durable Object's serialized decision sections mean two simultaneous submissions for one hash share a single generation, and a duplicate Queue delivery for a settled or superseded generation only reports the current snapshot. D1 still decides which persisted result becomes canonical (first writer wins) and is not a spend limiter: the OpenRouter key's configured budget is the spend boundary. Access control, per-account budgets, and deployment observability are later milestones and are not part of this runtime.
 
 ### Published npm tarballs
 
@@ -168,7 +175,7 @@ Limits per version: ten seconds, 10 MiB downloaded, 32 MiB decompressed archive,
 
 ## Local D1 persistence
 
-Briefing snapshots live in the emulated Cloudflare D1 database bound as `BRIEFINGS_DB`, defined in the root `wrangler.jsonc` with migrations from `migrations/`. Apply the schema explicitly; it is never installed lazily by a briefing request:
+Briefing snapshots live in the emulated Cloudflare D1 database bound as `BRIEFINGS_DB` in `workers/briefing/wrangler.jsonc`, whose `migrations_dir` is the repository's `migrations/`. The briefing Worker is the only local owner of that database: the root `wrangler.jsonc` declares no D1 binding, so neither Nitro's dev proxy nor the built frontend opens it. Apply the schema explicitly; it is never installed lazily by a briefing request:
 
 ```bash
 nub run --node db:migrate:local
@@ -186,7 +193,7 @@ Snapshots generated before D1 can be carried over without regenerating them. Sto
 cp .data/briefings.db .data/briefings.db.bak
 nub --node scripts/export-briefings.ts .data/briefings.db .data/briefings-export.sql
 nub run --node db:migrate:local
-nub exec -- wrangler d1 execute BRIEFINGS_DB --local --config wrangler.jsonc --persist-to .wrangler/state --file .data/briefings-export.sql
+nub exec -- wrangler d1 execute BRIEFINGS_DB --local --config workers/briefing/wrangler.jsonc --persist-to .wrangler/state --file .data/briefings-export.sql
 ```
 
 The exporter writes a new SQL file and refuses to touch an existing one, so a previous export is never overwritten. Every row is validated before it is emitted: a malformed row, a key that is not a 64-character lowercase SHA-256, or a stored response that fails the briefing schema stops the export with a nonzero exit and leaves no importable partial output. Stored JSON text and its `created_at` value are copied verbatim—escaped for SQL literals but never decoded and re-encoded—so already-paid responses survive exactly. The generated SQL uses `ON CONFLICT (evidence_hash) DO NOTHING`, so importing it into a D1 database that already holds a snapshot for the same hash preserves the existing winner, and re-running the import is safe.
@@ -238,29 +245,23 @@ nub run --node preview
 
 `build` emits the Nuxt Worker entry, assets, and `.output/server/wrangler.json`, then dry-runs the backend bundle from `workers/evidence/wrangler.jsonc` without deploying it. `type-check` checks both Nuxt and the standalone backend TypeScript project.
 
-`preview` passes both configs to one `wrangler dev --local` session (real `workerd`). The generated frontend config carries `BRIEFINGS_DB` and the external `PACKAGE_EVIDENCE` binding; the second config supplies the private backend. The application serves on port `5173` from all interfaces and persists D1/DO state to `.wrangler/state`. Dev and preview share this state: run them sequentially, never concurrently. Backend SQLite tables initialize inside the object; its first deployment also requires the configured `v1` SQLite-class migration.
+`preview` runs the same launcher with `--preview`, so the three runtimes are the built frontend on `5173` (real `workerd`, from `.output/server/wrangler.json`) plus the evidence Worker on `8790` and the briefing Worker on `8791`. The generated frontend config carries only `PACKAGE_EVIDENCE` and `BRIEFING_SERVICE`; the briefing Worker's own session owns `BRIEFINGS_DB`, its job Durable Objects, and the provider settings from `workers/briefing/.dev.vars`. All three sessions persist to `.wrangler/state`, and the launcher lock refuses a concurrent `dev` or `preview` against the same root. Backend SQLite tables initialize inside each object; a first deployment also requires the configured `v1` SQLite-class migration for the evidence object and the job object.
 
 Nuxt's entry-import-map optimization is disabled: Firefox can load modules from HTTP preload headers before the HTML import map is registered, leaving the server-rendered page non-interactive with an unresolved `#entry` error. Direct chunk imports avoid that startup failure while retaining SSR streaming. After changing the Nuxt build configuration, check search, search-to-comparison navigation, and a direct comparison-page reload in both Firefox and Chromium—not only the API responses.
 
-Use `.output/server/.dev.vars` for this preview's server-only settings. Wrangler also supports dotenv fallback, so do not assume an absent `.dev.vars` disables credentials. A build recreates the output directory; copy the intentionally configured, git-ignored file after every build:
-
-```bash
-cp .dev.vars .output/server/.dev.vars
-```
-
-`nub run --node dev` reads `.env` instead. Keep the same intentional server-only settings in whichever local file the runtime you use reads; neither file is committed, and neither should hold real credentials for a fixture-based check.
+The frontend has no server-only settings of its own any more, so `.output/server/.dev.vars` is neither needed nor created by the launcher; a build recreates `.output/`, and no credential belongs there. The briefing Worker reads the git-ignored `workers/briefing/.dev.vars` beside its config in both `dev` and `preview` (verified locally with the loopback fixture). Wrangler also supports dotenv fallback, so do not assume an absent `.dev.vars` disables credentials; never put a real provider key in `.env` or in a repo file.
 
 The default environment in `wrangler.jsonc` remains local-only: its database ID is a placeholder and `remote` is disabled. Never deploy the default environment. The separately approved remote trial uses the explicitly named `preview` environment below; it is not the full production rollout or the later queue/client milestones.
 
 ### Remote preview trial
 
-**Current status and next work:** The frontend and private evidence backend were deployed to preview on 2026-09-24. [Cloudflare handoff](docs/cloudflare-handoff.md) records deployed versions, successful API/browser checks, and remaining frontend CPU overages. [Optimization plan](docs/optimization-plan.md) records the implementation and remaining SSR/hash/tracing work. Both Wrangler configs now enable stored Workers Logs with 100% sampling under `env.preview`; rebuild and deploy both Workers to activate them. The earlier measurements came from a temporary live tail connection.
+**Current status and next work:** The deployed preview still runs the 2026-09-24 frontend and evidence Workers: synchronous briefing generation, root-config D1, and no Queue or job Durable Objects. The local and built runtimes now run the asynchronous design (three runtimes, private submission binding, hibernating socket, briefing-owned D1), which has never been deployed. [Cloudflare handoff](docs/cloudflare-handoff.md) records the deployed versions, the local measurements, and the deployment gates that remain unapproved. [Optimization plan](docs/optimization-plan.md) records the remaining SSR/hash/tracing work.
 
 - Site: <https://can-i-update-preview.caniupdate-dev.workers.dev>
 - Account: `caniupdate.dev` (`8a0be24aad326a55ba610b94b106be81`).
-- Frontend Worker: `can-i-update-preview`. The deployed private backend is `can-i-update-preview-evidence`.
-- D1: `can-i-update-preview-briefings`, bound as `BRIEFINGS_DB`. Remote migrations use the root config so `migrations_dir` resolves to the repository's migrations.
-- No AI credentials, custom-domain routes, KV, Queues, or paid-plan upgrade are part of this trial. The default local environment and its existing data stay separate.
+- Frontend Worker: `can-i-update-preview`. The deployed private backend is `can-i-update-preview-evidence`; the new private briefing Worker is `can-i-update-preview-briefing` and is not deployed.
+- D1: `can-i-update-preview-briefings`, bound as `BRIEFINGS_DB` by the briefing Worker. Remote migrations use `workers/briefing/wrangler.jsonc`, whose `migrations_dir` resolves to the repository's migrations.
+- The new design adds resources this trial has not created: a Queue (`can-i-update-preview-briefings`), a SQLite-backed job Durable Object class, and the briefing Worker's public socket route. Each needs explicit approval. No AI credentials, custom-domain routes, KV, or paid-plan upgrade are part of this trial. The default local environment and its existing data stay separate.
 
 Deployment credentials live outside the repository in `~/.config/can-i-update/cloudflare.env` (directory mode `700`, file mode `600`), with `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. The token is scoped to this account: Workers Scripts Edit, D1 Edit, and Workers Tail Read for live diagnostics. Do not put deployment credentials in app `.env` or `.dev.vars` files. Explicit token authentication leaves other projects' Wrangler OAuth login unchanged.
 
@@ -274,13 +275,15 @@ nub run --node build
   set +a
   export CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false
   export CLOUDFLARE_INCLUDE_PROCESS_ENV=false
-  nub x --node wrangler d1 migrations apply BRIEFINGS_DB --remote --config wrangler.jsonc --env preview &&
+  nub x --node wrangler queues create can-i-update-preview-briefings &&
+    nub x --node wrangler d1 migrations apply BRIEFINGS_DB --remote --config workers/briefing/wrangler.jsonc --env preview &&
     nub x --node wrangler deploy --config workers/evidence/wrangler.jsonc --env preview &&
+    nub x --node wrangler deploy --config workers/briefing/wrangler.jsonc --env preview &&
     nub x --node wrangler deploy --config .output/server/wrangler.json --env preview
 )
 ```
 
-These commands were run with explicit approval for the 2026-09-24 preview rollout; future deployments still require approval. Deploy the backend before the frontend so the namespace exists when its binding is installed. `--env preview` is required for every remote command. `nub run --node preview` still starts the local Worker; its name does not select the remote environment. Restart it after the build if needed.
+Only the first `d1 migrations apply`, `evidence`, and frontend commands were run, with explicit approval for the 2026-09-24 rollout. The Queue, the briefing Worker, and the socket route are new and unapproved: this list records the order to use, not an authorization. The briefing Worker's `env.preview` needs its own OpenRouter secret and the deployment must follow the [rollout gates](docs/cloudflare-handoff.md). Deploy the private backends before the frontend so their namespaces exist when its bindings are installed. `--env preview` is required for every remote command. `nub run --node preview` still starts only the local runtime; its name does not select the remote environment.
 
 The first deployed browser smoke passed search and minimist comparison in Firefox and Chromium, including Firefox search-to-comparison navigation and direct reload. The remote briefing endpoint returned `not-configured`, not a storage error. This did not exercise paid inference or sustained load.
 

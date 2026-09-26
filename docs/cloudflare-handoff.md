@@ -4,7 +4,72 @@
 
 Deployment smoke: health, minimist measurements/briefing, and two sequential TypeScript 5.8.3 → 5.9.3 measurement requests returned 200. TypeScript DO CPU was 352 ms then 6 ms; frontend CPU was 2 ms for each. Chromium hydrated search returned results and direct minimist comparison populated sizes, advisories, and 20/24-file inventories. Browser input was exercised through DOM input events because tool-level click/type timed out. Homepage (80 ms), comparison SSR (77 ms), and briefing frontend (59/68 ms) samples still exceeded 10 ms, with outcome `ok`; sustained Free-tier suitability remains unproven. These are individual live-tail samples, not a load test. Sanitized evidence: `.data/preview-deployment-2026-09-24.json`.
 
-The sections below retain earlier local and remote verification history; this deployment supersedes statements that the backend is local-only. The [optimization plan](optimization-plan.md) records the selected scope and deferred work; the original M1 plan remains execution history.
+The sections below retain earlier local and remote verification history; this deployment supersedes statements that the backend is local-only, and the synchronous generation path they describe is superseded by the asynchronous submission and socket contract recorded above. The [optimization plan](optimization-plan.md) records the selected scope and deferred work; the original M1 plan remains execution history.
+
+## Local and built runtime gate (2026-09-26)
+
+Task 5 made the local and built runtimes reproducible and measured them. Nothing here is deployed: the commands below
+are local only, use the loopback fixture in the git-ignored `workers/briefing/.dev.vars`, and start no remote session.
+
+### What the runtimes are
+
+- `nub run --node dev` starts three processes through `scripts/dev.ts`: the evidence Worker on `8790` (inspector `9230`), the briefing Worker on `8791` (inspector `9231`), then Nuxt with HMR on `5173`. `nub run --node preview` runs the same launcher with `--preview`, replacing Nuxt with the built Worker from `.output/server/wrangler.json`.
+- The migration runs through `workers/briefing/wrangler.jsonc`: that Worker is the only local owner of D1. The root `wrangler.jsonc` declares no D1 binding, so the Nuxt dev proxy and the built frontend never open the database.
+- The frontend resolves both private bindings by name through Wrangler's dev registry (`PACKAGE_EVIDENCE` Durable Object and `BRIEFING_SERVICE` → `BriefingSubmitter`), so each runtime runs in its own local session and a single D1 owner is enough. Two sessions sharing one local D1 database are not needed and are not used.
+- Every session passes `--persist-to .wrangler/state`; the launcher takes `launcher.lock` in that root, so `dev` and `preview` cannot own the same state concurrently. Ctrl-C stops all three processes: after a run, `5173`, `8790`, and `8791` are free again (asserted by the smoke scenario).
+- The private submission envelope now crosses the RPC boundary as JSON text. workerd attaches an own `Symbol.dispose` to every object it deserializes for a caller, and the frontend decodes the envelope strictly (`onExcessProperty: 'error'`, which walks `Reflect.ownKeys`), so an object-returning entrypoint failed the first built-runtime run with `SchemaError: Expected no excess property` and a sanitized 503 before this fix.
+
+### The scenario and its observed output
+
+`node scripts/smoke.ts [--preview] [--measure]` runs the whole path against a temporary persistence root, offset ports, and a private dev registry, so it never touches `.wrangler/state` or a live session. It starts the loopback fixture on the port `workers/briefing/.dev.vars` names, and refuses to run if that endpoint is not loopback.
+
+Both modes passed the same scenario: POST → socket `available` → restart → D1 hit → reconnect.
+
+| Step                                         | dev (`node scripts/smoke.ts`)                               | preview (`node scripts/smoke.ts --preview`) |
+| -------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------- |
+| POST `minimist 1.2.5...1.2.8`                | `202` `queued`, `eventsUrl` on `8891`                       | `202` `queued` (777 ms)                     |
+| Socket                                       | `running@2 → available@3`, close `1000 briefing complete`   | same                                        |
+| Provider calls for that package              | exactly 1                                                   | exactly 1                                   |
+| Restart (`SIGINT`, exit 130, ports released) | migration reports "No migrations to apply", D1 row survives | same                                        |
+| POST after restart                           | `200 available` from D1 (110 ms)                            | `200 available` (113 ms)                    |
+| Socket reconnect                             | `available@3`, close `1000`; provider count unchanged       | same                                        |
+
+The restart also proves the persistence contract: the D1 row and the job object's state live under the same root the second run reopens, so a settled job answers from D1 without a provider call and a reconnect never starts inference.
+
+### CPU samples
+
+Method: for each window, the CPU of the whole process tree of one runtime (the Wrangler process and its `workerd`), summed from `/proc/<pid>/task/<tid>/schedstat` in nanoseconds, divided by the requests the window drove. A 5-second idle window is reported per second instead of per request. Three warm POST bursts of 30 requests each, one cold generation, one settled reconnect, and 8 concurrent subscribers, all on the built (`--preview`) runtime:
+
+| Window                              | frontend (`5273`) | briefing Worker (`8791`) | evidence Worker (`8790`) |
+| ----------------------------------- | ----------------- | ------------------------ | ------------------------ |
+| idle, 5 s                           | 10.23 ms/s        | 8.05 ms/s                | 7.65 ms/s                |
+| warm POST (D1 hit) ×30              | 7.051 ms/request  | 3.303 ms/request         | 5.370 ms/request         |
+| cold POST to terminal frame         | 15.728 ms         | 42.767 ms                | 48.122 ms                |
+| settled socket reconnect            | 1.238 ms          | 8.987 ms                 | 1.245 ms                 |
+| 8 concurrent subscribers            | 0.235 ms each     | 5.567 ms each            | 0.178 ms each            |
+| `vue 3.4.38...3.5.13` warm POST ×30 | 6.699 ms/request  | 3.262 ms/request         | 5.218 ms/request         |
+
+Read these as local process-tree CPU, not as Cloudflare's per-request accounting: local `wrangler dev` also captures observability traces, and the numbers include runtime bookkeeping. They are evidence about _where_ the work is and how it scales, not a deployment measurement.
+
+- The ordinary-Worker path that the 10 ms allowance covers is the frontend POST (Nuxt Worker) and the briefing Worker's submission entrypoint plus Queue consumer. The frontend POST measured ~6.7–7.1 ms of process-tree CPU per warm request for two different packages, which is closer to the 10 ms allowance than the previous synchronous route's live-tail samples (35–140 ms) but leaves little headroom; the briefing-side submission path measured ~3.3 ms.
+- The cold generation (~43 ms of briefing-Worker CPU) and the socket/subscriber paths run inside the job Durable Object, whose allowance is 30 seconds; the Queue consumer and the service-bound submission are ordinary invocations. A single process contains both, so these windows attribute runtime, not invocation type.
+- No local sample produced an exceeded-CPU result, and the D1, Queue, and Durable Object usage in this scenario is small (one row, one message, one job object per pair).
+
+### Browser observations on the real page
+
+Driven in Chromium against the running preview runtime (`http://localhost:5273`):
+
+- Changing the comparison while a briefing is pending (a client-side route change to another pair, and separately leaving the comparison) closed the abandoned subscription — measured as `readyState 2 (CLOSING)` on the recorded socket — and made no additional provider request: the loopback fixture's count for the abandoned package was unchanged before and after. A settled job's own socket still closes normally with `1000 briefing complete`.
+- A cold pair whose submission is refused with the route's sanitized 503 recovered: with the first POST failed at the transport and the client's single resubmission allowed through, the page issued exactly two POSTs 253 ms apart and then rendered the briefing. A control run of the same cold pair without the injected failure issued exactly one POST.
+- Environment artifact worth knowing when reading socket logs: a client `socket.close()` against these local workerd sockets leaves the socket in CLOSING without ever firing a `close` event (reproduced with a manual control socket), so "the client closed the subscription" must be read from `readyState`, not from a close event. The composable's reconnect path keys on close events and was therefore not exercised by client-initiated closes locally.
+
+### Gates that remain unapproved
+
+No deployment, no remote command, and no real provider key were used. Still requiring explicit approval and separate work:
+
+1. The new Queue, the SQLite-backed job Durable Object migration, the briefing Worker, and its public socket route.
+2. The `env.preview` OpenRouter secret, and the key's configured budget as the spend boundary. Paid inference stays disabled until the budget exists and the measured gates below pass.
+3. Sustained-load evidence from the deployed runtime: local process-tree CPU cannot confirm the 10 ms allowance under production accounting, and the frontend POST has ~3 ms of headroom in the samples above.
 
 ## Completed work
 
@@ -23,7 +88,7 @@ The Firefox failure was real: HTTP module-preload headers interacted with the `#
 - A successful briefing is permanent and keyed by SHA-256 of the bounded model-visible evidence packet. No TTL or model, prompt, endpoint, or credential invalidation.
 - D1 is read before provider configuration/inference. Failed reads fail closed; failed writes cannot be reported as durable success. A write failure after generation cannot undo its cost.
 - Concurrent successful inserts return the first stored winner, not each caller's independently generated text.
-- Evidence is shared through the private SQLite-backed DO namespace, not an isolate-local Effect Cache. Verified archive inspections persist by integrity/revision; successful mutable provider evidence expires after five minutes. AI inference is still not coalesced: concurrent D1 misses can independently incur provider costs.
+- Evidence is shared through the private SQLite-backed DO namespace, not an isolate-local Effect Cache. Verified archive inspections persist by integrity/revision; successful mutable provider evidence expires after five minutes. AI inference is coalesced only per evidence hash by that hash's job object: duplicate submissions for one hash share a single generation, while concurrent D1 misses for different packets can independently incur provider costs.
 - Provider URL/credential/redirect checks, schema validation, archive integrity and resource bounds, existing deadlines, and partial-result semantics remain intact. Do not reintroduce the Effect patch or shared Effect Cache to improve performance.
 - The legacy SQLite source was not automatically imported, modified, or deleted. Its read-only exporter remains available for an explicit migration.
 
@@ -56,7 +121,7 @@ Detailed local runtime results are in the ignored `.data/evidence-runtime-result
 - Remote site: <https://can-i-update-preview.caniupdate-dev.workers.dev>
 - Account: `caniupdate.dev`; Worker: `can-i-update-preview`; D1: `can-i-update-preview-briefings`.
 - Verified deployment version: `aa84cd10-65f4-4a03-b50b-542f66169386`. Account and database IDs are in `wrangler.jsonc` under `env.preview`.
-- The existing remote deployment has only `ASSETS` and `BRIEFINGS_DB`. The new local configuration additionally requires `PACKAGE_EVIDENCE`, targeting `can-i-update-preview-evidence` remotely. Deploy that private backend first, then the frontend, only with explicit approval. No AI credentials, custom domain, KV, Queues, Durable Objects, or billing changes have been deployed by this implementation.
+- The deployed preview has only `ASSETS`, `BRIEFINGS_DB`, and the evidence Durable Object binding. The local runtime now also requires `BRIEFING_SERVICE` (targeting `can-i-update-preview-briefing` remotely) and the briefing Worker's Queue, job Durable Object class, D1 database, and public socket route. Deploy the evidence Worker first, then the briefing Worker, then the frontend, only with explicit approval. No AI credentials, custom domain, KV, or billing changes have been deployed by this implementation, and the Queue and briefing Worker remain undeployed.
 - The restricted token cannot read billing subscriptions; the deployment did not independently verify the account's billing plan. No billing changes were requested or performed.
 - The default Wrangler environment remains local-only. `nub run --node preview` starts the local Worker; it does not select the remote environment. Remote commands require `--env preview`, and migrations additionally require `--remote`.
 - Deployment credentials remain in the user's `~/.config/can-i-update/cloudflare.env`, outside the repository. Never print the token, copy it into application configuration, or replace another project's Wrangler OAuth login.
