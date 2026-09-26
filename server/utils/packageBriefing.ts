@@ -1,11 +1,10 @@
 import { createHash } from 'node:crypto';
 
-import type { D1Database } from '@cloudflare/workers-types';
 import { Cause, Data, Effect, Layer, Result, Schema } from 'effect';
 import { LanguageModel, Prompt } from 'effect/unstable/ai';
 import { FetchHttpClient, HttpClient } from 'effect/unstable/http';
 
-import { BriefingBulletSchema, BriefingEvidenceSchema } from '../../shared/briefing.defs';
+import { BriefingBulletSchema } from '../../shared/briefing.defs';
 import type {
   BriefingBullet,
   BriefingEvidence,
@@ -20,7 +19,6 @@ import {
   providerLayer,
   type BriefingProviderTarget,
 } from './packageBriefingProvider';
-import { readStoredBriefing, saveBriefing } from './packageBriefingStore';
 
 const MAX_BULLET_TEXT = 600;
 const MAX_BULLETS = 5;
@@ -33,7 +31,7 @@ const BriefingContentSchema = Schema.Struct({
   bullets: Schema.Array(BriefingBulletSchema),
 });
 
-type BriefingConfig =
+export type BriefingConfig =
   | { readonly status: 'not-configured' }
   | { readonly status: 'invalid-config' }
   | { readonly status: 'configured'; readonly value: BriefingProviderTarget };
@@ -57,6 +55,10 @@ const unavailable = (reason: BriefingUnavailableReason): PackageBriefing => ({
 });
 
 const sha256 = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
+
+// The D1 key of a decoded evidence packet. Retrieval timestamps, model, key, and prompt never enter the digest, so a
+// paid response stays a hit. Callers validate the packet against `BriefingEvidenceSchema` before hashing.
+export const briefingEvidenceHash = (value: BriefingEvidence): string => sha256(JSON.stringify(value));
 
 const nonBlankEnvironmentValue = (value: string | undefined): string | undefined =>
   value !== undefined && value.trim() !== '' ? value : undefined;
@@ -89,10 +91,23 @@ const chatCompletionsBaseUrl = (endpoint: string): string | undefined => {
   return `${url.origin}${url.pathname.slice(0, -CHAT_COMPLETIONS_SUFFIX.length)}`;
 };
 
-const readBriefingConfig = (): BriefingConfig => {
-  const endpoint = nonBlankEnvironmentValue(process.env.AI_BRIEFING_ENDPOINT);
-  const apiKey = nonBlankEnvironmentValue(process.env.AI_BRIEFING_API_KEY);
-  const model = nonBlankEnvironmentValue(process.env.AI_BRIEFING_MODEL);
+// The provider settings boundary reads these three names, and it accepts any environment-shaped bag because its
+// callers do: the briefing service passes the whole Worker `env` (which declares bindings beyond these settings) and
+// tests pass partial objects such as `{}`.
+export type BriefingEnvironment =
+  | {
+      readonly AI_BRIEFING_ENDPOINT?: string;
+      readonly AI_BRIEFING_API_KEY?: string;
+      readonly AI_BRIEFING_MODEL?: string;
+    }
+  | Readonly<Record<string, string | undefined>>;
+
+// Parsing is a pure boundary so absence and partial configuration keep their sanitized statuses instead of falling
+// through to a provider call.
+export const readBriefingConfig = (env: BriefingEnvironment): BriefingConfig => {
+  const endpoint = nonBlankEnvironmentValue(env.AI_BRIEFING_ENDPOINT);
+  const apiKey = nonBlankEnvironmentValue(env.AI_BRIEFING_API_KEY);
+  const model = nonBlankEnvironmentValue(env.AI_BRIEFING_MODEL);
 
   if (endpoint === undefined && apiKey === undefined && model === undefined) return { status: 'not-configured' };
   if (endpoint === undefined || apiKey === undefined || model === undefined) return { status: 'invalid-config' };
@@ -248,39 +263,14 @@ const requestBriefing = (request: BriefingRequest): Effect.Effect<PackageBriefin
     }),
   );
 
-export function getPackageBriefing(
-  input: BriefingEvidence,
-  database: D1Database | undefined,
-): Effect.Effect<PackageBriefing, never, HttpClient.HttpClient> {
-  // Absence is deliberate: without the request's binding there is no store, and no local fallback is substituted.
-  if (database === undefined) return Effect.succeed(unavailable('cache-error'));
-  const binding = database;
-
-  return Effect.gen(function* () {
-    let evidence: BriefingEvidence;
-    try {
-      // The packet arrived across an internal HTTP boundary. Validate it again before hashing or prompting so a
-      // malformed response can never become a cache key or model input merely because its TypeScript type matched.
-      evidence = Schema.decodeUnknownSync(BriefingEvidenceSchema)(input, { errors: 'all' });
-    } catch {
-      return unavailable('invalid-response');
-    }
-
-    // Hash exactly what the model sees. Retrieval timestamps are absent from this bounded evidence packet.
-    const evidenceHash = sha256(JSON.stringify(evidence));
-    const stored = yield* Effect.tryPromise(() => readStoredBriefing(binding, evidenceHash));
-    if (stored !== undefined) return stored;
-
-    // Credentials, model, and prompt changes do not invalidate a previously paid-for response.
-    const config = readBriefingConfig();
-    if (config.status === 'not-configured') return unavailable('not-configured');
-    if (config.status === 'invalid-config') return unavailable('invalid-config');
-    const briefing = yield* requestBriefing({
-      config: config.value,
-      evidence,
-      session: sha256(`${evidence.packageName}\n${evidence.from}\n${evidence.to}`),
-    });
-    if (briefing.status !== 'available') return briefing;
-    return yield* Effect.tryPromise(() => saveBriefing(binding, evidenceHash, briefing));
-  }).pipe(Effect.catch(() => Effect.succeed(unavailable('cache-error'))));
-}
+// The provider generation boundary: an already-validated packet plus an explicit target. It touches no D1 binding and
+// reads no ambient configuration, so a background job can reuse it verbatim.
+export const generateBriefing = (
+  evidence: BriefingEvidence,
+  target: BriefingProviderTarget,
+): Effect.Effect<PackageBriefing, never, HttpClient.HttpClient> =>
+  requestBriefing({
+    config: target,
+    evidence,
+    session: sha256(`${evidence.packageName}\n${evidence.from}\n${evidence.to}`),
+  });
