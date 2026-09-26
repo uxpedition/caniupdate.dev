@@ -26,7 +26,7 @@
     "@nuxt/fonts": "^0.14.0",
     "@tanstack/vue-query": "^5.102.8",
     "class-variance-authority": "^0.7.1",
-    "cn": "^0.3.0",
+    "cn": "^0.4.0",
     "effect": "4.0.0-rc.115",
     "h3": "^2.0.1-rc.32",
     "nuxt": "^4.5.2",
@@ -36,22 +36,22 @@
     "vue-router": "^5.3.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260922.1",
+    "@cloudflare/workers-types": "5.20260925.1",
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",
     "@effect/platform-node": "4.0.0-rc.115",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^22.20.2",
+    "@types/node": "^26.6.2",
     "lefthook": "^2.1.14",
     "miniflare": "5.20260921.0-alpha",
-    "oxfmt": "^0.68.0",
+    "oxfmt": "^0.70.0",
     "oxlint": "^1.83.0",
     "oxlint-tsgolint": "^7.0.2001",
     "tailwindcss": "^4.3.3",
     "typescript": "6.0.3",
     "vitest": "^5.0.1",
     "vue-tsc": "^3.3.11",
-    "wrangler": "4.136.1"
+    "wrangler": "4.140.0"
   },
   "devEngines": {
     "packageManager": {
