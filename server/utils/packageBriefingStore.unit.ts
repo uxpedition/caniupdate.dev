@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { openBriefingD1, type BriefingD1 } from '../../test/helpers/briefingD1';
+import { openBriefingD1, type BriefingD1 } from '../../test/helpers/briefingDatabase.harness';
 import { readStoredBriefing, saveBriefing } from './packageBriefingStore';
 
 const briefing = {

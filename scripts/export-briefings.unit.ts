@@ -10,7 +10,7 @@ import { Schema } from 'effect';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { AvailablePackageBriefingSchema, type AvailablePackageBriefing } from '../shared/briefing.defs';
-import { openBriefingD1 } from '../test/helpers/briefingD1';
+import { openBriefingD1 } from '../test/helpers/briefingDatabase.harness';
 
 const decodeBriefing = Schema.decodeUnknownSync(AvailablePackageBriefingSchema);
 const exporterScript = fileURLToPath(new URL('./export-briefings.ts', import.meta.url));

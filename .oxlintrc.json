@@ -62,6 +62,15 @@
       }
     },
     {
+      "files": ["**/test/**/*.ts"],
+      "rules": {
+        "max-lines": "off",
+        "max-lines-per-function": "off",
+        "max-statements": "off",
+        "typescript/no-floating-promises": "off"
+      }
+    },
+    {
       "files": ["**/*.js", "**/*.mjs", "**/*.cjs"],
       "rules": {
         "typescript/no-floating-promises": "off",

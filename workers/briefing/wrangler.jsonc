@@ -1,0 +1,73 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "can-i-update-local-briefing",
+  "main": "index.ts",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["nodejs_compat", "no_nodejs_compat_v2"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "durable_objects": { "bindings": [{ "name": "BRIEFING_JOBS", "class_name": "BriefingJob" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BriefingJob"] }],
+  "queues": {
+    "producers": [{ "binding": "BRIEFING_QUEUE", "queue": "can-i-update-local-briefings" }],
+    "consumers": [
+      {
+        "queue": "can-i-update-local-briefings",
+        "max_batch_size": 1,
+        "max_batch_timeout": 0,
+        "max_retries": 2,
+      },
+    ],
+  },
+  "d1_databases": [
+    {
+      "binding": "BRIEFINGS_DB",
+      "database_name": "can-i-update-local-briefings",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "../../migrations",
+      "remote": false,
+    },
+  ],
+  // A comma-separated list of exact Origins: the local launcher overrides it with every hostname the page is served on
+  // (the loopback aliases and this machine's interface addresses), and an unset or empty list refuses every upgrade.
+  "vars": { "BRIEFING_PUBLIC_URL": "ws://localhost:8791", "BRIEFING_ALLOWED_ORIGIN": "http://localhost:5173" },
+  // The default environment is local-only and uses placeholder IDs. Only `env.preview` may be deployed, and it
+  // repeats every non-inheritable binding with preview names and the preview D1 database.
+  "env": {
+    "preview": {
+      "name": "can-i-update-preview-briefing",
+      "account_id": "8a0be24aad326a55ba610b94b106be81",
+      "workers_dev": true,
+      "preview_urls": false,
+      "durable_objects": { "bindings": [{ "name": "BRIEFING_JOBS", "class_name": "BriefingJob" }] },
+      "queues": {
+        "producers": [{ "binding": "BRIEFING_QUEUE", "queue": "can-i-update-preview-briefings" }],
+        "consumers": [
+          {
+            "queue": "can-i-update-preview-briefings",
+            "max_batch_size": 1,
+            "max_batch_timeout": 0,
+            "max_retries": 2,
+          },
+        ],
+      },
+      "d1_databases": [
+        {
+          "binding": "BRIEFINGS_DB",
+          "database_name": "can-i-update-preview-briefings",
+          "database_id": "351da802-5296-4e6a-a186-f9d1e99036b6",
+          "migrations_dir": "../../migrations",
+          "remote": false,
+        },
+      ],
+      "vars": {
+        "BRIEFING_PUBLIC_URL": "wss://can-i-update-preview-briefing.caniupdate-dev.workers.dev",
+        "BRIEFING_ALLOWED_ORIGIN": "https://can-i-update-preview.caniupdate-dev.workers.dev",
+      },
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+      },
+    },
+  },
+}
