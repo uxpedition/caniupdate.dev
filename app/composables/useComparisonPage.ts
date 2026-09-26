@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/vue-query';
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import { useRequestFetch, useRoute } from '#imports';
-import { packageBriefingQueryOptions } from '~/composables/packageBriefingQueryOptions';
+import { packageBriefingQueryOptions, type BriefingStatus } from '~/composables/packageBriefingQueryOptions';
 import { packageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
 import { packageMeasurementsQueryOptions } from '~/composables/packageMeasurementsQueryOptions';
 import { buildBriefingCitations, resolvedBriefingVersions } from '~/pages/[packageName]/comparisonView';
@@ -39,7 +39,16 @@ export const useComparisonPage = async () => {
   const measurements = computed(() => measurementsQuery.data.value);
   // Cached measurements remain renderable after a failed refetch; only an error without resolved data is unavailable.
   const isMeasurementsUnavailable = computed(() => measurementsQuery.isError.value && measurements.value === undefined);
-  const briefingQuery = useQuery(packageBriefingQueryOptions(requestFetch, packageName, resolvedFrom, resolvedTo));
+  // The generation state the submitted job reports, published by the briefing query as it submits and follows its
+  // socket. A comparison change is a different job, so the previous pair's state must not describe the new one.
+  const briefingStatus = ref<BriefingStatus | undefined>(undefined);
+  const briefingOptions = packageBriefingQueryOptions(requestFetch, packageName, resolvedFrom, resolvedTo, (state) => {
+    briefingStatus.value = state;
+  });
+  const briefingQuery = useQuery(briefingOptions);
+  watch(briefingOptions.queryKey, () => {
+    briefingStatus.value = undefined;
+  });
 
   if (import.meta.server) {
     // Declarations must be in the first paint. A failed prefetch is not dehydrated, so drop it and let the client
@@ -64,6 +73,7 @@ export const useComparisonPage = async () => {
     isMeasurementsUnavailable,
     briefing,
     isBriefingPending: computed(() => briefingQuery.isPending.value),
+    briefingStatus,
     briefingError: computed(() => briefingQuery.error.value),
     sources: computed(() => (briefing.value?.status === 'available' ? briefing.value.sources : [])),
     citations: computed(() => {

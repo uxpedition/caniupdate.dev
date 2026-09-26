@@ -13,14 +13,14 @@
       },
     ],
   },
-  // Default environment is local-only: this placeholder must never be deployed.
-  "d1_databases": [
+  // The default environment is local-only: neither name may be deployed. The briefing Worker owns D1, the provider
+  // credential, and the browser-facing socket; this Worker only submits an already-built packet to its private
+  // named entrypoint, so no D1 binding and no AI setting belongs here.
+  "services": [
     {
-      "binding": "BRIEFINGS_DB",
-      "database_name": "can-i-update-local-briefings",
-      "database_id": "00000000-0000-0000-0000-000000000001",
-      "migrations_dir": "migrations",
-      "remote": false,
+      "binding": "BRIEFING_SERVICE",
+      "service": "can-i-update-local-briefing",
+      "entrypoint": "BriefingSubmitter",
     },
   ],
   "env": {
@@ -42,12 +42,11 @@
           },
         ],
       },
-      "d1_databases": [
+      "services": [
         {
-          "binding": "BRIEFINGS_DB",
-          "database_name": "can-i-update-preview-briefings",
-          "database_id": "351da802-5296-4e6a-a186-f9d1e99036b6",
-          "migrations_dir": "migrations",
+          "binding": "BRIEFING_SERVICE",
+          "service": "can-i-update-preview-briefing",
+          "entrypoint": "BriefingSubmitter",
         },
       ],
     },

@@ -21,6 +21,7 @@ const {
   isMeasurementsUnavailable,
   briefing,
   isBriefingPending,
+  briefingStatus,
   briefingError,
   sources,
   citations,
@@ -222,6 +223,7 @@ const revealCitation = async (event: MouseEvent) => {
           <BriefingPanel
             :briefing="briefing"
             :pending="isBriefingPending"
+            :status="briefingStatus"
             :error="briefingError"
             :citations="citations"
           />

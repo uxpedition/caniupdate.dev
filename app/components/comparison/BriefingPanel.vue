@@ -1,13 +1,27 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+
 import type { BriefingUnavailableReason, PackageBriefing } from '#shared/briefing.defs';
+import type { BriefingStatus } from '~/composables/packageBriefingQueryOptions';
 import type { BriefingCitation } from '~/pages/[packageName]/comparisonView';
 
 const props = defineProps<{
   briefing: PackageBriefing | undefined;
   pending: boolean;
+  status?: BriefingStatus | undefined;
   error: unknown;
   citations: readonly BriefingCitation[];
 }>();
+
+const pendingMessages: Record<BriefingStatus, string> = {
+  queued: 'Queued for generation. Package facts are available independently.',
+  running: 'Generating the briefing. Package facts are available independently.',
+};
+const pendingMessage = computed(() =>
+  props.status === undefined
+    ? 'Generating the briefing. Package facts are available independently.'
+    : pendingMessages[props.status],
+);
 
 const unavailableMessages: Record<BriefingUnavailableReason, string> = {
   'not-configured': 'AI briefing is not configured for this environment.',
@@ -23,7 +37,7 @@ const citationFor = (id: string) => props.citations.find((citation) => citation.
 <template>
   <section class="min-w-0 pt-4.5" aria-label="AI briefing">
     <p v-if="props.pending" class="py-4 text-xs leading-[1.7] text-muted-foreground" role="status">
-      Generating the briefing. Package facts are available independently.
+      {{ pendingMessage }}
     </p>
     <p v-else-if="props.error" class="py-4 text-xs leading-[1.7] text-muted-foreground" role="status">
       The AI briefing could not be loaded. Package facts remain available.
