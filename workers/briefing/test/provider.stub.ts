@@ -11,17 +11,21 @@ export const MODEL = 'test-model';
 export const FIXTURE_API_KEY = 'fixture-key';
 const PROVIDER_PATH = '/v1/chat/completions';
 
-/** The citation id both the fixture's evidence and this provider's canned answer reference. */
+/** The evidence id the fixture packet carries at position one; the canned answer cites that position. */
 export const SOURCE_ID = 'comparison.node';
+export const SOURCE_NUMBER = 1;
 
 export const validBullets = [
   {
     kind: 'migration',
     basis: 'inference',
     text: 'The target declares Node >=20; update Node 18 runtimes before upgrading.',
-    evidenceIds: [SOURCE_ID],
+    evidenceNumbers: [SOURCE_NUMBER],
   },
 ];
+
+/** The same citation as the stored response reports it: the kept source renumbered to display position zero. */
+export const responseBullets = validBullets.map((bullet) => ({ ...bullet, evidenceNumbers: [0] }));
 
 export type ProviderMode =
   | { readonly kind: 'valid' }

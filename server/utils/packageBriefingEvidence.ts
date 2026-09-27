@@ -1,4 +1,4 @@
-import type { BriefingEvidence, BriefingInput, BriefingSource } from '../../shared/briefing.defs';
+import type { BriefingEvidence, BriefingInput, BriefingSourceDraft } from '../../shared/briefing.defs';
 import type { AdvisoryGroup, PackageComparison } from '../../shared/comparison.defs';
 import type { PackageAdvisory } from '../../shared/osv.defs';
 import { buildMaintainerCandidates } from './packageBriefingEvidenceChangelog';
@@ -76,8 +76,8 @@ function structuredSource(
   urls: readonly string[],
   priority: number,
 ): BriefingEvidenceCandidate {
-  const source: BriefingSource = { id, kind: 'fact', label, urls: unique(urls), text: json(value) };
-  return { source, serialized: json(source), priority };
+  const source: BriefingSourceDraft = { id, kind: 'fact', label, urls: unique(urls), text: json(value) };
+  return { source, priority };
 }
 
 function compatibilityCandidates(input: BriefingInput, versions: readonly string[]): BriefingEvidenceCandidate[] {

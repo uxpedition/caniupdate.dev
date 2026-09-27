@@ -14,9 +14,10 @@ const EVENTS_URL = `ws://localhost:8791/api/briefings/${HASH}/events`;
 const briefing = (): AvailablePackageBriefing => ({
   status: 'available',
   model: 'test-model',
-  bullets: [{ kind: 'change', basis: 'fact', text: 'Node requirements changed.', evidenceIds: ['comparison.node'] }],
+  bullets: [{ kind: 'change', basis: 'fact', text: 'Node requirements changed.', evidenceNumbers: [1] }],
   sources: [
     {
+      number: 1,
       id: 'comparison.node',
       kind: 'fact',
       label: 'Computed Node engine declaration comparison',

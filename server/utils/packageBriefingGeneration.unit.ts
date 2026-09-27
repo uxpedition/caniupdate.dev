@@ -10,9 +10,10 @@ import type { BriefingProviderTarget } from './packageBriefingProvider';
 
 // The packet digests were computed by the pre-extraction `createHash('sha256').update(JSON.stringify(evidence),
 // 'utf8')`, and the session digest by the same function over the package identity. The packet digests key already-paid
-// D1 rows, so they are pinned rather than recomputed here.
+// D1 rows, so they are pinned rather than recomputed here. Numbering sources by packet position re-keyed every packet
+// that carries one, so rows stored under the earlier digest are unreachable by design.
 const MINIMIST_DIGEST = 'b637f83283a13491f7fee3cd9a108ab6ea20994d00a95a6646ba7a1bd48818b4';
-const CITING_DIGEST = 'f9f2f5b9268ae1f5829e0f1c0c845dc866711e0d0a2929e9ce4929459d24b3e8';
+const CITING_DIGEST = 'e2155eb97008517cbcccba3ec8a6bad5185f31aadc09503b01a2ec7e7b2e5989';
 const SESSION_DIGEST = 'b167eb4a9d136b9104bfb75397a2c28179ae2b3709684ee08df9b13b2eb507ab';
 const ENDPOINT = 'https://briefing.example/v1/chat/completions';
 
@@ -24,6 +25,7 @@ const citingPacket = (): BriefingEvidence => ({
   to: '1.2.8',
   sources: [
     {
+      number: 1,
       id: 'comparison.node',
       kind: 'fact',
       label: 'Computed Node engine declaration comparison',
@@ -31,6 +33,7 @@ const citingPacket = (): BriefingEvidence => ({
       text: JSON.stringify({ changed: true, from: '>=14', to: '>=20' }),
     },
     {
+      number: 2,
       id: 'coverage',
       kind: 'coverage',
       label: 'Evidence coverage and limitations',
@@ -39,6 +42,47 @@ const citingPacket = (): BriefingEvidence => ({
     },
   ],
   gaps: ['fixture'],
+});
+
+const gappedPacket = (): BriefingEvidence => ({
+  packageName: 'minimist',
+  from: '1.2.0',
+  to: '1.2.8',
+  sources: [
+    {
+      number: 1,
+      id: 'comparison.node',
+      kind: 'fact',
+      label: 'Computed Node engine declaration comparison',
+      urls: [],
+      text: JSON.stringify({ changed: false }),
+    },
+    {
+      number: 2,
+      id: 'comparison.dependencies',
+      kind: 'fact',
+      label: 'Computed dependency declaration comparison',
+      urls: [],
+      text: '[]',
+    },
+    {
+      number: 3,
+      id: 'release.1.2.8',
+      kind: 'maintainer',
+      label: 'GitHub release 1.2.8',
+      urls: ['https://example.com/release'],
+      text: 'Fixes a regression.',
+    },
+    {
+      number: 4,
+      id: 'coverage',
+      kind: 'coverage',
+      label: 'Evidence coverage and limitations',
+      urls: [],
+      text: JSON.stringify({ gaps: [] }),
+    },
+  ],
+  gaps: [],
 });
 
 const target: BriefingProviderTarget = {
@@ -52,9 +96,12 @@ const validBullets = [
     kind: 'migration',
     basis: 'inference',
     text: 'The target declares Node >=20; update Node 18 runtimes before upgrading.',
-    evidenceIds: ['comparison.node'],
+    evidenceNumbers: [1],
   },
 ];
+
+/** The same citation as the response reports it: the kept source renumbered to display position zero. */
+const responseBullets = validBullets.map((bullet) => ({ ...bullet, evidenceNumbers: [0] }));
 
 const providerResponse = (body = validBullets, finishReason = 'stop') =>
   Response.json({
@@ -107,7 +154,7 @@ describe('generateBriefing', () => {
 
     const result = await run(citingPacket());
 
-    expect(result).toMatchObject({ status: 'available', model: 'test-model', bullets: validBullets });
+    expect(result).toMatchObject({ status: 'available', model: 'test-model', bullets: responseBullets });
     expect(result.sources.map(({ id }) => id)).toEqual(['comparison.node', 'coverage']);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -125,6 +172,23 @@ describe('generateBriefing', () => {
       messages: [{ role: 'system' }, { role: 'user' }],
     });
     expect(JSON.stringify(body)).toContain(citingPacket().packageName);
+  });
+
+  it('drops uncited sources and renumbers the kept ones from zero', async () => {
+    fetchMock.mockImplementation(async () =>
+      providerResponse([
+        { kind: 'change', basis: 'maintainer', text: 'The release fixes a regression.', evidenceNumbers: [3] },
+      ]),
+    );
+
+    const result = await run(gappedPacket());
+
+    expect(result).toMatchObject({ status: 'available', bullets: [{ evidenceNumbers: [0] }] });
+    if (result.status !== 'available') throw new Error('Expected an available briefing');
+    expect(result.sources.map(({ number, id }) => [number, id])).toEqual([
+      [0, 'release.1.2.8'],
+      [1, 'coverage'],
+    ]);
   });
 
   it('retries exactly once when the provider output is invalid', async () => {
@@ -170,8 +234,8 @@ describe('generateBriefing', () => {
   it('rejects a bullet that cites evidence the packet does not contain', async () => {
     fetchMock.mockImplementation(async () =>
       providerResponse([
-        { kind: 'change', basis: 'fact', text: 'Unknown.', evidenceIds: ['invented'] },
-        { kind: 'migration', basis: 'inference', text: 'Check the target.', evidenceIds: ['comparison.node'] },
+        { kind: 'change', basis: 'fact', text: 'Unknown.', evidenceNumbers: [9] },
+        { kind: 'migration', basis: 'inference', text: 'Check the target.', evidenceNumbers: [1] },
       ]),
     );
 
@@ -192,7 +256,7 @@ describe('generateBriefing', () => {
           kind: 'coverage',
           basis: 'fact',
           text: 'Application compatibility was not tested.',
-          evidenceIds: ['coverage'],
+          evidenceNumbers: [2],
         },
       ]),
     );
@@ -210,8 +274,8 @@ describe('generateBriefing', () => {
   ])('rejects the inline URI %s that is not a source-index reference', async (uri) => {
     fetchMock.mockImplementation(async () =>
       providerResponse([
-        { kind: 'change', basis: 'fact', text: `Read ${uri} for details.`, evidenceIds: ['comparison.node'] },
-        { kind: 'migration', basis: 'inference', text: 'Check the target.', evidenceIds: ['comparison.node'] },
+        { kind: 'change', basis: 'fact', text: `Read ${uri} for details.`, evidenceNumbers: [1] },
+        { kind: 'migration', basis: 'inference', text: 'Check the target.', evidenceNumbers: [1] },
       ]),
     );
 
@@ -221,8 +285,8 @@ describe('generateBriefing', () => {
   it('allows an ordinary colon label in cited prose', async () => {
     fetchMock.mockResolvedValue(
       providerResponse([
-        { kind: 'change', basis: 'fact', text: 'Node: use the target declaration.', evidenceIds: ['comparison.node'] },
-        { kind: 'migration', basis: 'inference', text: 'Check the target.', evidenceIds: ['comparison.node'] },
+        { kind: 'change', basis: 'fact', text: 'Node: use the target declaration.', evidenceNumbers: [1] },
+        { kind: 'migration', basis: 'inference', text: 'Check the target.', evidenceNumbers: [1] },
       ]),
     );
 

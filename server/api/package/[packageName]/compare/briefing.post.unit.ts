@@ -24,6 +24,7 @@ const evidence = (): BriefingEvidence => ({
   to: '2.0.0',
   sources: [
     {
+      number: 1,
       id: 'comparison.node',
       kind: 'fact',
       label: 'Computed Node engine declaration comparison',
@@ -37,7 +38,7 @@ const evidence = (): BriefingEvidence => ({
 const briefing = (): AvailablePackageBriefing => ({
   status: 'available',
   model: 'test-model',
-  bullets: [{ kind: 'change', basis: 'fact', text: 'Node requirements changed.', evidenceIds: ['comparison.node'] }],
+  bullets: [{ kind: 'change', basis: 'fact', text: 'Node requirements changed.', evidenceNumbers: [1] }],
   sources: evidence().sources,
 });
 

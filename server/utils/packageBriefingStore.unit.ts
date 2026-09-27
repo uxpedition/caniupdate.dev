@@ -10,10 +10,8 @@ import { readStoredBriefing, saveBriefing } from './packageBriefingStore';
 const briefing = {
   status: 'available' as const,
   model: 'test-model',
-  bullets: [
-    { kind: 'coverage' as const, basis: 'fact' as const, text: 'Coverage is limited.', evidenceIds: ['coverage'] },
-  ],
-  sources: [{ id: 'coverage', kind: 'coverage' as const, label: 'Coverage', urls: [], text: '{}' }],
+  bullets: [{ kind: 'coverage' as const, basis: 'fact' as const, text: 'Coverage is limited.', evidenceNumbers: [0] }],
+  sources: [{ number: 0, id: 'coverage', kind: 'coverage' as const, label: 'Coverage', urls: [], text: '{}' }],
 };
 
 let directory: string;

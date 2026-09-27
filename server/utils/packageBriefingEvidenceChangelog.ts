@@ -5,7 +5,6 @@ import type { BriefingEvidenceCandidate } from './packageBriefingEvidencePacking
 const MAX_MAINTAINER_BYTES = 4 * 1024;
 const textEncoder = new TextEncoder();
 const byteLength = (value: string): number => textEncoder.encode(value).byteLength;
-const json = (value: unknown): string => JSON.stringify(value) ?? 'null';
 
 const boundedText = (value: string, maxBytes: number): { text: string; truncated: boolean } => {
   if (byteLength(value) <= maxBytes) return { text: value, truncated: false };
@@ -351,7 +350,6 @@ function toMaintainerCandidates(records: readonly MaintainerRecord[]): BriefingE
     };
     return {
       source,
-      serialized: json(source),
       priority: 4,
       ...(record.truncated ? { truncated: true } : {}),
     } satisfies BriefingEvidenceCandidate;

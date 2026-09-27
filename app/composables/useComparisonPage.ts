@@ -5,7 +5,7 @@ import { useRequestFetch, useRoute } from '#imports';
 import { packageBriefingQueryOptions, type BriefingStatus } from '~/composables/packageBriefingQueryOptions';
 import { packageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
 import { packageMeasurementsQueryOptions } from '~/composables/packageMeasurementsQueryOptions';
-import { buildBriefingCitations, resolvedBriefingVersions } from '~/pages/[packageName]/comparisonView';
+import { resolvedBriefingVersions } from '~/pages/[packageName]/comparisonView';
 
 const useComparisonRoute = () => {
   const route = useRoute();
@@ -76,9 +76,5 @@ export const useComparisonPage = async () => {
     briefingStatus,
     briefingError: computed(() => briefingQuery.error.value),
     sources: computed(() => (briefing.value?.status === 'available' ? briefing.value.sources : [])),
-    citations: computed(() => {
-      const value = briefing.value;
-      return value?.status === 'available' ? buildBriefingCitations(value.sources, value.bullets) : [];
-    }),
   };
 };

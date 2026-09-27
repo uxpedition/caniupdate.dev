@@ -2,11 +2,11 @@
 import { ChevronDown } from '@lucide/vue';
 
 import type { BriefingSource } from '#shared/briefing.defs';
-import { citationAnchorId, type BriefingCitation } from '~/pages/[packageName]/comparisonView';
+import { citationAnchorId } from '~/pages/[packageName]/comparisonCitations';
 
+// The response reports packed sources in packet order, so the numbers the briefing cites ascend down this list.
 const props = defineProps<{
   sources: readonly BriefingSource[];
-  citations: readonly BriefingCitation[];
 }>();
 </script>
 
@@ -29,9 +29,7 @@ const props = defineProps<{
             >
               <ChevronDown :size="12" />
             </span>
-            <span v-if="props.citations.find((citation) => citation.id === source.id)" class="font-mono"
-              >[{{ props.citations.find((citation) => citation.id === source.id)?.number }}]</span
-            >
+            <span class="font-mono">[{{ source.number }}]</span>
             {{ source.label }}
             <small class="ml-2 font-mono text-[0.625rem] leading-[normal] uppercase text-muted-foreground">{{
               source.kind

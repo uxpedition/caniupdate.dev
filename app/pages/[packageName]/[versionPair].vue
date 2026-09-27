@@ -24,7 +24,6 @@ const {
   briefingStatus,
   briefingError,
   sources,
-  citations,
 } = await useComparisonPage();
 const expanded = ref(new Set<string>());
 const showBrief = ref(false);
@@ -225,7 +224,6 @@ const revealCitation = async (event: MouseEvent) => {
             :pending="isBriefingPending"
             :status="briefingStatus"
             :error="briefingError"
-            :citations="citations"
           />
         </details>
 
@@ -415,7 +413,7 @@ const revealCitation = async (event: MouseEvent) => {
               >{{ sources.length }} sources</span
             >
           </summary>
-          <EvidencePanel :sources="sources" :citations="citations" />
+          <EvidencePanel :sources="sources" />
         </details>
         <footer class="mt-8 text-[11px] leading-[1.7] text-muted-foreground">
           Published declarations, not a compatibility guarantee. Test the update in your application.

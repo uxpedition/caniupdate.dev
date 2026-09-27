@@ -102,13 +102,14 @@ export const packetFor = (packageName: string, from: string, to: string): Briefi
   to,
   sources: [
     {
+      number: 1,
       id: SOURCE_ID,
       kind: 'fact',
       label: 'Computed Node engine declaration comparison',
       urls: [`https://registry.npmjs.org/${packageName}/${from}`, `https://registry.npmjs.org/${packageName}/${to}`],
       text: JSON.stringify({ changed: true, from: '>=14', to: '>=20' }),
     },
-    { id: 'coverage', kind: 'coverage', label: 'Evidence coverage and limitations', urls: [], text: '{}' },
+    { number: 2, id: 'coverage', kind: 'coverage', label: 'Evidence coverage and limitations', urls: [], text: '{}' },
   ],
   gaps: ['fixture'],
 });

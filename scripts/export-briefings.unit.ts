@@ -32,11 +32,12 @@ const briefing: AvailablePackageBriefing = {
       kind: 'change',
       basis: 'fact',
       text: "L'équipe a supprimé l'ancien export\npuis a renommé «createClient» — voir l'issue #12",
-      evidenceIds: ['change'],
+      evidenceNumbers: [1],
     },
   ],
   sources: [
     {
+      number: 1,
       id: 'change',
       kind: 'fact',
       label: 'Journal des modifications',

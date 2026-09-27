@@ -15,10 +15,9 @@ import { readStoredBriefing, saveBriefing } from '../../server/utils/packageBrie
 import {
   FIXTURE_API_KEY,
   MODEL,
-  SOURCE_ID,
   providerFixture,
+  responseBullets,
   startProviderFixture,
-  validBullets,
   type ProviderFixture,
 } from './test/provider.stub';
 import {
@@ -102,7 +101,7 @@ describe('briefing job Worker', () => {
 
     const stored = await waitForStoredBriefing(main.database, hash);
     expect(stored).toMatchObject({ status: 'available', model: MODEL });
-    expect(stored.bullets).toEqual(validBullets);
+    expect(stored.bullets).toEqual(responseBullets);
     expect(provider.requestsFor(packet.packageName)).toBe(1);
 
     // The D1 row is the authority the object projects, not a copy kept in the object.
@@ -521,10 +520,10 @@ describe('briefing job Worker', () => {
           kind: 'migration',
           basis: 'inference',
           text: 'The durable row this hash already owns is the authority after a crash.',
-          evidenceIds: [SOURCE_ID],
+          evidenceNumbers: [0],
         },
       ],
-      sources: packet.sources,
+      sources: packet.sources.map((source, position) => ({ ...source, number: position })),
     };
 
     const resumed = await startRuntime({ stateDir });

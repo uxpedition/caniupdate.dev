@@ -270,6 +270,18 @@ describe('buildBriefingEvidence', () => {
     expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThanOrEqual(48 * 1024);
   });
 
+  it('numbers each packed source by its packet position, with coverage last', () => {
+    const result = buildBriefingEvidence(
+      input(version('1.0.0', { engines: { node: '>=18' } }), version('2.0.0', { engines: { node: '>=20' } })),
+    );
+
+    expect(result.sources.length).toBeGreaterThan(1);
+    expect(result.sources.map(({ number }) => number)).toEqual(
+      Array.from({ length: result.sources.length }, (_, position) => position + 1),
+    );
+    expect(result.sources.at(-1)).toMatchObject({ id: 'coverage', number: result.sources.length });
+  });
+
   it('rejects malformed or oversized identity instead of exceeding the packet bound', () => {
     const from = version('1.0.0');
     const to = version('2.0.0');

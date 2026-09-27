@@ -3,14 +3,13 @@ import { computed } from 'vue';
 
 import type { BriefingUnavailableReason, PackageBriefing } from '#shared/briefing.defs';
 import type { BriefingStatus } from '~/composables/packageBriefingQueryOptions';
-import type { BriefingCitation } from '~/pages/[packageName]/comparisonView';
+import { citationAnchorId } from '~/pages/[packageName]/comparisonCitations';
 
 const props = defineProps<{
   briefing: PackageBriefing | undefined;
   pending: boolean;
   status?: BriefingStatus | undefined;
   error: unknown;
-  citations: readonly BriefingCitation[];
 }>();
 
 const pendingMessages: Record<BriefingStatus, string> = {
@@ -31,7 +30,13 @@ const unavailableMessages: Record<BriefingUnavailableReason, string> = {
   timeout: 'The AI briefing took too long to complete.',
   'invalid-response': 'The AI provider returned an unusable response.',
 };
-const citationFor = (id: string) => props.citations.find((citation) => citation.id === id);
+/** The cited source, resolved against the briefing's own packet-ordered sources. */
+const citationFor = (number: number) => {
+  const briefing = props.briefing;
+  if (briefing?.status !== 'available') return undefined;
+  const source = briefing.sources.find((candidate) => candidate.number === number);
+  return source === undefined ? undefined : { anchorId: citationAnchorId(source.id), label: source.label };
+};
 </script>
 
 <template>
@@ -57,13 +62,13 @@ const citationFor = (id: string) => props.citations.find((citation) => citation.
         </div>
         <p class="text-sm leading-[1.8] wrap-anywhere">{{ bullet.text }}</p>
         <div class="flex flex-wrap gap-2 font-mono text-xs leading-[1.5]">
-          <template v-for="id in bullet.evidenceIds" :key="id">
+          <template v-for="number in bullet.evidenceNumbers" :key="number">
             <a
-              v-if="citationFor(id)"
-              :href="`#${citationFor(id)?.anchorId}`"
-              :aria-label="`Jump to ${citationFor(id)?.label}`"
+              v-if="citationFor(number)"
+              :href="`#${citationFor(number)?.anchorId}`"
+              :aria-label="`Jump to ${citationFor(number)?.label}`"
               class="text-primary underline underline-offset-[3px] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-ring"
-              >[{{ citationFor(id)?.number }}]</a
+              >[{{ number }}]</a
             >
           </template>
         </div>

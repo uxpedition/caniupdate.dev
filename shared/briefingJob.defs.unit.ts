@@ -29,11 +29,12 @@ const briefing = (): AvailablePackageBriefing => ({
       kind: 'migration',
       basis: 'inference',
       text: 'The target declares Node >=20; update Node 18 runtimes before upgrading.',
-      evidenceIds: ['comparison.node'],
+      evidenceNumbers: [1],
     },
   ],
   sources: [
     {
+      number: 1,
       id: 'comparison.node',
       kind: 'fact',
       label: 'Computed Node engine declaration comparison',

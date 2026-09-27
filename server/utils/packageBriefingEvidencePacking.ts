@@ -1,4 +1,4 @@
-import type { BriefingEvidence, BriefingInput, BriefingSource } from '../../shared/briefing.defs';
+import type { BriefingEvidence, BriefingInput, BriefingSource, BriefingSourceDraft } from '../../shared/briefing.defs';
 import type { ComparisonVersion, PackageComparison } from '../../shared/comparison.defs';
 import type { PackageReleaseNotes } from '../../shared/github.defs';
 
@@ -44,8 +44,7 @@ const boundedList = (values: readonly string[], itemBytes = MAX_COVERAGE_REASON_
 };
 
 export type BriefingEvidenceCandidate = {
-  source: BriefingSource;
-  serialized: string;
+  source: BriefingSourceDraft;
   priority: number;
   truncated?: boolean;
 };
@@ -154,7 +153,7 @@ function coverageSource(
   gaps: readonly string[],
   omitted: readonly string[],
   truncated: readonly string[],
-): BriefingSource {
+): BriefingSourceDraft {
   return {
     id: 'coverage',
     kind: 'coverage',
@@ -163,6 +162,19 @@ function coverageSource(
     text: json(coverageDetails(input, gaps, omitted, truncated)),
   };
 }
+
+/**
+ * Packet positions are the citation numbers: the model cites `sources[].number`, the response reports the same
+ * numbers, and the evidence index renders them verbatim. Admission budgets what this returns, so the bytes and the
+ * numbers it sees are the bytes and numbers the packet keeps.
+ */
+const numberedSources = (
+  accepted: readonly BriefingEvidenceCandidate[],
+  coverage: BriefingSourceDraft,
+): readonly BriefingSource[] => [
+  ...accepted.map(({ source }, position) => ({ ...source, number: position + 1 })),
+  { ...coverage, number: accepted.length + 1 },
+];
 
 function packetByteLength(input: BriefingInput, gaps: readonly string[], sourceJson: readonly string[]): number {
   const prefix = `{"packageName":${json(input.packageName)},"from":${json(input.from.version)},"to":${json(input.to.version)},"sources":[`;
@@ -175,7 +187,8 @@ function assertIdentityFits(input: BriefingInput): void {
     throw new Error('Briefing identity is malformed');
   }
   const minimalCoverage = coverageSource(input, [], [], []);
-  if (packetByteLength(input, [], [json(minimalCoverage)]) > MAX_PACKET_BYTES) {
+  const serialized = numberedSources([], minimalCoverage).map((source) => json(source));
+  if (packetByteLength(input, [], serialized) > MAX_PACKET_BYTES) {
     throw new Error('Briefing identity exceeds evidence packet bounds');
   }
 }
@@ -196,11 +209,18 @@ const packetGaps = (
 function packetFits(
   input: BriefingInput,
   accepted: readonly BriefingEvidenceCandidate[],
-  coverage: BriefingSource,
+  coverage: BriefingSourceDraft,
   gaps: readonly string[],
 ): boolean {
-  const serializedSources = [...accepted.map(({ serialized }) => serialized), json(coverage)];
-  return accepted.length + 1 <= MAX_SOURCES && packetByteLength(input, gaps, serializedSources) <= MAX_PACKET_BYTES;
+  const sources = numberedSources(accepted, coverage);
+  return (
+    sources.length <= MAX_SOURCES &&
+    packetByteLength(
+      input,
+      gaps,
+      sources.map((source) => json(source)),
+    ) <= MAX_PACKET_BYTES
+  );
 }
 
 function packetResult(
@@ -220,7 +240,7 @@ function packetResult(
     packageName: input.packageName,
     from: input.from.version,
     to: input.to.version,
-    sources: [...accepted.map(({ source }) => source), coverage],
+    sources: numberedSources(accepted, coverage),
     gaps,
   };
 }

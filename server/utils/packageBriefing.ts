@@ -23,7 +23,7 @@ import {
 const MAX_BULLET_TEXT = 600;
 const MAX_BULLETS = 5;
 const MIN_BULLETS = 1;
-const MAX_EVIDENCE_IDS = 8;
+const MAX_EVIDENCE_NUMBERS = 8;
 const INLINE_URL_PATTERN = /(?:^|[^A-Za-z0-9_])(?:[a-z][a-z0-9+.-]*:(?=\S)|\/\/|www\.)/i;
 const CHAT_COMPLETIONS_SUFFIX = '/chat/completions';
 
@@ -141,19 +141,10 @@ const parseJson = (content: string): Effect.Effect<unknown, BriefingInvalidRespo
 const hasValidContentShape = (value: unknown): boolean => {
   if (!hasExactKeys(value, ['bullets']) || !Array.isArray(value.bullets)) return false;
   if (value.bullets.length < MIN_BULLETS || value.bullets.length > MAX_BULLETS) return false;
-  return value.bullets.every((bullet) => hasExactKeys(bullet, ['kind', 'basis', 'text', 'evidenceIds']));
+  return value.bullets.every((bullet) => hasExactKeys(bullet, ['kind', 'basis', 'text', 'evidenceNumbers']));
 };
 
-const sourceIds = (sources: readonly BriefingSource[]): Set<string> | undefined => {
-  const ids = new Set<string>();
-  for (const source of sources) {
-    if (ids.has(source.id)) return undefined;
-    ids.add(source.id);
-  }
-  return ids;
-};
-
-const isValidBullet = (bullet: BriefingBullet, ids: ReadonlySet<string>): boolean => {
+const isValidBullet = (bullet: BriefingBullet, numbers: ReadonlySet<number>): boolean => {
   // Stored snapshots retain their original kinds; fresh generations contain comparison insights only.
   if (
     bullet.kind === 'coverage' ||
@@ -164,10 +155,10 @@ const isValidBullet = (bullet: BriefingBullet, ids: ReadonlySet<string>): boolea
     return false;
   }
   return (
-    bullet.evidenceIds.length >= 1 &&
-    bullet.evidenceIds.length <= MAX_EVIDENCE_IDS &&
-    new Set(bullet.evidenceIds).size === bullet.evidenceIds.length &&
-    bullet.evidenceIds.every((id) => ids.has(id))
+    bullet.evidenceNumbers.length >= 1 &&
+    bullet.evidenceNumbers.length <= MAX_EVIDENCE_NUMBERS &&
+    new Set(bullet.evidenceNumbers).size === bullet.evidenceNumbers.length &&
+    bullet.evidenceNumbers.every((number) => numbers.has(number))
   );
 };
 
@@ -182,19 +173,36 @@ const decodeContent = (
     const decoded = yield* Schema.decodeUnknownEffect(BriefingContentSchema)(parsed, { errors: 'all' }).pipe(
       Effect.mapError(() => invalidResponse()),
     );
-    const ids = sourceIds(evidence.sources);
-    if (ids === undefined || !decoded.bullets.every((bullet) => isValidBullet(bullet, ids))) {
+    const numbers = new Set(evidence.sources.map((source) => source.number));
+    if (!decoded.bullets.every((bullet) => isValidBullet(bullet, numbers))) {
       return yield* Effect.fail(invalidResponse());
     }
     return decoded.bullets;
   });
 
-const collectResponseSources = (
+/**
+ * The response keeps the cited sources plus coverage and renumbers them from zero, so the evidence index reads
+ * `[0] … [n]` instead of leaving the gaps a filtered packet position would. Bullets are rewritten to the same
+ * numbers, and the packet itself keeps the positions the model cited.
+ */
+const collectResponseEvidence = (
   bullets: readonly BriefingBullet[],
   sources: readonly BriefingSource[],
-): readonly BriefingSource[] => {
-  const referenced = new Set(bullets.flatMap((bullet) => bullet.evidenceIds));
-  return sources.filter((source) => source.kind === 'coverage' || referenced.has(source.id));
+): { readonly bullets: readonly BriefingBullet[]; readonly sources: readonly BriefingSource[] } => {
+  const referenced = new Set(bullets.flatMap((bullet) => bullet.evidenceNumbers));
+  const kept = sources.filter((source) => source.kind === 'coverage' || referenced.has(source.number));
+  const displayNumbers = new Map(kept.map((source, position) => [source.number, position]));
+  const renumber = (numbers: readonly number[]): number[] =>
+    numbers.map((number) => {
+      const display = displayNumbers.get(number);
+      if (display === undefined) throw new Error('A cited evidence number is missing from the response sources');
+      return display;
+    });
+
+  return {
+    bullets: bullets.map((bullet) => ({ ...bullet, evidenceNumbers: renumber(bullet.evidenceNumbers) })),
+    sources: kept.map((source, position) => ({ ...source, number: position })),
+  };
 };
 
 // Provider decoding failures surface as `AiError` with an `InvalidOutputError` reason; local citation and shape
@@ -244,12 +252,13 @@ const requestBriefing = (request: BriefingRequest): Effect.Effect<PackageBriefin
       if (response.finishReason !== 'stop') return yield* Effect.fail(invalidResponse());
 
       const bullets = yield* decodeContent(response.text, request.evidence);
+      const evidence = collectResponseEvidence(bullets, request.evidence.sources);
 
       return {
         status: 'available',
         model: request.config.model,
-        bullets,
-        sources: collectResponseSources(bullets, request.evidence.sources),
+        bullets: evidence.bullets,
+        sources: evidence.sources,
       } satisfies PackageBriefing;
     }).pipe(Effect.retry({ times: 1, while: isInvalidProviderOutput }));
   }).pipe(

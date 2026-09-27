@@ -1,4 +1,3 @@
-import type { BriefingBullet, BriefingSource } from '#shared/briefing.defs';
 import type {
   DeclarationComparison,
   DeclaredPackageVersion,
@@ -7,6 +6,8 @@ import type {
   PackageMeasurementsResponse,
   SizeComparison,
 } from '#shared/comparison.defs';
+
+import { citationAnchorId } from './comparisonCitations';
 
 export type ComparisonRow = {
   id: string;
@@ -17,14 +18,6 @@ export type ComparisonRow = {
   changed: boolean;
   detail: string;
   explanation: string;
-};
-
-export type BriefingCitation = {
-  number: number;
-  id: string;
-  anchorId: string;
-  label: string;
-  urls: readonly string[];
 };
 
 const EMPTY_VALUE = 'None declared';
@@ -387,39 +380,4 @@ export function resolvedBriefingVersions(
   comparison: { from: { version: string }; to: { version: string } } | undefined,
 ): { from: string; to: string } {
   return comparison === undefined ? { from: '', to: '' } : { from: comparison.from.version, to: comparison.to.version };
-}
-
-export function citationAnchorId(sourceId: string): string {
-  const normalized = sourceId
-    .replace(/([a-z])([A-Z])/g, '$1-$2')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return sourceId.startsWith('comparison.') ? normalized : `evidence-${normalized}`;
-}
-
-export function buildBriefingCitations(
-  sources: readonly BriefingSource[],
-  bullets: readonly BriefingBullet[],
-): readonly BriefingCitation[] {
-  const sourcesById = new Map(sources.map((source) => [source.id, source]));
-  const seen = new Set<string>();
-  const citations: BriefingCitation[] = [];
-
-  for (const bullet of bullets) {
-    for (const id of bullet.evidenceIds) {
-      const source = sourcesById.get(id);
-      if (source === undefined || seen.has(id)) continue;
-      seen.add(id);
-      citations.push({
-        number: citations.length + 1,
-        id: source.id,
-        anchorId: citationAnchorId(source.id),
-        label: source.label,
-        urls: source.urls,
-      });
-    }
-  }
-
-  return citations;
 }
