@@ -1,24 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/vue-query';
 import { computed, ref, watch } from 'vue';
 
-import { useRequestFetch, useRoute } from '#imports';
+import { useRequestFetch } from '#imports';
 import { packageBriefingQueryOptions, type BriefingStatus } from '~/composables/packageBriefingQueryOptions';
 import { packageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
 import { packageMeasurementsQueryOptions } from '~/composables/packageMeasurementsQueryOptions';
+import { useComparisonRoute } from '~/composables/useComparisonRoute';
 import { resolvedBriefingVersions } from '~/pages/[packageName]/comparisonView';
-
-const useComparisonRoute = () => {
-  const route = useRoute();
-  const packageName = computed(() => (typeof route.params.packageName === 'string' ? route.params.packageName : ''));
-  const versions = computed(() => {
-    const pair = typeof route.params.versionPair === 'string' ? route.params.versionPair : '';
-    const [from = '', to = ''] = pair.split('...');
-    return { from, to };
-  });
-  const fromVersion = computed(() => versions.value.from);
-  const toVersion = computed(() => versions.value.to);
-  return { packageName, fromVersion, toVersion };
-};
 
 export const useComparisonPage = async () => {
   const { packageName, fromVersion, toVersion } = useComparisonRoute();

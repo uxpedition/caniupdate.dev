@@ -192,3 +192,8 @@ html.dark {
     font-family: var(--font-body);
   }
 }
+
+/* This global rule hides the streamed loader as soon as comparison content enters the DOM, before hydration. */
+.comparison-shell:has([data-comparison-ready]) [data-comparison-loading] {
+  display: none;
+}

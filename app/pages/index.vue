@@ -199,6 +199,7 @@ watch(selectedFromVersion, () => {
                     data-testid="package-search"
                     :options="packageOptions"
                     :loading="isFetching"
+                    loading-text="Searching npm…"
                     v-model="selectedPackage"
                     v-model:search-term="searchTerm"
                     @search="selectedPackage = null"

@@ -44,7 +44,7 @@ Row and evidence anchors deep-link: opening `#comparison-dependencies`, `#compar
 
 The shared theme in `app/assets/css/main.css` defines neutral light/dark surfaces, DM Sans headings and body text, monospace package data, and a blue change/focus accent. Blue indicates a change, not a risk rating. Homepage controls retain their original responsive layout and dimensions.
 
-Comparison loading is tiered. During SSR, the page prefetches declarations and streams the comparison table in the first HTML, including `Measuring…` placeholders for tier-2 rows. Measurements and AI notes start client-side after the resolved versions arrive and fill in without interaction; a measurements endpoint failure degrades each affected row or tile to `Unavailable` instead of blocking declarations. Nuxt disables streaming for crawler user agents.
+Comparison loading is tiered. During SSR, the page prefetches declarations and streams the package description together with the comparison table, including `Measuring…` placeholders for tier-2 rows. The description renders below the package name inside the same deferred component as “At a glance”, so it is visible before hydration and does not wait for measurements. The route-only header and declarations loader can still stream before that component resolves. Measurements and AI notes start client-side after the resolved versions arrive and fill in without interaction; a measurements endpoint failure degrades each affected row or tile to `Unavailable` instead of blocking declarations. Nuxt disables streaming for crawler user agents.
 
 ## Package comparison API
 

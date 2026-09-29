@@ -32,6 +32,7 @@ export const packageMeasurementsQueryOptions = (
     ]),
     queryFn: async ({ queryKey, signal }: PackageMeasurementsQueryContext): Promise<PackageMeasurementsResponse> => {
       const [, , , packageName, from, to] = queryKey;
+
       return requestFetch<PackageMeasurementsResponse>(
         `/api/package/${encodeURIComponent(packageName)}/compare/measurements`,
         { query: { from, to }, retry: false, signal },

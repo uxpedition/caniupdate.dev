@@ -13,6 +13,7 @@ import {
 import type { HTMLAttributes } from 'vue';
 import { nextTick, ref, watch } from 'vue';
 
+import LoadingMessage from '~/components/element/LoadingMessage.vue';
 import Input from '~/components/form/Input.vue';
 import { cn } from '~/utils/cn';
 
@@ -31,6 +32,7 @@ interface ComboboxProps {
   searchTerm?: string;
   placeholder?: string;
   loading?: boolean;
+  loadingText: string;
   inputId?: string;
   inputAriaLabel?: string;
   inputClass?: HTMLAttributes['class'];
@@ -161,9 +163,12 @@ const handleSelectedValue = (value: string) => {
       "
     >
       <RekaComboboxViewport class="max-h-80 overflow-y-auto">
-        <RekaComboboxEmpty v-if="props.loading" class="px-3 py-4 text-sm text-muted-foreground">
-          Searching npm…
-        </RekaComboboxEmpty>
+        <LoadingMessage
+          v-if="props.loading"
+          :as="RekaComboboxEmpty"
+          class="px-3 py-4"
+          :loading-text="props.loadingText"
+        />
 
         <RekaComboboxItem
           v-for="option in props.options"
