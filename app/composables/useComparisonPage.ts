@@ -1,17 +1,29 @@
 import { useQuery, useQueryClient } from '@tanstack/vue-query';
-import { computed, ref, watch } from 'vue';
+import type { QueryClient } from '@tanstack/vue-query';
+import { computed } from 'vue';
 
 import { useRequestFetch } from '#imports';
-import { packageBriefingQueryOptions, type BriefingStatus } from '~/composables/packageBriefingQueryOptions';
 import { packageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
+import type { PackageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
 import { packageMeasurementsQueryOptions } from '~/composables/packageMeasurementsQueryOptions';
+import { useComparisonBriefing } from '~/composables/useComparisonBriefing';
 import { useComparisonRoute } from '~/composables/useComparisonRoute';
 import { resolvedBriefingVersions } from '~/pages/[packageName]/comparisonView';
+
+// Declarations must be in the first paint. A failed prefetch is not dehydrated, so drop it and let the client retry
+// from a pending state instead of hydrating an error the server already rendered.
+const prefetchDeclarations = async (queryClient: QueryClient, declarationsOptions: PackageComparisonQueryOptions) => {
+  if (import.meta.server) {
+    await queryClient.query(declarationsOptions).catch(() => undefined);
+    if (queryClient.getQueryState(declarationsOptions.queryKey)?.status !== 'success') {
+      queryClient.removeQueries({ queryKey: declarationsOptions.queryKey });
+    }
+  }
+};
 
 export const useComparisonPage = async () => {
   const { packageName, fromVersion, toVersion } = useComparisonRoute();
   const requestFetch = useRequestFetch();
-  const queryClient = useQueryClient();
 
   // Every query is created before the server prefetch below: vue-query resolves its client through injection, so it
   // must run inside the synchronous setup scope, never after an await.
@@ -27,27 +39,14 @@ export const useComparisonPage = async () => {
   const measurements = computed(() => measurementsQuery.data.value);
   // Cached measurements remain renderable after a failed refetch; only an error without resolved data is unavailable.
   const isMeasurementsUnavailable = computed(() => measurementsQuery.isError.value && measurements.value === undefined);
-  // The generation state the submitted job reports, published by the briefing query as it submits and follows its
-  // socket. A comparison change is a different job, so the previous pair's state must not describe the new one.
-  const briefingStatus = ref<BriefingStatus | undefined>(undefined);
-  const briefingOptions = packageBriefingQueryOptions(requestFetch, packageName, resolvedFrom, resolvedTo, (state) => {
-    briefingStatus.value = state;
-  });
-  const briefingQuery = useQuery(briefingOptions);
-  watch(briefingOptions.queryKey, () => {
-    briefingStatus.value = undefined;
-  });
 
-  if (import.meta.server) {
-    // Declarations must be in the first paint. A failed prefetch is not dehydrated, so drop it and let the client
-    // retry from a pending state instead of hydrating an error the server already rendered.
-    await queryClient.prefetchQuery(declarationsOptions);
-    if (queryClient.getQueryState(declarationsOptions.queryKey)?.status !== 'success') {
-      queryClient.removeQueries({ queryKey: declarationsOptions.queryKey });
-    }
-  }
+  const { briefing, isBriefingPending, briefingStatus, briefingError, sources } = useComparisonBriefing(
+    packageName,
+    resolvedFrom,
+    resolvedTo,
+  );
 
-  const briefing = computed(() => briefingQuery.data.value?.briefing);
+  await prefetchDeclarations(useQueryClient(), declarationsOptions);
 
   return {
     packageName,
@@ -60,9 +59,9 @@ export const useComparisonPage = async () => {
     isMeasurementsPending: computed(() => measurementsQuery.isPending.value),
     isMeasurementsUnavailable,
     briefing,
-    isBriefingPending: computed(() => briefingQuery.isPending.value),
+    isBriefingPending,
     briefingStatus,
-    briefingError: computed(() => briefingQuery.error.value),
-    sources: computed(() => (briefing.value?.status === 'available' ? briefing.value.sources : [])),
+    briefingError,
+    sources,
   };
 };

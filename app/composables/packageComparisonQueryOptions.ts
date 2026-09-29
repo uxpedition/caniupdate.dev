@@ -12,6 +12,9 @@ type NuxtRequestFetch = H3Event$Fetch | $Fetch;
 type PackageComparisonQueryKey = readonly [...typeof PACKAGE_COMPARISON_QUERY_KEY_PREFIX, string, string, string];
 type PackageComparisonQueryContext = QueryFunctionContext<PackageComparisonQueryKey>;
 
+/** The reactive declaration-query options handle shared by `useQuery`, prefetch, and cache removal. */
+export type PackageComparisonQueryOptions = ReturnType<typeof packageComparisonQueryOptions>;
+
 export const packageComparisonQueryOptions = (
   requestFetch: NuxtRequestFetch,
   packageName: MaybeRefOrGetter<string>,
