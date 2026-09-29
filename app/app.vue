@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { NuxtPage, NuxtRouteAnnouncer } from '#components';
+import { NuxtLayout, NuxtPage, NuxtRouteAnnouncer } from '#components';
 </script>
 
 <template>
   <NuxtRouteAnnouncer />
-  <NuxtPage />
+  <NuxtLayout>
+    <NuxtPage />
+  </NuxtLayout>
 </template>
