@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { BetweenVerticalStart } from '@lucide/vue';
+
 import ComparisonDetails from '~/components/comparison/ComparisonDetails.vue';
+import Button from '~/components/element/Button.vue';
 import LoadingMessage from '~/components/element/LoadingMessage.vue';
 import { useComparisonRoute } from '~/composables/useComparisonRoute';
 
@@ -19,11 +22,9 @@ const { packageName, fromVersion, toVersion } = useComparisonRoute();
           >can i update<span class="text-change" aria-hidden="true">?</span></a
         >
         <div class="flex gap-6 text-muted-foreground max-[700px]:gap-4">
-          <a
-            href="/"
-            class="hover:underline hover:underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring"
-            >New comparison</a
-          >
+          <Button as-child size="sm">
+            <a href="/"><BetweenVerticalStart aria-hidden="true" />New comparison</a>
+          </Button>
         </div>
       </div>
     </nav>
