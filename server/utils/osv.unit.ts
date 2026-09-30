@@ -1,6 +1,6 @@
-import { Effect } from 'effect';
+import { Cause, Effect, Result } from 'effect';
 import { HttpClient, HttpClientResponse } from 'effect/unstable/http';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { getVulnerability, queryBatch } from './osv';
 
@@ -19,6 +19,36 @@ function runWithStub<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, b
   };
 }
 
+function runWithDelayedBody<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, body: unknown) {
+  let timer: ReturnType<typeof setTimeout>;
+  const started = Promise.withResolvers<void>();
+  const client = HttpClient.make((request) => {
+    const responseBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        started.resolve();
+        timer = setTimeout(() => {
+          controller.enqueue(new TextEncoder().encode(JSON.stringify(body)));
+          controller.close();
+        }, 6_000);
+      },
+      cancel() {
+        clearTimeout(timer);
+      },
+    });
+    return Effect.succeed(
+      HttpClientResponse.fromWeb(
+        request,
+        new Response(responseBody, { headers: { 'content-type': 'application/json' } }),
+      ),
+    );
+  });
+
+  return {
+    started: started.promise,
+    result: Effect.runPromise(effect.pipe(Effect.result, Effect.provideService(HttpClient.HttpClient, client))),
+  };
+}
+
 const request = {
   queries: ['0.0.8', '1.2.5', '1.2.8'].map((version) => ({
     package: { name: 'minimist', ecosystem: 'npm' as const },
@@ -27,6 +57,21 @@ const request = {
 };
 
 describe('queryBatch', () => {
+  it('times out while a batch response body is still streaming', async () => {
+    vi.useFakeTimers();
+    try {
+      const delayed = runWithDelayedBody(queryBatch(request), { results: [{}, {}, {}] });
+      await delayed.started;
+      await vi.advanceTimersByTimeAsync(6_000);
+      const result = await delayed.result;
+
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) expect(Cause.isTimeoutError(result.failure)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('preserves empty result positions and per-query continuation tokens', async () => {
     const { result } = runWithStub(queryBatch(request), {
       results: [
@@ -76,6 +121,21 @@ const advisory = {
 };
 
 describe('getVulnerability', () => {
+  it('times out while an advisory response body is still streaming', async () => {
+    vi.useFakeTimers();
+    try {
+      const delayed = runWithDelayedBody(getVulnerability('GHSA-vh95-rmgr-6w4m'), advisory);
+      await delayed.started;
+      await vi.advanceTimersByTimeAsync(6_000);
+      const result = await delayed.result;
+
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) expect(Cause.isTimeoutError(result.failure)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('requests the advisory endpoint and preserves aliases, severity and range events', async () => {
     const { urls, result } = runWithStub(getVulnerability('GHSA-vh95-rmgr-6w4m'), advisory);
     const vulnerability = await result;

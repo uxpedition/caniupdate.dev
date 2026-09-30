@@ -1,6 +1,6 @@
-import { Effect } from 'effect';
+import { Duration, Effect } from 'effect';
 import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/unstable/http';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { getPackageVulnerabilities } from './packageVulnerabilities';
 
@@ -38,6 +38,44 @@ function run(batch: unknown, details: Record<string, unknown> = {}, batchStatus 
 }
 
 describe('getPackageVulnerabilities', () => {
+  it('returns unavailable evidence when the complete detail collection exceeds its deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const ids = Array.from({ length: 40 }, (_, index) => `OSV-${index}`);
+      let started = 0;
+      const firstWaveStarted = Promise.withResolvers<void>();
+      const client = HttpClient.make((request) => {
+        if (request.method === 'POST') {
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(request, Response.json({ results: [{ vulns: ids.map(match) }, {}] })),
+          );
+        }
+
+        const id = decodeURIComponent(request.url.slice(request.url.lastIndexOf('/') + 1));
+        started += 1;
+        if (started === 5) firstWaveStarted.resolve();
+        return Effect.sleep(Duration.seconds(4)).pipe(
+          Effect.as(HttpClientResponse.fromWeb(request, Response.json({ id, modified }))),
+        );
+      });
+      const pending = Effect.runPromise(
+        getPackageVulnerabilities('minimist', '0.0.8', '1.2.8').pipe(
+          Effect.provideService(HttpClient.HttpClient, client),
+        ),
+      );
+
+      await firstWaveStarted.promise;
+      await vi.advanceTimersByTimeAsync(32_000);
+
+      await expect(pending).resolves.toEqual({
+        from: { status: 'unavailable', count: null, advisories: [] },
+        to: { status: 'unavailable', count: null, advisories: [] },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('queries both versions in one batch and shares unique detail requests without mixing version membership', async () => {
     const { calls, result } = run(
       { results: [{ vulns: [match('A'), match('B'), match('B')] }, { vulns: [match('B'), match('C')] }] },

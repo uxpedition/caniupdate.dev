@@ -1,4 +1,4 @@
-import { Effect, Result } from 'effect';
+import { Cause, Duration, Effect, Result } from 'effect';
 
 import type {
   OsvQueryBatchResponse,
@@ -9,6 +9,7 @@ import type {
 import { getVulnerability, queryBatch } from './osv';
 
 const unavailable: PackageVulnerabilities = { status: 'unavailable', count: null, advisories: [] };
+const COLLECTION_TIMEOUT = Duration.seconds(30);
 
 function toPackageAdvisory(packageName: string, detail: OsvVulnerability, url: string): PackageAdvisory {
   const { id, modified, published, summary, aliases, severity, references } = detail;
@@ -59,34 +60,39 @@ function toVersionVulnerabilities(
 }
 
 /** One batch request, then one detail request per unique returned ID; no retries or pagination. */
-export const getPackageVulnerabilities = Effect.fn('Osv.getPackageVulnerabilities')(function* (
-  packageName: string,
-  fromVersion: string,
-  toVersion: string,
-) {
-  const batch = yield* queryBatch({
-    queries: [fromVersion, toVersion].map((version) => ({
-      package: { name: packageName, ecosystem: 'npm' as const },
-      version,
-    })),
-  }).pipe(Effect.result);
+export const getPackageVulnerabilities = Effect.fn('Osv.getPackageVulnerabilities')(
+  function* (packageName: string, fromVersion: string, toVersion: string) {
+    const batch = yield* queryBatch({
+      queries: [fromVersion, toVersion].map((version) => ({
+        package: { name: packageName, ecosystem: 'npm' as const },
+        version,
+      })),
+    }).pipe(Effect.result);
 
-  if (Result.isFailure(batch)) return { from: unavailable, to: unavailable };
+    if (Result.isFailure(batch)) return { from: unavailable, to: unavailable };
 
-  const ids = new Set(batch.success.results.flatMap((result) => result.vulns?.map(({ id }) => id) ?? []));
-  const entries = yield* Effect.forEach(
-    ids,
-    (id) =>
-      getVulnerability(id).pipe(
-        Effect.result,
-        Effect.map((detail) => [id, Result.isSuccess(detail) ? detail.success : undefined] as const),
-      ),
-    { concurrency: 5 },
-  );
-  const details = new Map(entries);
+    const ids = new Set(batch.success.results.flatMap((result) => result.vulns?.map(({ id }) => id) ?? []));
+    const entries = yield* Effect.forEach(
+      ids,
+      (id) =>
+        getVulnerability(id).pipe(
+          Effect.result,
+          Effect.map((detail) => [id, Result.isSuccess(detail) ? detail.success : undefined] as const),
+        ),
+      { concurrency: 5 },
+    );
+    const details = new Map(entries);
 
-  return {
-    from: toVersionVulnerabilities(packageName, batch.success.results[0], details),
-    to: toVersionVulnerabilities(packageName, batch.success.results[1], details),
-  };
-});
+    return {
+      from: toVersionVulnerabilities(packageName, batch.success.results[0], details),
+      to: toVersionVulnerabilities(packageName, batch.success.results[1], details),
+    };
+  },
+  Effect.timeout(COLLECTION_TIMEOUT),
+  Effect.result,
+  Effect.flatMap((result) => {
+    if (Result.isSuccess(result)) return Effect.succeed(result.success);
+    if (Cause.isTimeoutError(result.failure)) return Effect.succeed({ from: unavailable, to: unavailable });
+    return Effect.failCause(result.failure);
+  }),
+);
