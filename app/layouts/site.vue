@@ -2,11 +2,12 @@
 import { BetweenVerticalStart } from '@lucide/vue';
 
 import Button from '~/components/element/Button.vue';
+import SiteFooter from '~/components/SiteFooter.vue';
 </script>
 
 <template>
-  <main class="min-h-svh bg-background font-body text-foreground">
-    <nav class="w-full border-b border-b-border/55" aria-label="Comparison navigation">
+  <div class="flex min-h-svh flex-col bg-background font-body text-foreground">
+    <nav class="w-full border-b border-b-border/55" aria-label="Site navigation">
       <div
         class="mx-auto flex max-w-[1040px] items-center justify-between gap-6 px-10 py-[25px] text-[13px] leading-normal max-[700px]:gap-3 max-[700px]:px-5 max-[700px]:py-5 max-[700px]:text-[11px] max-[700px]:leading-normal"
       >
@@ -23,6 +24,9 @@ import Button from '~/components/element/Button.vue';
       </div>
     </nav>
 
-    <slot />
-  </main>
+    <main class="flex-1">
+      <slot />
+    </main>
+    <SiteFooter />
+  </div>
 </template>

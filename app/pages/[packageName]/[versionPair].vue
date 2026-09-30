@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { definePageMeta } from '#imports';
+import { computed } from 'vue';
+
+import { definePageMeta, useSeoMeta } from '#imports';
 import ComparisonDetails from '~/components/comparison/ComparisonDetails.vue';
 import LoadingMessage from '~/components/element/LoadingMessage.vue';
 import { useComparisonRoute } from '~/composables/useComparisonRoute';
 
-definePageMeta({ layout: 'comparison' });
+definePageMeta({ layout: 'site' });
 
 // Route-only content can stream before declarations; the description streams with ComparisonDetails.
 const { packageName, fromVersion, toVersion } = useComparisonRoute();
+useSeoMeta({
+  title: computed(() => `${packageName.value} ${fromVersion.value} -> ${toVersion.value} · Can I Update?`),
+});
 </script>
 
 <template>

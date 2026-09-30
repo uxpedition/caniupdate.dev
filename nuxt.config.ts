@@ -38,7 +38,7 @@ export default defineNuxtConfig({
     [
       '@nuxt/fonts',
       {
-        families: [{ name: 'DM Sans', provider: 'fontsource' }],
+        families: [{ name: 'DM Sans', provider: 'fontsource', preload: true }],
         defaults: {
           weights: ['400 700'],
           styles: ['normal'],

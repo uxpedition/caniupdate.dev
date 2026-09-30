@@ -2,6 +2,12 @@
 
 A Nuxt starter using Nub, Effect v4 RC, Oxlint, and Oxfmt.
 
+## Legal pages
+
+`/privacy` and `/terms` currently display `TBD` while their contents are under review. Both use `app/layouts/site.vue`, the shared layout also used by comparisons. The homepage and shared layout link to them through `SiteFooter.vue`.
+
+`TBD` is only a placeholder, not an effective policy. Before publishing these pages as effective policies, confirm the production OpenRouter workspace's separate input/output logging and product-improvement settings, and the applicable provider data-processing/international-transfer arrangements; the provider allowlist and ZDR setting alone do not establish those facts. Update the privacy page to match those confirmations, then replace the placeholder with reviewed content and a review date. Planning assumptions to revisit: Cloudflare Workers Free logging (three-day retention), no visitor analytics, no Discord logging/export bots, and support correspondence kept only while needed for resolution and necessary follow-up. Reassess operator-address disclosures if the service becomes commercial or promotes paid services.
+
 ## Setup
 
 Install the locked dependency graph with Nub:
@@ -34,7 +40,7 @@ The setup includes an Effect-backed health endpoint at `/api/health`.
 
 ### Comparison interface
 
-Search for a package on the homepage, choose versions, and open `/{encodedPackageName}/{from}...{to}`. For example, `/vue/3.4.38...3.5.13` compares Vue releases using the live comparison and AI briefing APIs. Scoped package names are URL-encoded.
+Search for a package on the homepage, choose versions, and open `/{encodedPackageName}/{from}...{to}`. For example, `/vue/3.4.38...3.5.13` compares Vue releases using the live comparison and AI briefing APIs. Scoped package names are URL-encoded. The homepage title is `Can I update? · Review npm package changes before updating`; comparison titles use `<packageName> <fromVersion> -> <toVersion> · Can I Update?`.
 
 The comparison prioritizes dependency changes, estimated gzip impact, and advisory coverage. Every comparison row has a Lucide info icon beside its title with an explanation available on hover, keyboard focus, or tap. Expand individual categories for complete declarations and measurement notes; AI migration notes and source evidence are collapsed initially. Citation links reveal their referenced evidence. Bullets cite evidence by number; the response keeps the cited sources plus coverage and renumbers them from zero, so the evidence index reads `[0] … [n]` with coverage last.
 
@@ -42,7 +48,7 @@ Bundle estimates with omitted dependencies remain visible but are marked “Inco
 
 Row and evidence anchors deep-link: opening `#comparison-dependencies`, `#comparison-advisories`, or a citation anchor scrolls to that element once the comparison and briefing render. Declaration rows can already exist in SSR HTML, while measurement rows and briefing/citation entries arrive from client-side queries; `app/router.options.ts` replaces Nuxt's default scroll behavior with one that waits for the anchor to exist — up to 30 seconds — and scrolls to the last reachable position when the anchor sits near the end of the page.
 
-The shared theme in `app/assets/css/main.css` defines neutral light/dark surfaces, DM Sans headings and body text, monospace package data, and a blue change/focus accent. Blue indicates a change, not a risk rating. Homepage controls retain their original responsive layout and dimensions.
+The shared theme in `app/assets/css/main.css` defines neutral light/dark surfaces, DM Sans headings and body text, monospace package data, and a blue change/focus accent. Blue indicates a change, not a risk rating. Homepage controls retain their original responsive layout and dimensions. The self-hosted DM Sans face is cached immutably and preloaded in production HTML so a cold load does not wait until after first paint to discover it.
 
 Comparison loading is tiered. During SSR, the page prefetches declarations and streams the package description together with the comparison table, including `Measuring…` placeholders for tier-2 rows. The description renders below the package name inside the same deferred component as “At a glance”, so it is visible before hydration and does not wait for measurements. The route-only header and declarations loader can still stream before that component resolves. Measurements and AI notes start client-side after the resolved versions arrive and fill in without interaction; a measurements endpoint failure degrades each affected row or tile to `Unavailable` instead of blocking declarations. Nuxt disables streaming for crawler user agents.
 
