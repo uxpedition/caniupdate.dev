@@ -1,21 +1,22 @@
 import { Buffer } from 'node:buffer';
 
-import type { DurableObjectStorage } from '@cloudflare/workers-types';
-
 import type {
   ComparisonEvidenceCache,
   ComparisonEvidenceCacheOptions,
 } from '../../server/utils/packageComparisonFacts';
+import { EvidenceStorageCorruptionError, EvidenceStorageError } from '../../server/utils/packageEvidenceErrors';
+
+export { EvidenceStorageCorruptionError, EvidenceStorageError };
 
 const CHUNK_BYTES = 128 * 1024;
+type SqlStorageValue = string | number | ArrayBuffer | null;
 
-export class EvidenceStorageError extends Error {
-  readonly name: string = 'EvidenceStorageError';
-}
-
-export class EvidenceStorageCorruptionError extends EvidenceStorageError {
-  readonly name: string = 'EvidenceStorageCorruptionError';
-}
+type EvidenceCacheStorage = {
+  readonly sql: {
+    exec<T extends Record<string, SqlStorageValue>>(query: string, ...bindings: SqlStorageValue[]): { toArray(): T[] };
+  };
+  transactionSync<T>(operation: () => T): T;
+};
 
 type RecordRow = Record<string, string | number | null> & {
   key: string;
@@ -38,7 +39,7 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private initError: unknown = undefined;
 
-  constructor(private readonly storage: DurableObjectStorage) {
+  constructor(private readonly storage: EvidenceCacheStorage) {
     try {
       storage.sql.exec(
         `CREATE TABLE IF NOT EXISTS evidence_records (
@@ -84,12 +85,14 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
 
   cleanupExpired(now = Date.now()): void {
     this.ensureReady();
-    this.storage.transactionSync(() => {
-      this.storage.sql.exec(
-        'DELETE FROM evidence_chunks WHERE key IN (SELECT key FROM evidence_records WHERE expires_at IS NOT NULL AND expires_at <= ?)',
-        now,
-      );
-      this.storage.sql.exec('DELETE FROM evidence_records WHERE expires_at IS NOT NULL AND expires_at <= ?', now);
+    storageOperation('cleanup', () => {
+      this.storage.transactionSync(() => {
+        this.storage.sql.exec(
+          'DELETE FROM evidence_chunks WHERE key IN (SELECT key FROM evidence_records WHERE expires_at IS NOT NULL AND expires_at <= ?)',
+          now,
+        );
+        this.storage.sql.exec('DELETE FROM evidence_records WHERE expires_at IS NOT NULL AND expires_at <= ?', now);
+      });
     });
   }
 
@@ -105,13 +108,17 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
 
   private ensureReady(): void {
     if (this.initError !== undefined)
-      throw new EvidenceStorageError('Evidence SQLite initialization failed', { cause: this.initError });
+      throw new EvidenceStorageError({ operation: 'initialize', cause: this.initError });
   }
 
   private read(key: string, now: number): CachedValue {
-    const row = this.storage.sql
-      .exec<RecordRow>('SELECT key, expires_at, chunk_count, byte_length FROM evidence_records WHERE key = ?', key)
-      .toArray()[0];
+    const row = storageOperation(
+      'read',
+      () =>
+        this.storage.sql
+          .exec<RecordRow>('SELECT key, expires_at, chunk_count, byte_length FROM evidence_records WHERE key = ?', key)
+          .toArray()[0],
+    );
     if (row === undefined) return { found: false };
     validateMetadata(row);
     if (row.expires_at !== null && row.expires_at <= now) {
@@ -124,69 +131,92 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
       const value: unknown = JSON.parse(serialized);
       return { found: true, value };
     } catch (cause) {
-      throw new EvidenceStorageCorruptionError('Evidence payload is not valid JSON', { cause });
+      throw new EvidenceStorageCorruptionError({ detail: 'Evidence payload is not valid JSON', cause });
     }
   }
 
   private readSerialized(row: RecordRow): string {
-    const chunks = this.storage.sql
-      .exec<ChunkRow>(
-        'SELECT chunk_index, payload FROM evidence_chunks WHERE key = ? ORDER BY chunk_index ASC',
-        row.key,
-      )
-      .toArray();
-    if (chunks.length !== row.chunk_count) throw new EvidenceStorageCorruptionError('Evidence chunks are incomplete');
+    const chunks = storageOperation('read', () =>
+      this.storage.sql
+        .exec<ChunkRow>(
+          'SELECT chunk_index, payload FROM evidence_chunks WHERE key = ? ORDER BY chunk_index ASC',
+          row.key,
+        )
+        .toArray(),
+    );
+    if (chunks.length !== row.chunk_count)
+      throw new EvidenceStorageCorruptionError({ detail: 'Evidence chunks are incomplete' });
     let serialized = '';
     for (let index = 0; index < chunks.length; index += 1) {
       const chunk = chunks[index];
       if (chunk === undefined || chunk.chunk_index !== index || typeof chunk.payload !== 'string') {
-        throw new EvidenceStorageCorruptionError('Evidence chunk order is invalid');
+        throw new EvidenceStorageCorruptionError({ detail: 'Evidence chunk order is invalid' });
       }
       serialized += chunk.payload;
     }
     if (Buffer.byteLength(serialized, 'utf8') !== row.byte_length) {
-      throw new EvidenceStorageCorruptionError('Evidence payload length is invalid');
+      throw new EvidenceStorageCorruptionError({ detail: 'Evidence payload length is invalid' });
     }
     return serialized;
   }
 
   private write<T>(key: string, value: T, ttlMs: number | null): void {
-    const serialized = JSON.stringify(value);
-    if (serialized === undefined) throw new EvidenceStorageError('Evidence value cannot be serialized');
+    const serialized = storageOperation('serialize', () => JSON.stringify(value));
+    if (serialized === undefined)
+      throw new EvidenceStorageError({
+        operation: 'serialize',
+        cause: new TypeError('Evidence value cannot be serialized'),
+      });
     const chunks = splitUtf8(serialized, CHUNK_BYTES);
     const expiresAt = ttlMs === null ? null : Date.now() + ttlMs;
     const byteLength = Buffer.byteLength(serialized, 'utf8');
-    this.storage.transactionSync(() => {
-      this.storage.sql.exec('DELETE FROM evidence_chunks WHERE key = ?', key);
-      this.storage.sql.exec('DELETE FROM evidence_records WHERE key = ?', key);
-      this.storage.sql.exec(
-        'INSERT INTO evidence_records (key, expires_at, chunk_count, byte_length) VALUES (?, ?, ?, ?)',
-        key,
-        expiresAt,
-        chunks.length,
-        byteLength,
-      );
-      for (const [index, payload] of chunks.entries()) {
+    storageOperation('write', () =>
+      this.storage.transactionSync(() => {
+        this.storage.sql.exec('DELETE FROM evidence_chunks WHERE key = ?', key);
+        this.storage.sql.exec('DELETE FROM evidence_records WHERE key = ?', key);
         this.storage.sql.exec(
-          'INSERT INTO evidence_chunks (key, chunk_index, payload) VALUES (?, ?, ?)',
+          'INSERT INTO evidence_records (key, expires_at, chunk_count, byte_length) VALUES (?, ?, ?, ?)',
           key,
-          index,
-          payload,
+          expiresAt,
+          chunks.length,
+          byteLength,
         );
-      }
-    });
+        for (const [index, payload] of chunks.entries()) {
+          this.storage.sql.exec(
+            'INSERT INTO evidence_chunks (key, chunk_index, payload) VALUES (?, ?, ?)',
+            key,
+            index,
+            payload,
+          );
+        }
+      }),
+    );
   }
 
   private delete(key: string): void {
-    this.storage.transactionSync(() => {
-      this.storage.sql.exec('DELETE FROM evidence_chunks WHERE key = ?', key);
-      this.storage.sql.exec('DELETE FROM evidence_records WHERE key = ?', key);
-    });
+    storageOperation('delete', () =>
+      this.storage.transactionSync(() => {
+        this.storage.sql.exec('DELETE FROM evidence_chunks WHERE key = ?', key);
+        this.storage.sql.exec('DELETE FROM evidence_records WHERE key = ?', key);
+      }),
+    );
+  }
+}
+
+type StorageOperation = 'read' | 'write' | 'cleanup' | 'delete' | 'serialize';
+
+function storageOperation<T>(operation: StorageOperation, run: () => T): T {
+  try {
+    return run();
+  } catch (cause) {
+    if (cause instanceof EvidenceStorageError || cause instanceof EvidenceStorageCorruptionError) throw cause;
+    throw new EvidenceStorageError({ operation, cause });
   }
 }
 
 function validateValue<T>(value: unknown, options: ComparisonEvidenceCacheOptions<T>): T {
-  if (!options.isValid(value)) throw new EvidenceStorageCorruptionError('Evidence value does not match its schema');
+  if (!options.isValid(value))
+    throw new EvidenceStorageCorruptionError({ detail: 'Evidence value does not match its schema' });
   return value;
 }
 
@@ -198,7 +228,7 @@ function validateMetadata(row: RecordRow): void {
     row.byte_length < 0 ||
     (row.expires_at !== null && !Number.isSafeInteger(row.expires_at))
   )
-    throw new EvidenceStorageCorruptionError('Evidence metadata is invalid');
+    throw new EvidenceStorageCorruptionError({ detail: 'Evidence metadata is invalid' });
 }
 
 function splitUtf8(value: string, limit: number): string[] {

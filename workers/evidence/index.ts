@@ -11,7 +11,12 @@ import {
 } from '../../server/utils/packageComparisonFacts';
 import type { BriefingEvidence } from '../../shared/briefing.defs';
 import { PackageNameSchema } from '../../shared/package.defs';
-import { BoundedArchiveAdmission, BoundedResponseAdmission } from './admission';
+import {
+  ArchiveCapacityError,
+  BoundedArchiveAdmission,
+  BoundedResponseAdmission,
+  ResponseCapacityError,
+} from './admission';
 import { SqlEvidenceCache } from './store';
 
 // These globals belong to workerd; keep their types local instead of replacing Node's globals.
@@ -159,7 +164,7 @@ function jsonError(message: string, status: number): Response {
 }
 
 function backendError(cause: unknown): Response {
-  if (hasErrorName(cause, 'ArchiveCapacityError') || hasErrorName(cause, 'ResponseCapacityError')) {
+  if (cause instanceof ArchiveCapacityError || cause instanceof ResponseCapacityError) {
     return new Response(JSON.stringify({ error: 'Evidence temporarily unavailable' }), {
       status: 503,
       headers: {
@@ -169,16 +174,6 @@ function backendError(cause: unknown): Response {
     });
   }
   return jsonError('Evidence service unavailable', 503);
-}
-
-function hasErrorName(cause: unknown, name: string): boolean {
-  let current: unknown = cause;
-  for (let depth = 0; depth < 5; depth += 1) {
-    if (current instanceof Error && current.name === name) return true;
-    if (current === null || typeof current !== 'object' || !('cause' in current)) return false;
-    current = current.cause;
-  }
-  return false;
 }
 
 export default {

@@ -1,5 +1,7 @@
+export type PackageEvidenceBodyReadResult = { readonly done: boolean; readonly value?: unknown };
+
 export type PackageEvidenceBodyReader = {
-  read(): Promise<{ readonly done: boolean; readonly value?: unknown }>;
+  read(): Promise<PackageEvidenceBodyReadResult>;
   cancel(reason?: unknown): Promise<void>;
   releaseLock(): void;
 };
@@ -11,9 +13,9 @@ export type PackageEvidenceResponseBody = {
 
 export type PackageEvidenceResponse = {
   readonly ok: boolean;
+  readonly status: number;
   readonly headers: Pick<Headers, 'get'>;
   readonly body: PackageEvidenceResponseBody | null;
-  json(): Promise<unknown>;
 };
 
 export type PackageEvidenceObject = {

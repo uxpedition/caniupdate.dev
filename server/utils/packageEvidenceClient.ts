@@ -5,6 +5,7 @@ import { isExactSemver } from '#shared/compareSemver';
 import type { PackageMeasurementsResponse } from '#shared/comparison.defs';
 import { PackageNameSchema } from '#shared/package.defs';
 import type {
+  PackageEvidenceBodyReadResult,
   PackageEvidenceBodyReader,
   PackageEvidenceNamespace,
   PackageEvidenceResponse,
@@ -22,11 +23,16 @@ const EvidenceRequestSchema = Schema.Struct({
 export type PackageEvidenceRequest = typeof EvidenceRequestSchema.Type;
 export type PackageEvidencePath = 'measurements' | 'briefing-evidence';
 
-/** Errors from the private evidence binding are intentionally opaque to public callers. */
+export type PackageEvidenceClientFailureReason = 'binding-unavailable' | 'transport' | 'upstream' | 'protocol';
+
+/** Internal failure categories stay available to handlers; every category has the same sanitized public message. */
 export class PackageEvidenceClientError extends Error {
   readonly code = 'PACKAGE_EVIDENCE_UNAVAILABLE';
 
-  constructor() {
+  constructor(
+    readonly reason: PackageEvidenceClientFailureReason,
+    readonly statusCode?: number,
+  ) {
     super('Package evidence service unavailable');
     this.name = 'PackageEvidenceClientError';
   }
@@ -36,7 +42,7 @@ export const decodePackageEvidenceRequest = (value: unknown): PackageEvidenceReq
   try {
     return Schema.decodeUnknownSync(EvidenceRequestSchema)(value, { errors: 'all' });
   } catch {
-    throw new PackageEvidenceClientError();
+    throw new PackageEvidenceClientError('protocol');
   }
 };
 
@@ -44,7 +50,7 @@ export const decodeBriefingEvidence = (value: unknown): BriefingEvidence => {
   try {
     return Schema.decodeUnknownSync(BriefingEvidenceSchema)(value, { errors: 'all' });
   } catch {
-    throw new PackageEvidenceClientError();
+    throw new PackageEvidenceClientError('protocol');
   }
 };
 
@@ -78,14 +84,6 @@ const cancelBody = async (response: PackageEvidenceResponse): Promise<void> => {
   }
 };
 
-const readUnboundedJson = async (response: PackageEvidenceResponse): Promise<unknown> => {
-  try {
-    return await response.json();
-  } catch {
-    throw new PackageEvidenceClientError();
-  }
-};
-
 const hasAcceptableContentLength = (response: PackageEvidenceResponse, maxBytes: number): boolean => {
   const declaredLength = response.headers.get('content-length');
   if (declaredLength === null) return true;
@@ -94,10 +92,15 @@ const hasAcceptableContentLength = (response: PackageEvidenceResponse, maxBytes:
 };
 
 const readBodyChunk = async (reader: PackageEvidenceBodyReader): Promise<Uint8Array | undefined> => {
-  const { done, value } = await reader.read();
-  if (done) return undefined;
-  if (!(value instanceof Uint8Array)) throw new Error('Evidence response did not contain a byte chunk');
-  return value;
+  let result: PackageEvidenceBodyReadResult;
+  try {
+    result = await reader.read();
+  } catch {
+    throw new PackageEvidenceClientError('transport');
+  }
+  if (result.done) return undefined;
+  if (!(result.value instanceof Uint8Array)) throw new PackageEvidenceClientError('protocol');
+  return result.value;
 };
 
 const cancelReader = async (reader: PackageEvidenceBodyReader): Promise<void> => {
@@ -118,7 +121,7 @@ const joinChunks = (chunks: readonly Uint8Array[], total: number): Uint8Array =>
   return bytes;
 };
 
-const readBoundedBody = async (body: PackageEvidenceResponseBody, maxBytes: number): Promise<Uint8Array> => {
+const readResponseBody = async (body: PackageEvidenceResponseBody, maxBytes?: number): Promise<Uint8Array> => {
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -127,13 +130,13 @@ const readBoundedBody = async (body: PackageEvidenceResponseBody, maxBytes: numb
       const chunk = await readBodyChunk(reader);
       if (chunk === undefined) break;
       total += chunk.byteLength;
-      if (total > maxBytes) throw new Error('Evidence response exceeds its bound');
+      if (maxBytes !== undefined && total > maxBytes) throw new PackageEvidenceClientError('protocol');
       chunks.push(chunk);
     }
     return joinChunks(chunks, total);
-  } catch {
+  } catch (cause) {
     await cancelReader(reader);
-    throw new PackageEvidenceClientError();
+    throw cause;
   } finally {
     reader.releaseLock();
   }
@@ -144,23 +147,18 @@ const parseJson = (bytes: Uint8Array): unknown => {
     const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
     return value;
   } catch {
-    throw new PackageEvidenceClientError();
+    throw new PackageEvidenceClientError('protocol');
   }
-};
-
-const readBoundedJson = async (response: PackageEvidenceResponse, maxBytes: number): Promise<unknown> => {
-  if (!hasAcceptableContentLength(response, maxBytes)) {
-    await cancelBody(response);
-    throw new PackageEvidenceClientError();
-  }
-  const body = response.body;
-  if (body === null) throw new PackageEvidenceClientError();
-  return parseJson(await readBoundedBody(body, maxBytes));
 };
 
 const readJson = async (response: PackageEvidenceResponse, maxBytes?: number): Promise<unknown> => {
-  if (maxBytes === undefined) return readUnboundedJson(response);
-  return readBoundedJson(response, maxBytes);
+  if (maxBytes !== undefined && !hasAcceptableContentLength(response, maxBytes)) {
+    await cancelBody(response);
+    throw new PackageEvidenceClientError('protocol');
+  }
+  const body = response.body;
+  if (body === null) throw new PackageEvidenceClientError('protocol');
+  return parseJson(await readResponseBody(body, maxBytes));
 };
 
 const requestEvidence = async (
@@ -169,7 +167,7 @@ const requestEvidence = async (
   rawRequest: unknown,
 ): Promise<{ readonly request: PackageEvidenceRequest; readonly value: unknown }> => {
   const request = decodePackageEvidenceRequest(rawRequest);
-  if (namespace === undefined) throw new PackageEvidenceClientError();
+  if (namespace === undefined) throw new PackageEvidenceClientError('binding-unavailable');
 
   try {
     const objectId = namespace.idFromName(request.packageName);
@@ -181,13 +179,13 @@ const requestEvidence = async (
     });
     if (!response.ok) {
       await cancelBody(response);
-      throw new PackageEvidenceClientError();
+      throw new PackageEvidenceClientError('upstream', response.status);
     }
     const maxBytes = path === 'briefing-evidence' ? BRIEFING_EVIDENCE_MAX_BYTES : undefined;
     return { request, value: await readJson(response, maxBytes) };
   } catch (error) {
     if (error instanceof PackageEvidenceClientError) throw error;
-    throw new PackageEvidenceClientError();
+    throw new PackageEvidenceClientError('transport');
   }
 };
 
@@ -196,7 +194,7 @@ export async function getPackageMeasurements(
   request: PackageEvidenceRequest,
 ): Promise<PackageMeasurementsResponse> {
   const result = await requestEvidence(namespace, 'measurements', request);
-  if (!isCompactMeasurementsResponse(result.value, result.request)) throw new PackageEvidenceClientError();
+  if (!isCompactMeasurementsResponse(result.value, result.request)) throw new PackageEvidenceClientError('protocol');
   return result.value;
 }
 
@@ -206,8 +204,8 @@ export async function getBriefingEvidence(
 ): Promise<BriefingEvidence> {
   const result = await requestEvidence(namespace, 'briefing-evidence', request);
   const evidence = decodeBriefingEvidence(result.value);
-  if (evidence.packageName !== request.packageName) throw new PackageEvidenceClientError();
-  if (isExactSemver(request.from) && evidence.from !== request.from) throw new PackageEvidenceClientError();
-  if (isExactSemver(request.to) && evidence.to !== request.to) throw new PackageEvidenceClientError();
+  if (evidence.packageName !== request.packageName) throw new PackageEvidenceClientError('protocol');
+  if (isExactSemver(request.from) && evidence.from !== request.from) throw new PackageEvidenceClientError('protocol');
+  if (isExactSemver(request.to) && evidence.to !== request.to) throw new PackageEvidenceClientError('protocol');
   return evidence;
 }

@@ -6,6 +6,7 @@ import { FetchHttpClient } from 'effect/unstable/http';
 import { pack } from 'tar-stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ArchiveCapacityError } from '../../workers/evidence/admission';
 import {
   getComparisonFacts,
   getComparisonMeasurements,
@@ -310,6 +311,46 @@ describe('comparison evidence cache services', () => {
     expect([...cache.loaderCalls].filter(([key]) => key.startsWith('bundle:')).every(([, count]) => count === 2)).toBe(
       true,
     );
+  });
+
+  it('distinguishes collection defects from cache failures with and without persistence', async () => {
+    registry.json.mockImplementation(async (path) => manifest(path.endsWith('/0.0.8') ? '0.0.8' : '1.2.8'));
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = new URL(new Request(input, init).url);
+      if (url.hostname === 'api.osv.dev') {
+        return Response.json({ results: [{ vulns: [{ id: '\uD800', modified: '2026-01-01T00:00:00Z' }] }, {}] });
+      }
+      return Response.json({ malformed: true });
+    });
+
+    await expect(startMeasurements('0.0.8', '1.2.8', undefined)).rejects.toMatchObject({
+      _tag: 'EvidenceCollectionError',
+    });
+    await expect(startMeasurements('0.0.8', '1.2.8', { cache: new RecordingCache() })).rejects.toMatchObject({
+      _tag: 'EvidenceCollectionError',
+    });
+
+    const failedCache: ComparisonEvidenceCache = {
+      async load<T>(_key: string, _loader: () => Promise<T>, _options: ComparisonEvidenceCacheOptions<T>) {
+        throw new Error('SQLite unavailable');
+      },
+    };
+    await expect(startMeasurements('0.0.8', '1.2.8', { cache: failedCache })).rejects.toMatchObject({
+      _tag: 'EvidenceCacheError',
+    });
+  });
+
+  it('preserves archive capacity failures through the persistent-cache bridge', async () => {
+    const capacity = new ArchiveCapacityError({ capacity: 2 });
+    registry.json.mockImplementation(async (path) => manifest(path.endsWith('/0.0.8') ? '0.0.8' : '1.2.8'));
+    fetchMock.mockResolvedValue(Response.json({ malformed: true }));
+
+    await expect(
+      startMeasurements('0.0.8', '1.2.8', {
+        cache: new RecordingCache(),
+        archiveAdmission: { acquire: () => Promise.reject(capacity) },
+      }),
+    ).rejects.toBe(capacity);
   });
 });
 

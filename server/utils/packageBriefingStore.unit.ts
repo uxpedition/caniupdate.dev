@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { openBriefingD1, type BriefingD1 } from '../../test/helpers/briefingDatabase.harness';
+import { installBriefingSchema, openBriefingD1, type BriefingD1 } from '../../test/helpers/briefingDatabase.harness';
 import { readStoredBriefing, saveBriefing } from './packageBriefingStore';
 
 const briefing = {
@@ -52,15 +52,30 @@ describe('package briefing store', () => {
   });
 
   it('rejects a corrupt saved result instead of treating it as a miss', async () => {
+    await expect(readStoredBriefing(database(), 'missing-evidence')).resolves.toBeUndefined();
     await database()
       .prepare('INSERT INTO package_briefings (evidence_hash, response_json) VALUES (?, ?)')
       .bind('corrupt-evidence', '{')
       .run();
 
-    await expect(readStoredBriefing(database(), 'corrupt-evidence')).rejects.toBeDefined();
+    await expect(readStoredBriefing(database(), 'corrupt-evidence')).rejects.toMatchObject({
+      _tag: 'BriefingStoreCorruptionError',
+    });
     // A valid neighbour still decodes, so the rejection is the corrupt row rather than a broken binding.
     await saveBriefing(database(), 'valid-evidence', briefing);
     expect(await readStoredBriefing(database(), 'valid-evidence')).toEqual(briefing);
+  });
+
+  it('distinguishes a D1 operation failure from an absent row', async () => {
+    await database().prepare('DROP TABLE package_briefings').run();
+    try {
+      await expect(readStoredBriefing(database(), 'missing-evidence')).rejects.toMatchObject({
+        _tag: 'BriefingStoreError',
+        operation: 'read',
+      });
+    } finally {
+      await installBriefingSchema(database());
+    }
   });
 
   it('retains an old success when a later snapshot is saved', async () => {

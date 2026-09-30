@@ -1,10 +1,11 @@
-import { Data, Effect, Schema, SchemaTransformation } from 'effect';
+import { Effect, Schema, SchemaTransformation } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { defineEventHandler, getValidatedQuery } from 'h3';
 
 import { RegistryPackagesSearchResponseSchema, toSearchResults } from '#shared/search.defs';
 
 import { getRegistryJson } from '../../utils/npmRegistry';
+import { RegistryRequestError } from '../../utils/packageEvidenceErrors';
 
 const EndpointQueryParamsSchema = Schema.Struct({
   text: Schema.Trim.pipe(Schema.decode(SchemaTransformation.toLowerCase())).check(
@@ -16,20 +17,14 @@ const EndpointQueryParamsSchema = Schema.Struct({
   ),
 });
 
-const RegistryRequestError = Data.TaggedError('RegistryRequestError')<{
-  readonly cause: unknown;
-}>;
-
-type RegistryRequestError = InstanceType<typeof RegistryRequestError>;
-
-const registryRequestError = (cause: unknown): RegistryRequestError => new RegistryRequestError({ cause });
-
 export default defineEventHandler(async (event) => {
   const query = await getValidatedQuery(event, (queryParams) =>
     Schema.decodeUnknownSync(EndpointQueryParamsSchema)(queryParams, { errors: 'all' }),
   );
 
-  const registryRequest = getRegistryJson('/-/v1/search', { query }).pipe(Effect.mapError(registryRequestError));
+  const registryRequest = getRegistryJson('/-/v1/search', { query }).pipe(
+    Effect.mapError((cause) => new RegistryRequestError({ cause })),
+  );
 
   const searchResults = Effect.gen(function* () {
     const response = yield* registryRequest;

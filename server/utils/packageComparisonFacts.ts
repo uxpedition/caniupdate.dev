@@ -4,7 +4,7 @@
 
 import { createHash } from 'node:crypto';
 
-import { Data, Effect, Schema } from 'effect';
+import { Effect, Schema } from 'effect';
 import { HttpClient } from 'effect/unstable/http';
 
 import type { BriefingInput } from '../../shared/briefing.defs';
@@ -29,6 +29,13 @@ import { PackageTarballSchema, type PackageTarball } from '../../shared/tarball.
 import { getRegistryJson } from './npmRegistry';
 import { getVersionBundleSize } from './packageBundleSize';
 import { compareDeclarations, compareMeasurements } from './packageComparison';
+import {
+  EvidenceCollectionError,
+  RegistryRequestError,
+  toEvidenceCacheFailure,
+  toPackageEvidenceFailure,
+  type PackageEvidenceFailure,
+} from './packageEvidenceErrors';
 import { getPackageReleaseNotes } from './packageReleaseNotes';
 import { getPackageTarball } from './packageTarball';
 import { getPackageVulnerabilities } from './packageVulnerabilities';
@@ -50,14 +57,6 @@ export const decodePackageComparisonRouterParams = Schema.decodeUnknownSync(Pack
   errors: 'all',
 });
 export const decodePackageComparisonQuery = Schema.decodeUnknownSync(PackageComparisonQuerySchema, { errors: 'all' });
-
-const RegistryRequestError = Data.TaggedError('RegistryRequestError')<{
-  readonly cause: unknown;
-}>;
-
-export type RegistryRequestError = InstanceType<typeof RegistryRequestError>;
-
-const registryRequestError = (cause: unknown): RegistryRequestError => new RegistryRequestError({ cause });
 
 export const EVIDENCE_CACHE_MAX_AGE_MS = 300_000;
 export const EVIDENCE_COLLECTOR_REVISION = 'comparison-evidence-v1';
@@ -98,19 +97,31 @@ const runCached = <T>(
   effect: Effect.Effect<T, unknown, HttpClient.HttpClient>,
   services: ComparisonEvidenceServices | undefined,
   options: ComparisonEvidenceCacheOptions<T>,
-): Effect.Effect<T, RegistryRequestError, HttpClient.HttpClient> => {
+): Effect.Effect<T, PackageEvidenceFailure, HttpClient.HttpClient> => {
   const cache = services?.cache;
-  if (cache === undefined) return effect.pipe(Effect.mapError(registryRequestError));
+  if (cache === undefined) {
+    return effect.pipe(
+      Effect.mapError(toPackageEvidenceFailure),
+      Effect.catchDefect((cause) => Effect.fail(new EvidenceCollectionError({ cause }))),
+    );
+  }
   return Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient;
     return yield* Effect.tryPromise({
       try: () =>
         cache.load(
           key,
-          () => Effect.runPromise(effect.pipe(Effect.provideService(HttpClient.HttpClient, client))),
+          () =>
+            Effect.runPromise(
+              effect.pipe(
+                Effect.provideService(HttpClient.HttpClient, client),
+                Effect.mapError(toPackageEvidenceFailure),
+                Effect.catchDefect((cause) => Effect.fail(new EvidenceCollectionError({ cause }))),
+              ),
+            ),
           options,
         ),
-      catch: registryRequestError,
+      catch: toEvidenceCacheFailure,
     });
   });
 };
@@ -137,12 +148,12 @@ const archiveIntegrityPolicy = (manifest: RegistryVersionManifest) =>
 const withArchiveAdmission = (
   manifest: RegistryVersionManifest,
   services: ComparisonEvidenceServices | undefined,
-): Effect.Effect<PackageTarball, unknown, HttpClient.HttpClient> => {
-  const inspect = getPackageTarball(manifest);
+): Effect.Effect<PackageTarball, PackageEvidenceFailure, HttpClient.HttpClient> => {
+  const inspect = getPackageTarball(manifest).pipe(Effect.mapError(toPackageEvidenceFailure));
   const admission = services?.archiveAdmission;
   if (admission === undefined) return inspect;
   return Effect.gen(function* () {
-    const release = yield* Effect.tryPromise({ try: () => admission.acquire(), catch: (cause) => cause });
+    const release = yield* Effect.tryPromise({ try: () => admission.acquire(), catch: toPackageEvidenceFailure });
     return yield* inspect.pipe(Effect.ensuring(Effect.sync(release)));
   });
 };
@@ -153,7 +164,7 @@ const registryVersionManifestRequest = (packageName: string, version: string) =>
   Effect.gen(function* () {
     const response = yield* getRegistryJson(`/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`);
     return yield* Schema.decodeUnknownEffect(RegistryVersionManifestSchema)(response, { errors: 'all' });
-  }).pipe(Effect.mapError(registryRequestError));
+  }).pipe(Effect.mapError((cause) => new RegistryRequestError({ cause })));
 
 // Each comparison side shares its request-local manifest effect across branches. Keep the sides separate
 // so each tarball can start as soon as its own manifest resolves.
@@ -169,8 +180,8 @@ const getManifest = (packageName: string, version: string, services?: Comparison
 };
 
 type ManifestLookups = {
-  readonly from: Effect.Effect<RegistryVersionManifest, RegistryRequestError, HttpClient.HttpClient>;
-  readonly to: Effect.Effect<RegistryVersionManifest, RegistryRequestError, HttpClient.HttpClient>;
+  readonly from: Effect.Effect<RegistryVersionManifest, PackageEvidenceFailure, HttpClient.HttpClient>;
+  readonly to: Effect.Effect<RegistryVersionManifest, PackageEvidenceFailure, HttpClient.HttpClient>;
 };
 
 const allocateManifestLookups = (
@@ -207,7 +218,7 @@ export function getComparisonDeclarations(
   from: string,
   to: string,
   services?: ComparisonEvidenceServices,
-): Effect.Effect<PackageDeclarationsResponse, RegistryRequestError, HttpClient.HttpClient> {
+): Effect.Effect<PackageDeclarationsResponse, PackageEvidenceFailure, HttpClient.HttpClient> {
   return Effect.gen(function* () {
     const lookups = yield* allocateManifestLookups(packageName, from, to, services);
     return yield* declarationsFrom(packageName, lookups);
@@ -217,12 +228,12 @@ export function getComparisonDeclarations(
 const cachedTarball = (
   manifest: RegistryVersionManifest,
   services?: ComparisonEvidenceServices,
-): Effect.Effect<PackageTarball, RegistryRequestError, HttpClient.HttpClient> => {
+): Effect.Effect<PackageTarball, PackageEvidenceFailure, HttpClient.HttpClient> => {
   const validUrl = safeTarballUrl(manifest.dist.tarball);
-  const inspect = validUrl ? withArchiveAdmission(manifest, services) : getPackageTarball(manifest);
-  if (services?.cache === undefined || !validUrl) {
-    return inspect.pipe(Effect.mapError(registryRequestError));
-  }
+  const inspect = (validUrl ? withArchiveAdmission(manifest, services) : getPackageTarball(manifest)).pipe(
+    Effect.mapError(toPackageEvidenceFailure),
+  );
+  if (services?.cache === undefined || !validUrl) return inspect;
   const result = runCached(
     cacheKey('archive', {
       revision: ARCHIVE_INSPECTOR_REVISION,
@@ -370,7 +381,7 @@ export function getComparisonMeasurements(
   from: string,
   to: string,
   services?: ComparisonEvidenceServices,
-): Effect.Effect<PackageMeasurementsResponse, RegistryRequestError, HttpClient.HttpClient> {
+): Effect.Effect<PackageMeasurementsResponse, PackageEvidenceFailure, HttpClient.HttpClient> {
   return Effect.gen(function* () {
     const lookups = yield* allocateManifestLookups(packageName, from, to, services);
     const {
@@ -396,7 +407,7 @@ export function getComparisonFacts(
   from: string,
   to: string,
   services?: ComparisonEvidenceServices,
-): Effect.Effect<ComparisonFacts, RegistryRequestError, HttpClient.HttpClient> {
+): Effect.Effect<ComparisonFacts, PackageEvidenceFailure, HttpClient.HttpClient> {
   return Effect.gen(function* () {
     const lookups = yield* allocateManifestLookups(packageName, from, to, services);
     const { declarations, measurements, releaseNotes } = yield* Effect.all(

@@ -14,7 +14,7 @@ import { Effect, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 
 import { briefingEvidenceHash, generateBriefing, readBriefingConfig } from '../../server/utils/packageBriefing';
-import { readStoredBriefing, saveBriefing } from '../../server/utils/packageBriefingStore';
+import { isBriefingStoreFailure, readStoredBriefing, saveBriefing } from '../../server/utils/packageBriefingStore';
 import { BriefingEvidenceSchema } from '../../shared/briefing.defs';
 import type {
   AvailablePackageBriefing,
@@ -403,7 +403,8 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     let stored: AvailablePackageBriefing;
     try {
       stored = await saveBriefing(this.env.BRIEFINGS_DB, record.hash, result);
-    } catch {
+    } catch (cause) {
+      if (!isBriefingStoreFailure(cause)) throw cause;
       return await this.#commitUnavailable('cache-error');
     }
     return await this.#commitAvailable(stored);
@@ -482,7 +483,8 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     try {
       const briefing = await readStoredBriefing(this.env.BRIEFINGS_DB, hash);
       return briefing === undefined ? { outcome: 'missing' } : { outcome: 'found', briefing };
-    } catch {
+    } catch (cause) {
+      if (!isBriefingStoreFailure(cause)) throw cause;
       return { outcome: 'failed' };
     }
   }

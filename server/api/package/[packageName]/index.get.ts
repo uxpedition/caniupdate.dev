@@ -1,20 +1,13 @@
-import { Data, Effect, Schema } from 'effect';
+import { Effect, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { createError, defineEventHandler, getRouterParam } from 'h3';
 
 import { RegistryPackageMetadataSchema, toPackageMetadata } from '#shared/package.defs';
 
 import { getRegistryJson } from '../../../utils/npmRegistry';
+import { RegistryRequestError } from '../../../utils/packageEvidenceErrors';
 
 const REGISTRY_METADATA_ACCEPT = 'application/vnd.npm.install-v1+json';
-
-const RegistryRequestError = Data.TaggedError('RegistryRequestError')<{
-  readonly cause: unknown;
-}>;
-
-type RegistryRequestError = InstanceType<typeof RegistryRequestError>;
-
-const registryRequestError = (cause: unknown): RegistryRequestError => new RegistryRequestError({ cause });
 
 export default defineEventHandler(async (event) => {
   const routerSegment = getRouterParam(event, 'packageName');
@@ -25,7 +18,7 @@ export default defineEventHandler(async (event) => {
 
   const registryRequest = getRegistryJson(`/${encodeURIComponent(packageName)}`, {
     accept: REGISTRY_METADATA_ACCEPT,
-  }).pipe(Effect.mapError(registryRequestError));
+  }).pipe(Effect.mapError((cause) => new RegistryRequestError({ cause })));
 
   const packageMetadata = Effect.gen(function* () {
     const response = yield* registryRequest;
