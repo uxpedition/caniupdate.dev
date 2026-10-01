@@ -66,11 +66,19 @@ class FakeSocket {
     this.#listeners[type].push(listener);
   }
 
+  removeEventListener(type: SocketEvent, listener: SocketListener): void {
+    this.#listeners[type] = this.#listeners[type].filter((candidate) => candidate !== listener);
+  }
+
   close(): void {
     this.closeCalls += 1;
     if (this.readyState === 3) return;
     this.readyState = 3;
     this.#dispatch('close');
+  }
+
+  open(): void {
+    this.readyState = 1;
   }
 
   /** The current snapshot the service sends on every connect, the first one included. */
@@ -320,6 +328,80 @@ describe('packageBriefingQueryOptions', () => {
     second.snapshot({ status: 'available', revision: 5, briefing: briefing() });
 
     await expect(promise).resolves.toMatchObject({ briefing: { status: 'available' } });
+    expect(requestFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes a connected socket that never sends a frame by the deadline', async () => {
+    const promise = Promise.resolve(startQuery(pending(), [], new AbortController().signal));
+    vi.useFakeTimers();
+    let subscriptionError: unknown;
+    void promise.catch((error: unknown) => {
+      subscriptionError = error;
+    });
+
+    const socket = await waitForSocket(0);
+    socket.open();
+    await vi.advanceTimersByTimeAsync(180_000);
+
+    expect(String(subscriptionError)).toContain('The briefing subscription exceeded its 180-second deadline');
+    expect(socket.closeCalls).toBe(1);
+    expect(requestFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps one 180-second deadline across reconnects and progress frames', async () => {
+    const statuses: string[] = [];
+    const promise = Promise.resolve(startQuery(pending(), statuses, new AbortController().signal));
+    vi.useFakeTimers();
+    let subscriptionError: unknown;
+    void promise.catch((error: unknown) => {
+      subscriptionError = error;
+    });
+
+    const first = await waitForSocket(0);
+    first.drop();
+    await vi.advanceTimersByTimeAsync(1_000);
+    const second = await waitForSocket(1);
+    await vi.advanceTimersByTimeAsync(168_999);
+
+    second.snapshot({ status: 'running', revision: 4 });
+    expect(statuses).toEqual(['queued', 'running']);
+    await vi.advanceTimersByTimeAsync(11_000);
+
+    expect(String(subscriptionError)).toContain('The briefing subscription exceeded its 180-second deadline');
+    expect(second.closeCalls).toBe(1);
+    expect(requestFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores frames from a socket after it disconnects', async () => {
+    vi.useFakeTimers();
+    const statuses: string[] = [];
+    const promise = startQuery(pending(), statuses, new AbortController().signal);
+    const first = await waitForSocket(0);
+    first.drop();
+    await vi.advanceTimersByTimeAsync(1_000);
+    const second = await waitForSocket(1);
+
+    first.snapshot({ status: 'running', revision: 4 });
+    expect(statuses).toEqual(['queued']);
+    second.snapshot({ status: 'running', revision: 4 });
+    expect(statuses).toEqual(['queued', 'running']);
+    second.snapshot({ status: 'available', revision: 5, briefing: briefing() });
+
+    await expect(promise).resolves.toMatchObject({ briefing: { status: 'available' } });
+    expect(requestFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reconnect after cancellation during backoff', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const promise = startQuery(pending(), [], controller.signal);
+    const first = await waitForSocket(0);
+    first.drop();
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(FakeSocket.instances).toHaveLength(1);
     expect(requestFetch).toHaveBeenCalledTimes(1);
   });
 

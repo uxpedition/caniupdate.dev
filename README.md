@@ -91,6 +91,8 @@ For example, `minimist` versions `1.2.5` and `1.2.8` currently return counts of 
 
 A refused submission is an opaque `503`; the page resubmits once after 250 ms, and since submissions are hash-addressed the resubmission can only rejoin the same job. The factual comparison route stays independent and never waits for inference.
 
+A pending browser subscription has one 180-second deadline from its first socket attempt; progress frames and reconnects do not reset it. Expiry closes that browser's socket and fails its query without marking the shared job unavailable or cancelling generation. Query cancellation on comparison changes also releases only that subscriber; reconnects re-read job state and never resubmit.
+
 #### Briefing release-note collection
 
 GitHub collection starts after both npm manifests resolve their repository metadata, without waiting for OSV. Release pagination and the entire commit-pinned changelog lookup run concurrently. Only dependent requests—later release pages, reading a discovered changelog file, or discovering a fallback release tag—wait for their prerequisites. GitHub requests have a five-second timeout including the body, a 1 MiB response limit, and no retries. Release pagination stops after ten pages, preserving earlier results as partial evidence if later pages fail or the bound is reached.
