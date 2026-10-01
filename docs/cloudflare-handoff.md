@@ -1,15 +1,37 @@
 # Cloudflare handoff
 
-**Status:** Shared persisted evidence and DO-backed streaming cache misses were deployed to the approved remote preview on 2026-09-24. Backend version: `04618599-82a3-4157-9337-862dec46d38d`; frontend version: `7006c87d-970c-4556-8a6d-3aa4188c5d9f`. No pending D1 migrations. AI remains unconfigured; billing is unchanged.
+## Preview deployment (2026-10-01)
 
-Deployment smoke: health, minimist measurements/briefing, and two sequential TypeScript 5.8.3 → 5.9.3 measurement requests returned 200. TypeScript DO CPU was 352 ms then 6 ms; frontend CPU was 2 ms for each. Chromium hydrated search returned results and direct minimist comparison populated sizes, advisories, and 20/24-file inventories. Browser input was exercised through DOM input events because tool-level click/type timed out. Homepage (80 ms), comparison SSR (77 ms), and briefing frontend (59/68 ms) samples still exceeded 10 ms, with outcome `ok`; sustained Free-tier suitability remains unproven. These are individual live-tail samples, not a load test. Sanitized evidence: `.data/preview-deployment-2026-09-24.json`.
+All current frontend/API, evidence, and briefing Worker code was deployed to the explicit `preview` environment after the scoped-admission commit `fe6cfe9`. The existing preview Queue was confirmed and remote D1 reported no pending migrations. No AI credentials were added and no inference request was sent.
 
-The sections below retain earlier local and remote verification history; this deployment supersedes statements that the backend is local-only, and the synchronous generation path they describe is superseded by the asynchronous submission and socket contract recorded above. The [optimization plan](optimization-plan.md) records the selected scope and deferred work; the original M1 plan remains execution history.
+- Frontend/API: `5e85f5ac-c947-4c95-9224-a4f3ccf70152`.
+- Evidence Worker: `f07e3512-67cb-4ca9-9e47-ec14d91eb6a7`.
+- Briefing Worker: `427f1ba8-7612-4ce6-aaff-b0dec9e3e749`.
+
+Build and deployment completed. Access initially redirected the health check to login until the Service Auth policy was saved; afterward `/api/health` returned `200 {"status":"ok"}` with the locally stored service token. Preflight GETs for all six selected measurements pairs returned validated 200 responses and warmed their evidence. The one-minute warm-cache results are below. Existing sections below are historical where they describe the older deployment.
+
+**Current status (2026-10-01):** Frontend/API, evidence, and asynchronous briefing Workers are deployed to the approved remote preview. D1 has no pending migrations. No AI credentials were deployed and no inference was run; billing was unchanged.
+
+### Warm-cache measurements load run
+
+One generator ran authenticated GETs to the public measurements API, with no retries, a 30-second request timeout, and paced arrivals for exactly 60 seconds per rate/workload. The six unique pairs were first fetched sequentially (preflight, 509–1,730 ms each; all 200) to warm their evidence, then reused during the rate windows. Each response had to be valid JSON matching its requested package/from/to versions.
+
+| Workload                                         |     Rate | Requests | HTTP 200 | Other/failures | Max in flight | Latency p50 / p95 / p99 |
+| ------------------------------------------------ | -------: | -------: | -------: | -------------: | ------------: | ----------------------: |
+| TypeScript, 3 version pairs                      | 10 req/s |      600 |      600 |              0 |             1 |         26 / 31 / 36 ms |
+| TypeScript, 3 version pairs                      | 25 req/s |    1,500 |    1,500 |              0 |             2 |         25 / 30 / 37 ms |
+| Mixed: TypeScript (3 pairs), Nuxt, Vue, minimist | 10 req/s |      600 |      600 |              0 |             2 |         26 / 44 / 50 ms |
+| Mixed: TypeScript (3 pairs), Nuxt, Vue, minimist | 25 req/s |    1,500 |    1,500 |              0 |             4 |         26 / 41 / 51 ms |
+
+Achieved send rates matched target; zero requests were skipped. The largest response was Nuxt (~91 KB); the rest were ~3–8 KB. This indicates the deployed route handled this **single-location, prewarmed, low-in-flight** sample without application failures or admission rejection. It does **not** test cold archive/provider work, three-region routing, greater parallelism, or Cloudflare per-invocation CPU accounting. Per-request timings are end-to-end client-observed latency, not Worker CPU time. Detailed sanitized results: `.data/preview-load-2026-10-01.json` (ignored local evidence).
+
+Historical 2026-09-24 deployment smoke: health, minimist measurements/briefing, and two sequential TypeScript 5.8.3 → 5.9.3 measurement requests returned 200. TypeScript DO CPU was 352 ms then 6 ms; frontend CPU was 2 ms for each. Chromium hydrated search returned results and direct minimist comparison populated sizes, advisories, and 20/24-file inventories. Browser input was exercised through DOM input events because tool-level click/type timed out. Homepage (80 ms), comparison SSR (77 ms), and briefing frontend (59/68 ms) samples exceeded 10 ms, with outcome `ok`. These are individual historical live-tail samples, not a load test; the 2026-10-01 run below measures client-observed latency only and does not establish sustained Free-tier suitability. Sanitized evidence: `.data/preview-deployment-2026-09-24.json`.
+
+The sections below retain local and deployment history from before 2026-10-01; treat their deployment status and load claims as historical. The current deployment versions and measured warm-cache workload are recorded above. The [optimization plan](optimization-plan.md) records selected and deferred work; the original M1 plan remains execution history.
 
 ## Local and built runtime gate (2026-09-26)
 
-Task 5 made the local and built runtimes reproducible and measured them. Nothing here is deployed: the commands below
-are local only, use the loopback fixture in the git-ignored `workers/briefing/.dev.vars`, and start no remote session.
+Task 5 recorded local and built-runtime procedures; these commands remain local only, use the loopback fixture in the git-ignored `workers/briefing/.dev.vars`, and start no remote session. The separate 2026-10-01 remote deployment and warm-cache load run are recorded above.
 
 ### What the runtimes are
 
@@ -65,21 +87,20 @@ Driven in Chromium against the running preview runtime (`http://localhost:5273`)
 
 ### Gates that remain unapproved
 
-No deployment, no remote command, and no real provider key were used. Still requiring explicit approval and separate work:
+The Queue, SQLite-backed briefing job Durable Object, briefing Worker, and public read-only socket route were deployed to preview on 2026-10-01 at the user's direction. Remaining gates:
 
-1. The new Queue, the SQLite-backed job Durable Object migration, the briefing Worker, and its public socket route.
-2. The `env.preview` OpenRouter secret, and the key's configured budget as the spend boundary. Paid inference stays disabled until the budget exists and the measured gates below pass.
-3. Sustained-load evidence from the deployed runtime: local process-tree CPU cannot confirm the 10 ms allowance under production accounting, and the frontend POST has ~3 ms of headroom in the samples above.
+1. Keep the `env.preview` OpenRouter secret unset until access/abuse controls and an approved spend budget are in place. This load test did not submit a briefing or incur inference charges.
+2. Measure deployed per-invocation CPU under representative sustained traffic. The warm-cache request results above are client latency only; they do not establish Cloudflare CPU accounting, cold-work behavior, or Free-tier suitability.
 
 ## Completed work
 
-| Commit                | Delivered                                                                                                                                                                   |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ad52e96`             | Public Effect HTTP npm transport; request-bound D1 permanent briefing store; read-only legacy SQLite exporter; local migrations, Nuxt development, and built-Worker preview |
-| `dda154a`             | Removed the rejected Effect patch, process-local provider caches, and inference coalescing; retained request-local manifest sharing and durable D1 reuse                    |
-| `20be28b`             | Fixed Firefox startup by disabling Nuxt's entry-import-map optimization; SSR streaming remains enabled                                                                      |
-| `5cda662`             | Added an isolated remote `preview` environment and deployed it with a separate D1 database and no AI credentials                                                            |
-| Uncommitted on `main` | Private SQLite-backed `PackageEvidence` Worker; shared persisted provider evidence; bounded streaming archive misses; compact frontend binding; two-Worker local runtime    |
+| Commit    | Delivered                                                                                                                                                                   |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ad52e96` | Public Effect HTTP npm transport; request-bound D1 permanent briefing store; read-only legacy SQLite exporter; local migrations, Nuxt development, and built-Worker preview |
+| `dda154a` | Removed the rejected Effect patch, process-local provider caches, and inference coalescing; retained request-local manifest sharing and durable D1 reuse                    |
+| `20be28b` | Fixed Firefox startup by disabling Nuxt's entry-import-map optimization; SSR streaming remains enabled                                                                      |
+| `5cda662` | Added an isolated remote `preview` environment and deployed it with a separate D1 database and no AI credentials                                                            |
+| `fe6cfe9` | Replaced manual evidence admission counters/releases with scoped reject-fast Effect semaphores; added lifecycle tests and documented permit ownership                       |
 
 The Firefox failure was real: HTTP module-preload headers interacted with the `#entry` import map, leaving server-rendered HTML visible but non-interactive. A clean Firefox session produced `NUXT_E1005`, an unresolved `#entry`, and no API requests. Direct chunk imports restored search and comparison hydration. API-only checks had missed this; future verification must exercise actual browser interactions.
 
