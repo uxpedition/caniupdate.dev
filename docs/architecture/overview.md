@@ -1,0 +1,132 @@
+# Comparison architecture
+
+The system compares two versions of one public npm package. It presents declarations first, then measurements and supplementary AI notes. It does not assess a consumer project or approve an upgrade; see [product meaning and limitations](../product/meaning-and-limitations.md).
+
+This document describes current source-backed behavior, not the state of a deployed environment. [Evidence architecture](evidence.md) owns collection, caching, admission, and provider failure details. [Briefing architecture](briefing.md) owns durable generation and browser subscriptions.
+
+## Runtime ownership
+
+| Owner                                                          | Responsibilities                                                                                    | Does not own                                               |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Browser                                                        | Reactive comparison queries, result rendering, briefing submission and read-only job subscription   | Trusted evidence, provider credentials, durable jobs       |
+| Nuxt Worker                                                    | SSR declarations, public comparison routes, request validation, private evidence and briefing calls | Archive inspection, AI generation, D1                      |
+| Evidence Worker / per-package `PackageEvidence` Durable Object | Provider collection, verified archive inspection, SQLite evidence cache, bounded briefing packet    | AI generation or stored briefing results                   |
+| Briefing Worker / per-hash `BriefingJob` Durable Object        | Private submission, durable job state, generation, public read-only sockets                         | Registry/provider evidence collection                      |
+| Cloudflare Queue                                               | Delivers a hash and generation ID to wake its job                                                   | Evidence packet, prompt, credentials, generation ownership |
+| D1                                                             | Permanent validated briefing results, first-writer-wins by evidence hash                            | Evidence cache, provider budget enforcement                |
+
+```mermaid
+flowchart TD
+  Browser[Browser] -->|Comparison API| Nuxt[Nuxt Worker]
+  Nuxt -->|Declarations| Npm[Public npm registry]
+  Nuxt -->|PACKAGE_EVIDENCE binding| Evidence[PackageEvidence DO per package]
+  Evidence --> Providers[npm, OSV, Bundlephobia, GitHub and tarballs]
+  Evidence --> EvidenceDB[DO SQLite evidence cache]
+  Nuxt -->|BRIEFING_SERVICE private submission| Submitter[Briefing Worker entrypoint]
+  Submitter --> Job[BriefingJob DO per evidence hash]
+  Job --> JobDB[DO SQLite job state]
+  Job -->|Hash and generation ID| Queue[Cloudflare Queue]
+  Queue -->|Wake job| Job
+  Job --> D1[Permanent briefing results in D1]
+  Job --> AI[AI provider]
+  Browser -->|Read-only WebSocket| Job
+```
+
+The [root bindings](../../wrangler.jsonc) give Nuxt access to the evidence DO namespace and named briefing entrypoint. The [evidence Worker](../../workers/evidence/index.ts) has no public application endpoint. The [briefing public entrypoint](../../workers/briefing/index.ts) accepts only allowed-origin socket upgrades for existing job identities; it cannot submit a generation. Briefing D1, Queue, job bindings, and socket configuration belong to the [briefing Worker configuration](../../workers/briefing/wrangler.jsonc), not Nuxt.
+
+## Public comparison contracts
+
+All three routes decode the package name and trim nonempty `from`/`to` inputs, each bounded to 256 characters. The registry resolves inputs such as tags to manifest versions. The page passes the returned exact versions to its later-tier queries; the routes themselves share parameter validation rather than requiring browser inputs to be exact versions.
+
+| Route                                                                    | Result and boundary                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/package/{encodedPackageName}/compare?from=…&to=…`              | Resolved manifests and declaration comparison: dependencies, peers, Node requirement, module/export/type declarations, licenses, install scripts. No evidence binding, GitHub request, archive inspection, or inference. |
+| `GET /api/package/{encodedPackageName}/compare/measurements?from=…&to=…` | Size/advisory comparison and per-version evidence, including compact tarball summaries. Uses the private evidence backend; no per-file inventory or changelog bodies reach this response.                                |
+| `POST /api/package/{encodedPackageName}/compare/briefing?from=…&to=…`    | Builds evidence server-side and submits it privately. Returns `200` with a stored briefing, `202` with pending job identity/socket information, or a sanitized refusal. Can initiate paid generation; it is not a read.  |
+
+Sources: [shared collection and validation](../../server/utils/packageComparisonFacts.ts), [declarations route](../../server/api/package/[packageName]/compare/index.get.ts), [measurements route](../../server/api/package/[packageName]/compare/measurements.get.ts), [briefing route](../../server/api/package/[packageName]/compare/briefing.post.ts), and [evidence client boundary](../../server/utils/packageEvidenceClient.ts).
+
+The browser supplies only package/version selectors, never trusted comparison facts. Measurements responses undergo envelope/version/no-inventory checks; briefing packets and service responses are schema-decoded. Missing bindings, transport failures, upstream failures, or protocol violations become sanitized service failures rather than falling back to frontend collection or generation.
+
+## Declaration comparison invariants
+
+The [local comparator](../../server/utils/packageComparison.ts) runs on resolved manifest declarations without extra I/O or executing package code. Direction is the requested `from` → `to`; identical versions and downgrades do not take a separate approval path.
+
+- Dependency changes cover runtime and optional requirements, not dev dependencies. Optional requirements override same-name runtime declarations; a category move is one change. Peers are separate and include required/optional transitions.
+- Declaration maps emit sorted differences. Scalar/composite results retain before/after values and `changed`; presence flags distinguish an absent declaration from explicit JSON `null`.
+- Conditional export/type mapping order is preserved because precedence matters. These are declaration comparisons, not semantic API tests or proof that imports work.
+- Node range changes are textual declaration changes, not range-containment analysis. License changes are facts, not legal advice. Install scripts cover explicit lifecycle commands, not inferred execution behavior.
+
+These rules explain the factual contract; [product limitations](../product/meaning-and-limitations.md) defines what consumers may conclude from it.
+
+## Loading sequence
+
+[Page orchestration](../../app/composables/useComparisonPage.ts) creates all reactive queries before awaiting the server declarations prefetch. The [route-only page shell](../../app/pages/[packageName]/[versionPair].vue) can stream before the deferred [comparison component](../../app/components/comparison/ComparisonDetails.vue). The package description arrives with declaration rows, not with measurements. [Nuxt configuration](../../nuxt.config.ts) enables SSR streaming; crawler user agents are excluded by Nuxt.
+
+```mermaid
+sequenceDiagram
+  participant Browser
+  participant Nuxt
+  participant Registry as npm registry
+  participant Evidence as PackageEvidence DO
+  participant Briefing as Briefing service/job
+  Nuxt->>Registry: Resolve both declaration manifests concurrently
+  Registry-->>Nuxt: Resolved versions and declarations
+  Nuxt-->>Browser: Stream declarations and description, hydrate query data
+  Note over Browser: Client queries use resolved versions
+  par Measurements
+    Browser->>Nuxt: GET measurements
+    Nuxt->>Evidence: Collect or reuse measurement evidence
+    Evidence-->>Nuxt: Measurement comparison and summaries
+    Nuxt-->>Browser: Fill measurement rows independently
+  and Briefing
+    Browser->>Nuxt: POST briefing
+    Nuxt->>Evidence: Collect or reuse complete evidence and pack bounded packet
+    Evidence-->>Nuxt: Server-built packet
+    Nuxt->>Briefing: Submit packet
+    alt Stored result
+      Briefing-->>Nuxt: available
+      Nuxt-->>Browser: 200 with briefing
+    else Pending job
+      Briefing-->>Nuxt: queued or running with hash, URL, revision
+      Nuxt-->>Browser: 202
+      Browser->>Briefing: Read-only WebSocket subscription
+      Briefing-->>Browser: Progress, then terminal result
+    end
+  end
+```
+
+Measurements and briefing are **parallel client queries after declarations**, not a serial measurements-then-AI pipeline. Briefing independently gathers its own complete server-side evidence; it does not consume the browser's measurements response. Shared evidence cache misses may coalesce in the backend. Opening the notes panel does not trigger generation: the client briefing query is enabled automatically for a resolved comparison.
+
+A successful SSR query is dehydrated by the [Vue Query plugin](../../app/plugins/vue-query.ts) and hydrated in the browser. Failed SSR prefetches are removed instead of dehydrating an error, allowing a new client fetch from pending state. Neither measurements nor briefing runs during SSR.
+
+## Identity and freshness
+
+Three identities serve different purposes:
+
+- **Browser query:** tier, package, and selected versions. Declarations use the requested selectors; later tiers use resolved versions. Declaration, measurement, and briefing caches are separate.
+- **Evidence object:** package name. Provider-specific keys let evidence be reused across comparison pairs; cache lifetimes and integrity policies are detailed in [evidence architecture](evidence.md).
+- **Briefing job/result:** exact bounded evidence hash. Different users submitting identical evidence share work and stored results. The same version pair with changed evidence can produce a different hash; see [briefing identity and spending controls](briefing.md).
+
+[Declarations](../../app/composables/packageComparisonQueryOptions.ts), [measurements](../../app/composables/packageMeasurementsQueryOptions.ts), and [briefing](../../app/composables/packageBriefingQueryOptions.ts) use a 60-second browser stale time, five-minute client garbage-collection time, no window-focus refetch, and no query-level automatic retries. The briefing query has its own narrowly scoped submission retry and socket reconnect policy, described in its subsystem document.
+
+The public declarations route passes no persistent evidence-cache service to its collector. The backend later resolves manifests again through its own cache. Exact versions stabilize the selected releases, **not an atomic snapshot of all mutable provider evidence across routes**. Independent requests, provider freshness, and retained browser data can differ. Provider failures remain explicit uncertainty rather than zero measurements or a no-advisory conclusion.
+
+## Failure, cancellation, and recovery boundaries
+
+| Path                                                                                    | Current behavior                                                                                                                                                                                                              | What remains usable                                                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Invalid selectors or registry/declarations failure                                      | Validation or collection rejects. Failed SSR prefetch is removed; the browser gets its own attempt. A client declaration error renders the comparison error surface. Without resolved data, later-tier queries stay disabled. | Route-only shell; no invented comparison facts.                                                                                                                                                                      |
+| One measurement provider is unavailable or incomplete                                   | Collector retains unrelated evidence and returns coverage/status/reasons where possible.                                                                                                                                      | Declarations and other successful measurements; no inference of a fix from incomplete advisory coverage.                                                                                                             |
+| Measurements binding/backend/protocol failure                                           | Public measurements route returns sanitized `503`. Without cached data, affected UI becomes unavailable.                                                                                                                      | Declarations; briefing can succeed independently if its own collection succeeds.                                                                                                                                     |
+| Measurement refetch fails after data was cached                                         | Cached measurements remain renderable; unavailable is only set for an error without data.                                                                                                                                     | Previously fetched measurements, not a guarantee of fresh evidence.                                                                                                                                                  |
+| Evidence backend unavailable for briefing                                               | Submission cannot build a packet and fails; there is no frontend fallback.                                                                                                                                                    | Declarations and any already-returned measurements. A shared evidence outage can affect both later tiers.                                                                                                            |
+| Briefing refusal, generation/storage failure, invalid stream, or exhausted subscription | Notes become unavailable or the briefing query errors. Exact recovery/retry paths are in [briefing architecture](briefing.md).                                                                                                | Factual comparison; inference is never required to render it.                                                                                                                                                        |
+| Browser changes comparison or unmounts                                                  | When the last query observer detaches, its abort signal cancels the client fetch/subscription; a new comparison key owns separate query/status state.                                                                         | No application cancellation path stops shared evidence work when one browser leaves; runtime disconnect behavior is not specified by the evidence handlers. Accepted briefing jobs have their own durable lifecycle. |
+| Socket disconnect                                                                       | Browser reconnects to read the job snapshot within bounded attempts and one subscription deadline; it does not POST again just to reconnect.                                                                                  | Durable job and results can outlive the subscriber.                                                                                                                                                                  |
+
+Sources: [page orchestration](../../app/composables/useComparisonPage.ts), [comparison rendering](../../app/components/comparison/ComparisonDetails.vue), [query cancellation/subscription](../../app/composables/packageBriefingQueryOptions.ts), and the linked subsystem documents. Provider/storage/admission failures and job recovery are expanded there rather than duplicated here.
+
+Independence means declarations do not call the evidence service or AI provider, and notes do not gate factual rendering. It does **not** imply all tiers have isolated account resources: measurements and briefing share an evidence backend, and admission limits are not account-wide guarantees.
+
+Hash-based coalescing and result reuse are a local duplicate-spend control: multiple users do not each buy the same successful evidence snapshot. They are not a fixed monetary budget. The external OpenRouter budget is the separate spending cap when that provider is used; the application does not implement an account-wide budget of its own.
