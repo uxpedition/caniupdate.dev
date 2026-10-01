@@ -1,6 +1,18 @@
 # Cloudflare handoff
 
-## Preview deployment (2026-10-01)
+## Latest preview redeployment and smoke (2026-10-01)
+
+Rebuilt the current checkout with `nub run --node build`, then deployed evidence, briefing, and frontend Workers in order to `preview` using the external `cloudflare.env`. The preview Queue already existed; remote D1 reported no pending migrations. No credentials or billing configuration were changed.
+
+- Frontend/API: `bed260ed-6436-4102-827b-4a2931a2035d`.
+- Evidence Worker: `45aee260-6d6f-4111-a8a5-8f5faf891a02`.
+- Briefing Worker: `66d9f05f-67cf-464d-bc85-ca7db267cab0`.
+
+Authenticated checks using the external `access.env` returned HTTP 200 for health (`{"status":"ok"}`), minimist search and metadata, minimist `1.2.5...1.2.8` declarations and measurements, and scoped `@vue/shared` `3.5.13...3.5.22` measurements. Comparison response identities matched the requested pairs. Minimist evidence reported 21/24 tarball files, a −11 B gzip delta, and 1/0 matched advisories.
+
+Headless Chromium exercised hydrated homepage search, package selection, the From version picker, navigation to `/minimist/1.2.5...1.2.8`, and a direct reload. The rendered page showed the same measurements and advisories; a full-page screenshot confirmed the surface and no browser errors were recorded. On reload, measurements and briefing POST both returned 200; the page showed two evidence-linked AI notes. Per the submission contract, briefing 200 is a stored result, not a queued generation. This was a basic smoke check, not a load or paid-generation test.
+
+## Earlier preview deployment and load run (2026-10-01)
 
 All current frontend/API, evidence, and briefing Worker code was deployed to the explicit `preview` environment after the scoped-admission commit `fe6cfe9`. The existing preview Queue was confirmed and remote D1 reported no pending migrations. No AI credentials were added and no inference request was sent.
 
