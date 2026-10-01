@@ -348,7 +348,7 @@ describe('comparison evidence cache services', () => {
     await expect(
       startMeasurements('0.0.8', '1.2.8', {
         cache: new RecordingCache(),
-        archiveAdmission: { acquire: () => Promise.reject(capacity) },
+        archiveAdmission: { withPermit: () => Effect.fail(capacity) },
       }),
     ).rejects.toBe(capacity);
   });

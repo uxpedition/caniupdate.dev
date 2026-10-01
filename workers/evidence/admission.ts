@@ -1,3 +1,5 @@
+import { Effect, Option, Semaphore } from 'effect';
+
 import type { ArchiveAdmission } from '../../server/utils/packageComparisonFacts';
 import { ArchiveCapacityError, ResponseCapacityError } from '../../server/utils/packageEvidenceErrors';
 
@@ -6,53 +8,46 @@ export { ArchiveCapacityError, ResponseCapacityError };
 export const MAX_ACTIVE_ARCHIVE_INSPECTIONS = 2;
 export const MAX_ACTIVE_EVIDENCE_RESPONSES = 2;
 
-/** Counts active archive inspections in this Worker isolate without sharing any object I/O promise. */
-export class BoundedArchiveAdmission implements ArchiveAdmission {
-  private active = 0;
+type ArchiveCapacityFailure = InstanceType<typeof ArchiveCapacityError>;
+type ResponseCapacityFailure = InstanceType<typeof ResponseCapacityError>;
 
-  constructor(private readonly limit = MAX_ACTIVE_ARCHIVE_INSPECTIONS) {
-    if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError('Archive admission limit must be positive');
+/** Runs work through one isolate-scoped, reject-fast semaphore. */
+class BoundedAdmission<Failure> {
+  readonly #semaphore: Semaphore.Semaphore;
+
+  constructor(
+    private readonly limit: number,
+    private readonly capacityError: () => Failure,
+    label: string,
+  ) {
+    if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError(`${label} admission limit must be positive`);
+    this.#semaphore = Semaphore.makeUnsafe(limit);
   }
 
-  acquire(): Promise<() => void> {
-    if (this.active >= this.limit) {
-      return Promise.reject(new ArchiveCapacityError({ capacity: this.limit }));
-    }
-    this.active += 1;
-    let released = false;
-    return Promise.resolve(() => {
-      if (released) return;
-      released = true;
-      this.active -= 1;
-    });
-  }
-
-  get activeCount(): number {
-    return this.active;
+  withPermit<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | Failure, R> {
+    return this.#semaphore
+      .withPermitsIfAvailable(1)(effect)
+      .pipe(
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.fail(this.capacityError()),
+            onSome: Effect.succeed,
+          }),
+        ),
+      );
   }
 }
 
-export class BoundedResponseAdmission {
-  private active = 0;
-
-  constructor(private readonly limit = MAX_ACTIVE_EVIDENCE_RESPONSES) {
-    if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError('Response admission limit must be positive');
+/** Bounds archive inspections without waiting or sharing another object's I/O promise. */
+export class BoundedArchiveAdmission extends BoundedAdmission<ArchiveCapacityFailure> implements ArchiveAdmission {
+  constructor(limit = MAX_ACTIVE_ARCHIVE_INSPECTIONS) {
+    super(limit, () => new ArchiveCapacityError({ capacity: limit }), 'Archive');
   }
+}
 
-  acquire(): () => void {
-    if (this.active >= this.limit) {
-      throw new ResponseCapacityError({ capacity: this.limit });
-    }
-    this.active += 1;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      this.active -= 1;
-    };
-  }
-
-  get activeCount(): number {
-    return this.active;
+/** Bounds evidence collections and incoming requests without queueing. */
+export class BoundedResponseAdmission extends BoundedAdmission<ResponseCapacityFailure> {
+  constructor(limit = MAX_ACTIVE_EVIDENCE_RESPONSES) {
+    super(limit, () => new ResponseCapacityError({ capacity: limit }), 'Response');
   }
 }

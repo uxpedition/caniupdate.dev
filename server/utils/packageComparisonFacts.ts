@@ -77,7 +77,7 @@ export type ComparisonEvidenceCache = {
 };
 
 export type ArchiveAdmission = {
-  acquire(): Promise<() => void>;
+  withPermit<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | PackageEvidenceFailure, R>;
 };
 
 export type ComparisonEvidenceServices = {
@@ -151,11 +151,7 @@ const withArchiveAdmission = (
 ): Effect.Effect<PackageTarball, PackageEvidenceFailure, HttpClient.HttpClient> => {
   const inspect = getPackageTarball(manifest).pipe(Effect.mapError(toPackageEvidenceFailure));
   const admission = services?.archiveAdmission;
-  if (admission === undefined) return inspect;
-  return Effect.gen(function* () {
-    const release = yield* Effect.tryPromise({ try: () => admission.acquire(), catch: toPackageEvidenceFailure });
-    return yield* inspect.pipe(Effect.ensuring(Effect.sync(release)));
-  });
+  return admission === undefined ? inspect : admission.withPermit(inspect);
 };
 
 // The registry does not negotiate content on this route: `install-v1+json` and `application/json` return the

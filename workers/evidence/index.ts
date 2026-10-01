@@ -72,15 +72,16 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
   }
 
   async fetch(request: Request): Promise<Response> {
-    let release: (() => void) | undefined;
-    try {
-      release = requestAdmission.acquire();
-      return await this.#handle(request);
-    } catch (cause) {
-      return backendError(cause);
-    } finally {
-      release?.();
-    }
+    return await Effect.runPromise(
+      requestAdmission
+        .withPermit(
+          Effect.tryPromise({
+            try: () => this.#handle(request),
+            catch: (cause) => cause,
+          }),
+        )
+        .pipe(Effect.catch((cause) => Effect.succeed(backendError(cause)))),
+    );
   }
 
   async #handle(request: Request): Promise<Response> {
@@ -120,20 +121,19 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
   async #coalesce(key: string, load: () => Promise<unknown>): Promise<unknown> {
     const current = this.#inFlight.get(key);
     if (current !== undefined) return await current;
-    const release = responseAdmission.acquire();
-    let pending: Promise<unknown>;
-    try {
-      pending = load();
-    } catch (cause) {
-      release();
-      throw cause;
-    }
+    const pending = Effect.runPromise(
+      responseAdmission.withPermit(
+        Effect.tryPromise({
+          try: load,
+          catch: (cause) => cause,
+        }),
+      ),
+    );
     this.#inFlight.set(key, pending);
     try {
       return await pending;
     } finally {
       if (this.#inFlight.get(key) === pending) this.#inFlight.delete(key);
-      release();
     }
   }
 }
