@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "nuxt build && wrangler deploy --dry-run --config workers/evidence/wrangler.jsonc --env= && wrangler deploy --dry-run --config workers/briefing/wrangler.jsonc --env=",
+    "build": "node scripts/check-site-url.ts && nuxt build && wrangler deploy --dry-run --config workers/evidence/wrangler.jsonc --env= && wrangler deploy --dry-run --config workers/briefing/wrangler.jsonc --env=",
     "db:migrate:local": "wrangler d1 migrations apply BRIEFINGS_DB --local --config workers/briefing/wrangler.jsonc --persist-to .wrangler/state",
     "dev": "node scripts/dev.ts",
     "generate": "nuxt generate",

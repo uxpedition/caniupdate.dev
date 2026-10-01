@@ -34,7 +34,7 @@ The Effect-based `dev` launcher applies the local D1 migration through `workers/
 
 Two browser-facing hostnames: the comparison page on `http://localhost:5173`, and the briefing Worker's public read-only socket on port `8791`, the `eventsUrl` a submission returns. A page opened from another device is served on this machine's own address, so the launcher runs the briefing Worker on every interface and allows every Origin that page can have — the loopback aliases and each non-internal interface address on the frontend port — in its `BRIEFING_ALLOWED_ORIGIN` list. The advertised URL stays `ws://localhost:8791`, and each submission is answered with that same socket re-pointed at the host the request arrived on, because only the request knows which address the device used; the briefing Worker then compares the browser's `Origin` byte-for-byte against its list. The Nuxt Worker reaches both private Workers through bindings resolved locally in Wrangler's dev registry — `PACKAGE_EVIDENCE` for the evidence Durable Object and `BRIEFING_SERVICE` for the briefing Worker's private `BriefingSubmitter` entrypoint — so the private Workers keep their own local sessions and only the briefing Worker owns the local D1 database. `node scripts/dev.ts --preview` starts the built frontend from `.output/server/wrangler.json` on `5173` instead of Nuxt. `--persist-to <dir>`, `--evidence-port`, `--briefing-port`, `--frontend-port`, and `--inspector-base` override the documented defaults; `node scripts/smoke.ts` uses them to run the isolated scenario below beside a live session.
 
-Nuxt development reads `.env` (see `.env.example`). Run `dev` and the production preview sequentially, never at the same time: two runtimes must not own that local D1 state concurrently.
+Nuxt development reads `.env` (see `.env.example`), which may set `NUXT_PUBLIC_SITE_URL` to the address this page is opened on — `http://localhost:5173`, or this machine's LAN/Tailscale address such as `http://100.122.224.20:5173` when previewing from another device — so local pages render matching canonical links; without it those links are simply absent. Run `dev` and the production preview sequentially, never at the same time: two runtimes must not own that local D1 state concurrently.
 
 The setup includes an Effect-backed health endpoint at `/api/health`.
 
@@ -246,18 +246,18 @@ Vitest discovers `*.unit.ts` files under `app/`, `server/`, `shared/`, `scripts/
 Build the application, then boot the built Worker locally under the real Cloudflare runtime, through Nub without runtime augmentation:
 
 ```bash
-nub run --node build
+NUXT_PUBLIC_SITE_URL=http://localhost:5173 nub run --node build
 nub run --node db:migrate:local
 nub run --node preview
 ```
 
-`build` emits the Nuxt Worker entry, assets, and `.output/server/wrangler.json`, then dry-runs the backend bundle from `workers/evidence/wrangler.jsonc` without deploying it. `type-check` checks both Nuxt and the standalone backend TypeScript project.
+`build` emits the Nuxt Worker entry, assets, and `.output/server/wrangler.json`, then dry-runs the backend bundle from `workers/evidence/wrangler.jsonc` without deploying it. `type-check` checks both Nuxt and the standalone backend TypeScript project. The build refuses to run unless `NUXT_PUBLIC_SITE_URL` names a valid origin (`scripts/check-site-url.ts`): canonical and social URLs are absolute, and the prerendered homepage bakes the build-time value into its HTML. It is public configuration, never a secret, and it is never derived from a request's `Host` or forwarded headers. The deployed Worker must carry the same value — that cannot repair already generated HTML, it only keeps server-rendered pages consistent with the prerendered ones.
 
 `preview` runs the same launcher with `--preview`, so the three runtimes are the built frontend on `5173` (real `workerd`, from `.output/server/wrangler.json`) plus the evidence Worker on `8790` and the briefing Worker on `8791`. The generated frontend config carries only `PACKAGE_EVIDENCE` and `BRIEFING_SERVICE`; the briefing Worker's own session owns `BRIEFINGS_DB`, its job Durable Objects, and the provider settings from `workers/briefing/.dev.vars`. All three sessions persist to `.wrangler/state`, and the launcher lock refuses a concurrent `dev` or `preview` against the same root. Backend SQLite tables initialize inside each object; a first deployment also requires the configured `v1` SQLite-class migration for the evidence object and the job object.
 
 Nuxt's entry-import-map optimization is disabled: Firefox can load modules from HTTP preload headers before the HTML import map is registered, leaving the server-rendered page non-interactive with an unresolved `#entry` error. Direct chunk imports avoid that startup failure while retaining SSR streaming. After changing the Nuxt build configuration, check search, search-to-comparison navigation, and a direct comparison-page reload in both Firefox and Chromium—not only the API responses.
 
-The frontend has no server-only settings of its own any more, so `.output/server/.dev.vars` is neither needed nor created by the launcher; a build recreates `.output/`, and no credential belongs there. The briefing Worker reads the git-ignored `workers/briefing/.dev.vars` beside its config in both `dev` and `preview` (verified locally with the loopback fixture). Wrangler also supports dotenv fallback, so do not assume an absent `.dev.vars` disables credentials; never put a real provider key in `.env` or in a repo file.
+The frontend has no server-only settings of its own any more — only the public `NUXT_PUBLIC_SITE_URL` (see `.env.example`) — so `.output/server/.dev.vars` is neither needed nor created by the launcher; a build recreates `.output/`, and no credential belongs there. The briefing Worker reads the git-ignored `workers/briefing/.dev.vars` beside its config in both `dev` and `preview` (verified locally with the loopback fixture). Wrangler also supports dotenv fallback, so do not assume an absent `.dev.vars` disables credentials; never put a real provider key in `.env` or in a repo file.
 
 The default environment in `wrangler.jsonc` remains local-only: its database ID is a placeholder and `remote` is disabled. Never deploy the default environment. The separately approved remote trial uses the explicitly named `preview` environment below; it is not the full production rollout or the later queue/client milestones.
 
@@ -270,13 +270,14 @@ The default environment in `wrangler.jsonc` remains local-only: its database ID 
 - Frontend Worker: `can-i-update-preview`. Private backends: `can-i-update-preview-evidence` and `can-i-update-preview-briefing`. All three current Workers are deployed; latest version IDs and the tested workload are in [Cloudflare handoff](docs/cloudflare-handoff.md).
 - D1: `can-i-update-preview-briefings`, bound as `BRIEFINGS_DB` by the briefing Worker. Remote migrations use `workers/briefing/wrangler.jsonc`, whose `migrations_dir` resolves to the repository's migrations.
 - The preview Queue (`can-i-update-preview-briefings`), SQLite-backed briefing job Durable Object, and public read-only socket route are deployed. No AI credentials, custom-domain routes, KV, or paid-plan upgrade are part of this trial. Cloudflare Access protects the preview hostname; automated checks use a locally stored Access service token. The default local environment and its existing data stay separate.
+- Canonical and social URLs are built from `NUXT_PUBLIC_SITE_URL`: this trial publishes `https://can-i-update-preview.caniupdate-dev.workers.dev` (`env.preview.vars`), which is also the build-time value in the deployment command below. Production will use `https://caniupdate.dev` for both the build and its Worker environment. The value is never read from the request.
 
 Deployment credentials live outside the repository in `~/.config/can-i-update/cloudflare.env` (directory mode `700`, file mode `600`), with `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. The token is scoped to this account: Workers Scripts Edit, D1 Edit, and Workers Tail Read for live diagnostics. Do not put deployment credentials in app `.env` or `.dev.vars` files. Explicit token authentication leaves other projects' Wrangler OAuth login unchanged.
 
 Stop the local preview before rebuilding its output. Build without loading deployment credentials, then migrate and deploy with the restricted credentials in a subshell:
 
 ```bash
-nub run --node build
+NUXT_PUBLIC_SITE_URL=https://can-i-update-preview.caniupdate-dev.workers.dev nub run --node build
 (
   set -a
   . "$HOME/.config/can-i-update/cloudflare.env"

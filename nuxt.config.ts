@@ -3,8 +3,27 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import { defineNuxtConfig } from 'nuxt/config';
 
+import { parseSiteOrigin } from './shared/siteUrl';
+
+// The origin every absolute URL is built from. A configured value is validated here so a typo fails the run instead of
+// shipping a wrong canonical address; `scripts/check-site-url.ts` additionally requires one to exist for a build. An
+// unset value is allowed here: local development then emits no canonical link rather than a guessed origin.
+const rawSiteUrl = process.env['NUXT_PUBLIC_SITE_URL'] ?? '';
+const parsedSiteUrl = parseSiteOrigin(rawSiteUrl);
+
+if (!parsedSiteUrl.ok && rawSiteUrl.trim() !== '') {
+  throw new Error(`NUXT_PUBLIC_SITE_URL ${parsedSiteUrl.reason}.`);
+}
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-09-16',
+  runtimeConfig: {
+    public: {
+      // Public by design: canonical, social, and later sitemap URLs. The deployed Worker must carry the same value
+      // (`wrangler.jsonc`), because the prerendered homepage bakes the build-time value into its HTML.
+      siteUrl: parsedSiteUrl.ok ? parsedSiteUrl.origin : '',
+    },
+  },
   app: {
     head: {
       link: [{ rel: 'icon', type: 'image/png', href: '/favicon.png' }],

@@ -29,6 +29,10 @@
       "account_id": "8a0be24aad326a55ba610b94b106be81",
       "workers_dev": true,
       "preview_urls": false,
+      // The origin this deployment publishes. The value baked into the prerendered homepage at build time must match;
+      // production will carry its own environment with https://caniupdate.dev. Local sessions set neither, so the
+      // built Worker keeps the value the build was given.
+      "vars": { "NUXT_PUBLIC_SITE_URL": "https://can-i-update-preview.caniupdate-dev.workers.dev" },
       "observability": {
         "enabled": true,
         "head_sampling_rate": 1,
