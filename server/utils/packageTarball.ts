@@ -315,14 +315,17 @@ const inspectPackageTarball = (
   dist: RegistryVersionManifest['dist'],
 ): Effect.Effect<InspectedTarball, unknown> =>
   Effect.tryPromise({
-    try: async (signal): Promise<InspectedTarball> => {
+    try: async (signal) => {
       const body = await downloadTarball(url, signal);
       verifyIntegrity(body, dist);
-      const result = await inspectTarball(body, signal, inspectEntries);
-      return { status: result.reasons.length ? 'partial' : 'available', ...result };
+      return body;
     },
     catch: (cause) => cause,
-  }).pipe(Effect.timeout(TIMEOUT_MS));
+  }).pipe(
+    Effect.flatMap((body) => inspectTarball(body, inspectEntries)),
+    Effect.map((result): InspectedTarball => ({ status: result.reasons.length ? 'partial' : 'available', ...result })),
+    Effect.timeout(TIMEOUT_MS),
+  );
 
 export const getPackageTarball = (manifest: RegistryVersionManifest): Effect.Effect<PackageTarball> => {
   const url = manifest.dist.tarball;
