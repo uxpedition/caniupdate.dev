@@ -331,6 +331,15 @@ describe('packageBriefingQueryOptions', () => {
     expect(requestFetch).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a pre-aborted subscription with its reason without opening a socket', async () => {
+    const reason = new Error('cancelled before subscription');
+    const controller = new AbortController();
+    controller.abort(reason);
+
+    await expect(startQuery(pending(), [], controller.signal)).rejects.toBe(reason);
+    expect(FakeSocket.instances).toEqual([]);
+  });
+
   it('closes a connected socket that never sends a frame by the deadline', async () => {
     const promise = Promise.resolve(startQuery(pending(), [], new AbortController().signal));
     vi.useFakeTimers();

@@ -30,6 +30,13 @@ export type BriefingStatus = 'queued' | 'running';
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000] as const;
 const SUBSCRIPTION_DEADLINE = Duration.seconds(180);
 
+const subscriptionAbortReason = (signal: AbortSignal): unknown => {
+  if (signal.reason !== undefined) return signal.reason;
+  const abortError = new Error('The briefing subscription was aborted');
+  abortError.name = 'AbortError';
+  return abortError;
+};
+
 /** A submission the route refused with a sanitized 503 is resubmitted once, after this pause, before the query fails. */
 const SUBMISSION_RETRY_DELAY_MS = 250;
 
@@ -203,6 +210,8 @@ export const waitForJobEvent = async (
   signal: AbortSignal,
   onStatus: (state: BriefingStatus) => void,
 ): Promise<PackageBriefing> => {
+  if (signal.aborted) throw subscriptionAbortReason(signal);
+
   let highest = revision;
   const subscription = Effect.gen(function* () {
     let attempts = 0;
@@ -224,10 +233,7 @@ export const waitForJobEvent = async (
 
   return Effect.runPromise(boundedSubscription, { signal }).catch((error: unknown) => {
     if (!signal.aborted) throw error;
-    if (signal.reason !== undefined) throw signal.reason;
-    const abortError = new Error('The briefing subscription was aborted');
-    abortError.name = 'AbortError';
-    throw abortError;
+    throw subscriptionAbortReason(signal);
   });
 };
 

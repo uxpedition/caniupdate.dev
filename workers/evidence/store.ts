@@ -37,7 +37,6 @@ const CHUNK_UTF16_UNITS = Math.floor(CHUNK_BYTES / 3);
 /** SQLite-backed cache used by one PackageEvidence object. Rows and chunks are replaced atomically. */
 export class SqlEvidenceCache implements ComparisonEvidenceCache {
   private readonly inFlight = new Map<string, Promise<unknown>>();
-  private initError: unknown = undefined;
 
   constructor(private readonly storage: EvidenceCacheStorage) {
     try {
@@ -61,12 +60,11 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
         'CREATE INDEX IF NOT EXISTS evidence_expiry_index ON evidence_records(expires_at) WHERE expires_at IS NOT NULL',
       );
     } catch (cause) {
-      this.initError = cause;
+      throw new EvidenceStorageError({ operation: 'initialize', cause });
     }
   }
 
   async load<T>(key: string, loader: () => Promise<T>, options: ComparisonEvidenceCacheOptions<T>): Promise<T> {
-    this.ensureReady();
     const existing = this.inFlight.get(key);
     if (existing !== undefined) return validateValue(await existing, options);
 
@@ -84,7 +82,6 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
   }
 
   cleanupExpired(now = Date.now()): void {
-    this.ensureReady();
     storageOperation('cleanup', () => {
       this.storage.transactionSync(() => {
         this.storage.sql.exec(
@@ -104,11 +101,6 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
     const value = await loader();
     if (options.cacheable(value)) this.write(key, value, options.ttlMs);
     return value;
-  }
-
-  private ensureReady(): void {
-    if (this.initError !== undefined)
-      throw new EvidenceStorageError({ operation: 'initialize', cause: this.initError });
   }
 
   private read(key: string, now: number): CachedValue {

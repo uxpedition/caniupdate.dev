@@ -83,6 +83,12 @@ describe('tarball stream lifecycle in workerd', () => {
     expect(body).toEqual({ available: false });
   });
 
+  it('rejects invalid gzip data', async () => {
+    const { response, body } = await inspect('invalid-gzip');
+    expect(response.status).toBe(422);
+    expect(body).toEqual({ available: false });
+  });
+
   it('rejects decompressed data beyond the archive limit', async () => {
     const { response, body } = await inspect('oversized');
     expect(response.status).toBe(422);

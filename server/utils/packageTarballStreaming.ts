@@ -30,6 +30,15 @@ type Streams = {
 };
 
 type InspectionOutcome<T> = { ok: true; value: T } | { ok: false; cause: unknown };
+type ReadinessSignal = { promise: Promise<void>; signal: () => void };
+
+function readinessSignal(): ReadinessSignal {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, signal: () => resolve() };
+}
 
 function toError(cause: unknown, fallback = 'Tarball stream failed'): Error {
   return cause instanceof Error ? cause : new Error(typeof cause === 'string' ? cause : fallback);
@@ -206,7 +215,7 @@ function inspectArchiveTrailer(total: number, tail: Buffer, tailLength: number):
   }
 }
 
-function decompressedChunks(gunzip: Gunzip): Stream.Stream<unknown, unknown> {
+function decompressedChunks(gunzip: Gunzip, signalReady: () => void): Stream.Stream<unknown, unknown> {
   return Stream.callback<unknown, unknown>(
     (queue) =>
       Effect.acquireRelease(
@@ -231,6 +240,7 @@ function decompressedChunks(gunzip: Gunzip): Stream.Stream<unknown, unknown> {
           gunzip.once('end', onEnd);
           gunzip.on('error', onError);
           gunzip.once('close', onClose);
+          signalReady();
 
           return () => {
             gunzip.removeListener('data', onData);
@@ -245,13 +255,18 @@ function decompressedChunks(gunzip: Gunzip): Stream.Stream<unknown, unknown> {
   );
 }
 
-function consumeGunzip(gunzip: Gunzip, parser: TarParser, events: EventAdapter): Effect.Effect<void, unknown> {
+function consumeGunzip(
+  gunzip: Gunzip,
+  parser: TarParser,
+  events: EventAdapter,
+  signalReady: () => void,
+): Effect.Effect<void, unknown> {
   const tail = Buffer.allocUnsafe(ARCHIVE_TRAILER_BYTES);
   let tailLength = 0;
   let total = 0;
 
   return Effect.gen(function* () {
-    yield* Stream.runForEach(decompressedChunks(gunzip), (rawChunk) =>
+    yield* Stream.runForEach(decompressedChunks(gunzip, signalReady), (rawChunk) =>
       Effect.gen(function* () {
         const chunk = yield* Effect.try({
           try: () => {
@@ -272,15 +287,40 @@ function consumeGunzip(gunzip: Gunzip, parser: TarParser, events: EventAdapter):
   });
 }
 
-function teardownOnFailure(streams: Streams) {
-  return (exit: Exit.Exit<unknown, unknown>) => {
+function teardownOnFailure<A, E>(streams: Streams): (exit: Exit.Exit<A, E>) => Effect.Effect<void> {
+  return (exit) => {
     if (!Exit.isFailure(exit)) return Effect.void;
     const cause = Cause.hasFails(exit.cause) || Cause.hasDies(exit.cause) ? Cause.squash(exit.cause) : undefined;
     return Effect.sync(() => destroyStreams(streams, cause));
   };
 }
 
-function inspectEntriesEffect<T>(streams: Streams, inspectEntries: EntryInspector<T>): Effect.Effect<T, unknown> {
+function startGunzipConsumer(streams: Streams): Effect.Effect<Fiber.Fiber<void, unknown>, unknown, Scope.Scope> {
+  const { parser, gunzip, parserEvents } = streams;
+  const consumerReady = readinessSignal();
+  let outputExit: Exit.Exit<void, unknown> | undefined;
+  const outputTask = Effect.onExit(
+    Effect.onExit(consumeGunzip(gunzip, parser, parserEvents, consumerReady.signal), teardownOnFailure(streams)),
+    (exit) =>
+      Effect.sync(() => {
+        outputExit = exit;
+        consumerReady.signal();
+      }),
+  );
+  return Effect.gen(function* () {
+    const fiber: Fiber.Fiber<void, unknown> = yield* Effect.forkScoped(outputTask);
+    // Attach decompressor output listeners before any input can trigger an error or be lost.
+    yield* Effect.promise(() => consumerReady.promise);
+    if (outputExit !== undefined && Exit.isFailure(outputExit)) return yield* Effect.failCause(outputExit.cause);
+    return fiber;
+  });
+}
+
+function inspectEntriesEffect<T>(
+  streams: Streams,
+  inspectEntries: EntryInspector<T>,
+  signalReady: () => void,
+): Effect.Effect<T, unknown> {
   return Effect.callback<T, unknown>((resume, signal) => {
     let pending: Promise<T>;
     try {
@@ -292,6 +332,7 @@ function inspectEntriesEffect<T>(streams: Streams, inspectEntries: EntryInspecto
       (value): InspectionOutcome<T> => ({ ok: true, value }),
       (cause): InspectionOutcome<T> => ({ ok: false, cause }),
     );
+    signalReady();
     void settled.then((outcome) => resume(outcome.ok ? Effect.succeed(outcome.value) : Effect.fail(outcome.cause)));
 
     return Effect.gen(function* () {
@@ -306,18 +347,22 @@ function complete<T>(
   body: Buffer,
   inspectEntries: EntryInspector<T>,
 ): Effect.Effect<T, unknown, Scope.Scope> {
-  const { parser, gunzip, parserEvents, gunzipEvents } = streams;
+  const { parser, gunzip, gunzipEvents } = streams;
   return Effect.gen(function* () {
-    const entryTask = Effect.onExit(inspectEntriesEffect(streams, inspectEntries), teardownOnFailure(streams));
-    const entries: Fiber.Fiber<T, unknown> = yield* Effect.forkScoped(entryTask);
-
-    const [feed, output] = yield* Effect.all(
-      [
-        Effect.exit(feedCompressed(gunzip, gunzipEvents, body).pipe(Effect.onExit(teardownOnFailure(streams)))),
-        Effect.exit(consumeGunzip(gunzip, parser, parserEvents).pipe(Effect.onExit(teardownOnFailure(streams)))),
-      ],
-      { concurrency: 2 },
+    const outputFiber = yield* startGunzipConsumer(streams);
+    const inspectionReady = readinessSignal();
+    const entryTask = Effect.onExit(
+      inspectEntriesEffect(streams, inspectEntries, inspectionReady.signal),
+      teardownOnFailure(streams),
     );
+    const entries: Fiber.Fiber<T, unknown> = yield* Effect.forkScoped(entryTask);
+    // Register the parser iterator while it is live; a malformed first gzip chunk can close it.
+    yield* Effect.promise(() => inspectionReady.promise);
+
+    const feed = yield* Effect.exit(
+      feedCompressed(gunzip, gunzipEvents, body).pipe(Effect.onExit(teardownOnFailure(streams))),
+    );
+    const output = yield* Fiber.join(outputFiber).pipe(Effect.exit);
 
     if (Exit.isFailure(output)) return yield* Effect.failCause(output.cause);
     if (Exit.isFailure(feed)) return yield* Effect.failCause(feed.cause);

@@ -136,6 +136,19 @@ describe('published tarball evidence', () => {
     expect(result).toMatchObject({ status: 'unavailable', files: [] });
   });
 
+  it('rejects invalid gzip with a matching shasum promptly', async () => {
+    const body = Buffer.from('not gzip');
+    const original = manifest(body);
+    const { tarball, shasum } = original.dist;
+    const metadata = { ...original, dist: { tarball, shasum } };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(body)),
+    );
+    const result = await Effect.runPromise(getPackageTarball(metadata));
+    expect(result).toMatchObject({ status: 'unavailable', files: [] });
+  }, 2_000);
+
   it('rejects a bad tar header checksum despite matching registry integrity', async () => {
     const unpacked = gunzipSync(await archive([{ name: 'package/index.js', body: 'ok' }]));
     unpacked[0] = 0;

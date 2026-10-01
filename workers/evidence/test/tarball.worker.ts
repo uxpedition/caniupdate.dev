@@ -7,6 +7,7 @@ import { inspectTarball, type TarParser } from '../../../server/utils/packageTar
 
 function archiveFor(mode: string): Buffer | undefined {
   if (mode === 'valid') return gzipSync(Buffer.alloc(1024));
+  if (mode === 'invalid-gzip') return Buffer.from('not gzip');
   if (mode === 'malformed') return gzipSync(Buffer.from('not a tar archive'));
   if (mode === 'oversized') return gzipSync(Buffer.alloc(32 * 1024 * 1024 + 1));
   return undefined;

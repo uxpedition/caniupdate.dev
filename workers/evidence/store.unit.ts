@@ -31,6 +31,18 @@ function fakeStorage(): EvidenceCacheStorage {
 }
 
 describe('evidence cache storage failures', () => {
+  it('rejects construction when schema initialization fails', () => {
+    const cause = new Error('SQLite initialization unavailable');
+    const storage = fakeStorage();
+    storage.sql.exec = () => {
+      throw cause;
+    };
+
+    expect(() => new SqlEvidenceCache(storage)).toThrowError(
+      expect.objectContaining({ _tag: 'EvidenceStorageError', operation: 'initialize', cause }),
+    );
+  });
+
   it('tags SQL read failures and does not treat them as cache misses', async () => {
     const cache = new SqlEvidenceCache(fakeStorage());
     let loaderCalls = 0;
