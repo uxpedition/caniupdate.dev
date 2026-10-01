@@ -1,6 +1,8 @@
 # Can I update?
 
-A Nuxt starter using Nub, Effect v4 RC, Oxlint, and Oxfmt.
+Compare two versions of one public npm package to spot consequential changes in dependencies, bundle estimates, Node requirements, and known security advisories. Evidence-backed AI notes provide additional explanation, not an upgrade approval.
+
+See [product meaning and limitations](docs/product/meaning-and-limitations.md) for what the results establish and what they cannot tell you about your project.
 
 ## Legal pages
 
