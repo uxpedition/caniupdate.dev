@@ -1,8 +1,8 @@
 // The shared Miniflare runtime harness for the briefing Worker's integration suites. Every case runs the real Worker
 // bundle, a real SQLite-backed Durable Object, a real Queue producer/consumer and a real D1 database inside one
-// Miniflare instance; `socket.unit.ts` additionally drives the real hibernating WebSocket API. Faults are produced by
-// real mechanisms (a dropped table, a refusing SQLite trigger, a stalled provider response, a disposed or evicted
-// runtime); nothing here mocks the state machine.
+// Miniflare instance; the `sockets.unit/` suites additionally drive the real hibernating WebSocket API. Faults are
+// produced by real mechanisms (a dropped table, a refusing SQLite trigger, a stalled provider response, a disposed or
+// evicted runtime); nothing here mocks the state machine.
 //
 // Test-only code lives in a `test/` directory beside what it exercises and is named for what it does: a
 // `*.harness.ts` boots a real runtime and hands back handles plus teardown, a `*.stub.ts` impersonates an external
@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import type { D1Database, Queue } from '@cloudflare/workers-types';
-import { Log, LogLevel, Miniflare, type DispatchFetch } from 'miniflare';
+import { Log, LogLevel, Miniflare, type DispatchFetch, type WebSocket as RuntimeWebSocket } from 'miniflare';
 
 import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/briefing.defs';
 import {
@@ -28,6 +28,7 @@ import {
   type BriefingSubmission,
 } from '#shared/briefingJob.defs';
 
+import { briefingEvidenceHash } from '../../../server/utils/packageBriefing';
 import { readStoredBriefing } from '../../../server/utils/packageBriefingStore';
 import type { BriefingJobMessage } from '../job';
 import { FIXTURE_API_KEY, MODEL, SOURCE_ID, providerFixture } from './provider.stub';
@@ -431,6 +432,36 @@ function rejectionReason(body: unknown): string {
   return '';
 }
 
+/**
+ * Park a generation in `running` behind a stalled provider call and kill its runtime before it can commit, which is
+ * the crash every restart case starts from. The fault is real — a stalled response and a disposed runtime — so no
+ * part of it needs a hook in the Worker.
+ */
+export async function crashRunningGeneration(stateDir: string, packet: BriefingEvidence): Promise<string> {
+  const hash = briefingEvidenceHash(packet);
+  const fixture = providerFixture();
+
+  fixture.setMode({ kind: 'stall' });
+  const crashed = await startRuntime({ stateDir });
+  try {
+    const parked = await crashed.submit(packet);
+    if (parked.submission?.status !== 'queued') {
+      throw new Error(`Expected the crash fixture to park this submission as queued: ${JSON.stringify(parked)}`);
+    }
+    await waitFor(
+      async () => (fixture.requestsFor(packet.packageName) >= 1 ? true : undefined),
+      JOB_WAIT_MS,
+      'the provider call',
+    );
+    await waitForJobEvent(crashed, hash, (event) => event.status === 'running');
+  } finally {
+    await crashed.dispose();
+    fixture.setMode({ kind: 'valid' });
+    fixture.releaseStalls();
+  }
+  return hash;
+}
+
 /** A bounded condition wait: the same shape the brief specifies for `waitForStoredBriefing`. */
 export async function waitFor<T>(read: () => Promise<T | undefined>, timeoutMs: number, label: string): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -486,4 +517,61 @@ export async function openStateDir(): Promise<string> {
 
 export async function removeStateDirs(): Promise<void> {
   await Promise.all(stateDirs.map(async (dir) => await rm(dir, { recursive: true, force: true })));
+}
+
+/** The close a terminal briefing's subscriber receives: the canonical completion the browser is meant to see. */
+export const CLOSE = { code: 1000, reason: 'briefing complete' };
+
+/** One browser-side subscription: the handshake status, the text frames in arrival order, and the server's close. */
+export type Subscription = {
+  readonly status: number;
+  /** Text frames exactly as the Worker sent them; a non-text frame reads as `[binary]` so a decoder failure is loud. */
+  readonly frames: readonly string[];
+  /** Resolves with the close the server sent; it only settles once the server closes. */
+  readonly closed: Promise<{ readonly code: number; readonly reason: string }>;
+  /** The frames decoded as `BriefingJobEvent` envelopes; an illegal frame throws rather than being ignored. */
+  events(): BriefingJobEvent[];
+  send(message: string): void;
+  close(): void;
+};
+
+/**
+ * Dial the public read-only route for one hash exactly as a browser on the allowed origin would: an upgrade request
+ * carrying `Origin`, through the real runtime, then the standard WebSocket API. A refused handshake throws, because a
+ * case that expects one asserts on `publicFetch` instead. Returns once the first frame has arrived, so a caller reads
+ * `frames` without racing the server.
+ */
+export async function subscribe(
+  fixture: RuntimeFixture,
+  hash: string,
+  origin: string = fixture.allowedOrigin,
+): Promise<Subscription> {
+  const response = await fixture.publicFetch(fixture.eventsUrl(hash), {
+    headers: { Upgrade: 'websocket', Origin: origin },
+  });
+  const socket: RuntimeWebSocket | null = response.webSocket;
+  if (socket === null) {
+    throw new Error(`The public route refused the upgrade for ${hash} with status ${response.status}`);
+  }
+
+  const frames: string[] = [];
+  const closed = Promise.withResolvers<{ code: number; reason: string }>();
+  socket.accept();
+  socket.addEventListener('message', (event) => {
+    frames.push(typeof event.data === 'string' ? event.data : '[binary]');
+  });
+  socket.addEventListener('close', (event) => {
+    closed.resolve({ code: event.code, reason: event.reason });
+  });
+
+  await waitFor(async () => frames.at(0), JOB_WAIT_MS, `the first frame the public route sent for ${hash}`);
+
+  return {
+    status: response.status,
+    frames,
+    closed: closed.promise,
+    events: (): BriefingJobEvent[] => frames.map((frame) => decodeBriefingJobEvent(JSON.parse(frame))),
+    send: (message: string): void => socket.send(message),
+    close: (): void => socket.close(1000, 'test closed'),
+  };
 }

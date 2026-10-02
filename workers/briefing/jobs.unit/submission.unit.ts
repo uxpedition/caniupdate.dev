@@ -1,28 +1,26 @@
-// Integration tests for the briefing job Worker. Every case runs the real Worker bundle, a real SQLite-backed Durable
-// Object, the real Queue producer/consumer and a real D1 database inside one Miniflare instance, and reaches the
-// private submission path through an actual service binding to the named `BriefingSubmitter` entrypoint. The harness
-// these cases share — bundling, runtime, provider stub, waits and fault injectors — lives in `test/worker.harness.ts`.
+// Integration tests for the briefing job Worker's submission and generation paths: the service-binding wire contract,
+// same-hash coalescing, D1-backed reuse and refusal semantics, and provider-fault handling. Every case runs the real
+// Worker bundle, a real SQLite-backed Durable Object, the real Queue producer/consumer and a real D1 database inside
+// one Miniflare instance. The shared harness lives in `test/worker.harness.ts`; the timer-bound dispatch and lease
+// recovery cases live in the sibling suites of this directory so they can run in parallel with this file.
 
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/briefing.defs';
-import { decodeBriefingSubmission, type BriefingJobEvent } from '#shared/briefingJob.defs';
+import { decodeBriefingSubmission } from '#shared/briefingJob.defs';
 
-import { briefingEvidenceHash } from '../../server/utils/packageBriefing';
-import { readStoredBriefing, saveBriefing } from '../../server/utils/packageBriefingStore';
+import { briefingEvidenceHash } from '../../../server/utils/packageBriefing';
+import { readStoredBriefing } from '../../../server/utils/packageBriefingStore';
 import {
   FIXTURE_API_KEY,
   MODEL,
-  providerFixture,
   responseBullets,
   startProviderFixture,
   type ProviderFixture,
-} from './test/provider.stub';
+} from '../test/provider.stub';
 import {
   JOB_WAIT_MS,
-  LEASE_WAIT_MS,
   PUBLIC_URL,
   QUIET_MS,
   installBriefingSchema,
@@ -35,40 +33,10 @@ import {
   waitForJobEvent,
   waitForStoredBriefing,
   type RuntimeFixture,
-} from './test/worker.harness';
+} from '../test/worker.harness';
 
 let provider: ProviderFixture;
 let main: RuntimeFixture;
-
-/**
- * Park a generation in `running` behind a stalled provider call and kill its runtime before it can commit, which is
- * the crash every restart case starts from. The fault is real — a stalled response and a disposed runtime — so no
- * part of it needs a hook in the Worker.
- */
-async function crashRunningGeneration(stateDir: string, packet: BriefingEvidence): Promise<string> {
-  const hash = briefingEvidenceHash(packet);
-  const fixture = providerFixture();
-
-  fixture.setMode({ kind: 'stall' });
-  const crashed = await startRuntime({ stateDir });
-  try {
-    const parked = await crashed.submit(packet);
-    if (parked.submission?.status !== 'queued') {
-      throw new Error(`Expected the crash fixture to park this submission as queued: ${JSON.stringify(parked)}`);
-    }
-    await waitFor(
-      async () => (fixture.requestsFor(packet.packageName) >= 1 ? true : undefined),
-      JOB_WAIT_MS,
-      'the provider call',
-    );
-    await waitForJobEvent(crashed, hash, (event) => event.status === 'running');
-  } finally {
-    await crashed.dispose();
-    fixture.setMode({ kind: 'valid' });
-    fixture.releaseStalls();
-  }
-  return hash;
-}
 
 beforeAll(async () => {
   provider = await startProviderFixture();
@@ -256,36 +224,6 @@ describe('briefing job Worker', () => {
     }
   }, 120_000);
 
-  it('commits a queued job unavailable when D1 stays unreadable, then starts over on a later POST', async () => {
-    const stateDir = await openStateDir();
-    const packet = packetFor('d1-queued-fixture', '6.0.0', '6.1.0');
-    const hash = briefingEvidenceHash(packet);
-
-    const parked = await startRuntime({ stateDir, consumer: false });
-    try {
-      expect((await parked.submit(packet)).submission?.status).toBe('queued');
-      expect((await parked.jobEvent(hash))?.status).toBe('queued');
-      await parked.database.prepare('DROP TABLE package_briefings').run();
-    } finally {
-      await parked.dispose();
-    }
-
-    // The restart must observe the missing table, so this runtime does not reinstall the schema.
-    const resumed = await startRuntime({ stateDir, installSchema: false });
-    try {
-      const failed = await waitForJobEvent(resumed, hash, (event) => event.status === 'unavailable', 90_000);
-      expect(failed).toMatchObject({ status: 'unavailable', reason: 'cache-error' });
-      expect(provider.requestsFor(packet.packageName)).toBe(0);
-
-      await installBriefingSchema(resumed.database);
-      expect((await resumed.submit(packet)).submission?.status).toMatch(/queued|running/);
-      expect(await waitForStoredBriefing(resumed.database, hash)).toMatchObject({ status: 'available', model: MODEL });
-      expect(provider.requestsFor(packet.packageName)).toBe(1);
-    } finally {
-      await resumed.dispose();
-    }
-  }, 120_000);
-
   it('never reports durable success when the D1 write is refused', async () => {
     const stateDir = await openStateDir();
     const runtime = await startRuntime({ stateDir });
@@ -405,166 +343,4 @@ describe('briefing job Worker', () => {
       provider.releaseStalls();
     }
   }, 120_000);
-
-  it('stores the packet before acknowledging, and the 30-second alarm redelivers after a crash', async () => {
-    const stateDir = await openStateDir();
-    const packet = packetFor('dispatch-recovery-fixture', '12.0.0', '12.1.0');
-    const hash = briefingEvidenceHash(packet);
-
-    const parked = await startRuntime({ stateDir, producer: false, consumer: false });
-    try {
-      const queued = await parked.submit(packet);
-      expect(queued.submission?.status).toBe('queued');
-      expect((await parked.jobEvent(hash))?.status).toBe('queued');
-      await delay(QUIET_MS);
-      expect(provider.requestsFor(packet.packageName)).toBe(0);
-      expect(await readStoredBriefing(parked.database, hash)).toBeUndefined();
-    } finally {
-      await parked.dispose();
-    }
-
-    const resumed = await startRuntime({ stateDir });
-    try {
-      // The redelivery comes from the 30-second recovery alarm, so this window spans that alarm plus the generation.
-      const stored = await waitForStoredBriefing(resumed.database, hash, 90_000);
-      expect(stored).toMatchObject({ status: 'available', model: MODEL });
-      expect(provider.requestsFor(packet.packageName)).toBe(1);
-    } finally {
-      await resumed.dispose();
-    }
-  }, 150_000);
-
-  it('makes dispatch failure terminal after three attempts instead of queueing forever', async () => {
-    const stateDir = await openStateDir();
-    const packet = packetFor('dispatch-exhaustion-fixture', '13.0.0', '13.1.0');
-    const hash = briefingEvidenceHash(packet);
-
-    const parked = await startRuntime({ stateDir, producer: false, consumer: false });
-    try {
-      expect((await parked.submit(packet)).submission?.status).toBe('queued');
-      const failed = await waitForJobEvent(parked, hash, (event) => event.status === 'unavailable', 120_000);
-      expect(failed).toMatchObject({ status: 'unavailable', reason: 'provider-error' });
-      expect(provider.requestsFor(packet.packageName)).toBe(0);
-      expect(await readStoredBriefing(parked.database, hash)).toBeUndefined();
-    } finally {
-      await parked.dispose();
-    }
-  }, 180_000);
-
-  it('starts a fresh generation from an explicit later POST after a terminal failure', async () => {
-    const packet = packetFor('fresh-generation-fixture', '15.0.0', '15.1.0');
-    const hash = briefingEvidenceHash(packet);
-
-    provider.setMode({ kind: 'invalid' });
-    let failed: BriefingJobEvent;
-    try {
-      expect((await main.submit(packet)).submission?.status).toBe('queued');
-      failed = await waitForJobEvent(main, hash, (event) => event.status === 'unavailable');
-    } finally {
-      provider.setMode({ kind: 'valid' });
-    }
-    expect(failed).toMatchObject({ status: 'unavailable', reason: 'invalid-response' });
-    expect(provider.requestsFor(packet.packageName)).toBe(2);
-
-    expect((await main.submit(packet)).submission?.status).toMatch(/queued|running/);
-    const stored = await waitForStoredBriefing(main.database, hash);
-    const completed = await waitForJobEvent(main, hash, (event) => event.status === 'available');
-    expect(completed.revision).toBeGreaterThan(failed.revision);
-    expect(provider.requestsFor(packet.packageName)).toBe(3);
-    expect(completed).toMatchObject({ status: 'available', briefing: stored });
-  }, 120_000);
-
-  it('expires a crashed generation instead of paying twice, and a later POST starts over', async () => {
-    const stateDir = await openStateDir();
-    const packet = packetFor('crash-fixture', '16.0.0', '16.1.0');
-
-    const hash = await crashRunningGeneration(stateDir, packet);
-    expect(provider.requestsFor(packet.packageName)).toBe(1);
-
-    const resumed = await startRuntime({ stateDir });
-    try {
-      // The crashed generation still owns the lease: a new POST must not start a second paid call.
-      const during = await resumed.submit(packet);
-      expect(during.submission?.status).toBe('running');
-      expect(provider.requestsFor(packet.packageName)).toBe(1);
-
-      const expired = await waitForJobEvent(resumed, hash, (event) => event.status === 'unavailable', LEASE_WAIT_MS);
-      expect(expired).toMatchObject({ status: 'unavailable', reason: 'timeout' });
-      expect(provider.requestsFor(packet.packageName)).toBe(1);
-
-      expect((await resumed.submit(packet)).submission?.status).toMatch(/queued|running/);
-      const stored = await waitForStoredBriefing(resumed.database, hash);
-      const completed = await waitForJobEvent(resumed, hash, (event) => event.status === 'available');
-      expect(completed.revision).toBeGreaterThan(expired.revision);
-      expect(provider.requestsFor(packet.packageName)).toBe(2);
-      expect(completed).toMatchObject({ status: 'available', briefing: stored });
-    } finally {
-      await resumed.dispose();
-    }
-  }, 300_000);
-
-  it('reconciles a crashed generation from the result it had already stored, without paying a second time', async () => {
-    const stateDir = await openStateDir();
-    const packet = packetFor('crash-stored-fixture', '17.0.0', '17.1.0');
-
-    const hash = await crashRunningGeneration(stateDir, packet);
-    expect(provider.requestsFor(packet.packageName)).toBe(1);
-
-    // The canonical briefing the crashed generation wrote to D1 before it lost its process, through the production
-    // store and the real binding. Its model name and bullet are only reachable if reconciliation reads this row.
-    const recovered: AvailablePackageBriefing = {
-      status: 'available',
-      model: 'recovered-fixture-model',
-      bullets: [
-        {
-          kind: 'migration',
-          basis: 'inference',
-          text: 'The durable row this hash already owns is the authority after a crash.',
-          evidenceNumbers: [0],
-        },
-      ],
-      sources: packet.sources.map((source, position) => ({ ...source, number: position })),
-    };
-
-    const resumed = await startRuntime({ stateDir });
-    try {
-      // The crashed generation never committed, so the row can only come from this write.
-      expect(await readStoredBriefing(resumed.database, hash)).toBeUndefined();
-      expect(await saveBriefing(resumed.database, hash, recovered)).toEqual(recovered);
-
-      // The job is still the crashed generation's; only its lease running out may settle it.
-      const running = await waitForJobEvent(resumed, hash, (event) => event.status === 'running');
-
-      const settled = await waitForJobEvent(resumed, hash, (event) => event.status === 'available', LEASE_WAIT_MS);
-      expect(settled).toMatchObject({ status: 'available', briefing: recovered });
-      expect(settled.revision).toBeGreaterThan(running.revision);
-
-      // The row is untouched and the fixture's counter proves reconciliation bought no second paid call.
-      expect(await readStoredBriefing(resumed.database, hash)).toEqual(recovered);
-      expect(provider.requestsFor(packet.packageName)).toBe(1);
-    } finally {
-      await resumed.dispose();
-    }
-  }, 300_000);
-
-  it('reports a storage outage at lease reconciliation as cache-error rather than a timeout', async () => {
-    const stateDir = await openStateDir();
-    const packet = packetFor('crash-outage-fixture', '18.0.0', '18.1.0');
-
-    const hash = await crashRunningGeneration(stateDir, packet);
-    expect(provider.requestsFor(packet.packageName)).toBe(1);
-
-    const resumed = await startRuntime({ stateDir });
-    try {
-      expect((await resumed.jobEvent(hash))?.status).toBe('running');
-      // The real D1 fault: the crashed generation's row cannot be read back at all.
-      await resumed.database.prepare('DROP TABLE package_briefings').run();
-
-      const settled = await waitForJobEvent(resumed, hash, (event) => event.status === 'unavailable', LEASE_WAIT_MS);
-      expect(settled).toMatchObject({ status: 'unavailable', reason: 'cache-error' });
-      expect(provider.requestsFor(packet.packageName)).toBe(1);
-    } finally {
-      await resumed.dispose();
-    }
-  }, 300_000);
 });
