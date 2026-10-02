@@ -54,7 +54,7 @@ Out of scope:
 
 - `shared/db/briefingSchema.ts` — `packageBriefings` (`package_briefings`) table. Consumed by the D1 store, the exporter, and drizzle-kit.
 - `shared/db/evidenceSchema.ts` — `evidenceRecords`, `evidenceChunks` tables. Consumed by the DO cache; not fed to drizzle-kit.
-- Column and table names match `migrations` exactly. The composite primary key on `evidence_chunks (key, chunk_index)` uses the v1 extra-config object form: `(t) => ({ pk: primaryKey({ columns: [t.key, t.chunkIndex] }) })`.
+- Column and table names match `migrations` exactly. Primary keys are declared at table level with the v1 extra-config object form. This is not cosmetic: column-level `.primaryKey()` drops `NOT NULL` from generated SQLite DDL (probe-verified: `.notNull().primaryKey()` → `text PRIMARY KEY`), while table-level `primaryKey({ columns })` emits `text PRIMARY KEY NOT NULL`, matching the deployed table. `evidence_chunks` uses the composite form `(t) => ({ pk: primaryKey({ columns: [t.key, t.chunkIndex] }) })`.
 - Drizzle's `sqliteTable` and column builders are imported from `drizzle-orm/sqlite-core`; all runtime usage remains inside server/worker bundles (nothing from `shared/db/` reaches the browser bundle).
 
 ### Runtime clients
@@ -67,20 +67,21 @@ Out of scope:
 
 ### Schema management
 
-- `drizzle.config.ts`: `dialect: 'sqlite'`, `schema: './shared/db/briefingSchema.ts'`, `out: './migrations'`.
-- New script `"db:generate": "drizzle-kit generate"`, run as `nub run --node db:generate`; the baseline is generated with `--name package_briefings` (CLI `--name` is documented for custom names) so the committed file is `0000_package_briefings.sql`.
-- `db:migrate:local`, `scripts/dev.ts`, and remote deployment flows are unchanged: wrangler applies `*.sql` from `migrations/` and records them in `d1_migrations`.
-- Generated artifacts committed: `migrations/0000_package_briefings.sql` plus `migrations/meta/` (journal + snapshot). Hand-written `0001_package_briefings.sql` is deleted.
+- `drizzle.config.ts`: `dialect: 'sqlite'`, `schema: './shared/db/briefingSchema.ts'`, `out: './drizzle'`.
+- drizzle-kit v1 layout (probe-verified on rc.4): each migration is a folder `drizzle/<YYYYMMDDHHMMSS>_<name>/` containing `migration.sql` and `snapshot.json`; there is no `journal.json` and no flat-file mode. Wrangler's `migrations_dir` only reads top-level `*.sql` files, so a thin adapter is required.
+- New script `scripts/sync-migrations.ts` mirrors each `drizzle/<folder>/migration.sql` to `migrations/<folder>.sql` (flattened; lexicographic order equals chronological order for wrangler). It errors on stale flat files with no drizzle source. New script `"db:generate": "drizzle-kit generate && node scripts/sync-migrations.ts"`, run as `nub run --node db:generate`; the baseline is generated with `--name package_briefings`.
+- Committed artifacts: `drizzle/<folder>/{migration.sql,snapshot.json}` (generator history) and `migrations/<folder>.sql` (wrangler-applied). A unit test asserts the flat mirror is byte-identical and complete, so a forgotten `db:generate` run fails the suite.
+- `db:migrate:local`, `scripts/dev.ts`, and remote deployment flows are unchanged: wrangler applies the flat `*.sql` files and records them in `d1_migrations`. Hand-written `migrations/0001_package_briefings.sql` is deleted.
 
 ### Migration history reset (start from zero)
 
 Because only preview is deployed and schema history may restart:
 
 1. Write `briefingSchema.ts` to match the deployed table, run `db:generate`, and compare the generated SQL against the old `0001` by introspecting two fresh local databases (`sqlite_master` + `PRAGMA table_info` + `PRAGMA index_list`) — the schemas must be identical after whitespace/quoting normalization. This equivalence check is a migration-time rehearsal, not a permanent test.
-2. Commit `0000_package_briefings.sql` + `meta/`; delete `0001_package_briefings.sql`.
+2. Commit `drizzle/<folder>/{migration.sql,snapshot.json}` and the synced `migrations/<folder>.sql`; delete `0001_package_briefings.sql`.
 3. Local: reset `.wrangler/state` once (local-only, git-ignored state; the launcher must not be running), then `nub run --node db:migrate:local` applies the generated baseline. Local state is disposable; no data preservation needed.
 4. Preview (reviewed ops step, separately approved, not part of code batches): preserve briefing rows with a data-only `wrangler d1 export --remote --env preview` before the reset, drop `package_briefings`, delete the stale `d1_migrations` row(s), apply the generated migrations with `wrangler d1 migrations apply BRIEFINGS_DB --remote --env preview --config workers/briefing/wrangler.jsonc`, then re-import the preserved data. Wiping instead of preserving is an operator choice that accepts regeneration cost. Exact `wrangler d1 export` flags are verified during rehearsal.
-5. Test harnesses (`test/helpers/briefingDatabase.harness.ts`, `workers/briefing/test/worker.harness.ts`) point at the generated baseline. The install helper's "idempotent" comment is updated: the generated `CREATE TABLE` is not idempotent, and its call sites (fresh schema, or re-create after an explicit `DROP`) do not require it to be.
+5. Test harnesses (`test/helpers/briefingDatabase.harness.ts`, `workers/briefing/test/worker.harness.ts`) read every `migrations/*.sql` file in sorted order and run each statement (splitting on drizzle-kit's `--> statement-breakpoint` marker), mirroring wrangler's application order. The install helper's "idempotent" comment is updated: the generated `CREATE TABLE` is not idempotent, and its call sites (fresh schema, or re-create after an explicit `DROP`) do not require it to be.
 
 ## Query mapping
 
@@ -111,6 +112,8 @@ D1 tests keep using real Miniflare D1 through `installBriefingSchema`, so any di
 
 Per-batch: type-check (`nuxt typecheck` + both worker tsconfigs), `nub run --node test`, `lint:check`, `format:check`. End-to-end: `node scripts/smoke.ts` exercises briefing submission, socket completion, restart, and D1 reuse through the new code. Bundle impact: record `wrangler deploy --dry-run` sizes for both workers and the built Nuxt worker before/after; report growth rather than assume it.
 
+Before this plan, a throwaway probe under Node 26 confirmed against `drizzle-orm@1.0.0-rc.4`: the DO storage stub is assignable to `DurableObjectStorage` with no type assertions, `drizzle(storage)` + sync `db.transaction` + `inArray(column, subquery)` + `.get()/.all()` type-check strictly, and `drizzle(database).batch([insert, select])` yields typed rows on the D1 driver. The probe also fixed the schema details above (PK nullability, folder layout, idempotent regeneration).
+
 TDD applies normally: the D1 batch atomicity path and the DO transaction path get red-first coverage where the existing suite only implicitly exercises them; otherwise the existing suites are the regression net, and tests pinning incidental raw-SQL text are updated with the implementation, not preserved.
 
 ## Delivery batches
@@ -137,7 +140,7 @@ TDD applies normally: the D1 batch atomicity path and the DO transaction path ge
 
 - Kysely dialect landscape: <https://www.kysely.dev/docs/dialects>; `kysely-d1` driver source (no transactions, no batch); `kysely-do` driver source (pre-release, transactions throw).
 - Drizzle entrypoints and signatures in `drizzle-orm@1.0.0-rc.4`: `d1/driver.d.ts`, `d1/session.d.ts`, `durable-sqlite/driver.d.ts`, `durable-sqlite/session.d.ts`, `node-sqlite/session.d.ts`, `node-sqlite/driver.d.ts`, `sqlite-core/table.d.ts`, `sql/core` `Query` type, `sqlite-core/query-builders/select.d.ts` (`toSQL`).
-- Drizzle D1 batch semantics: <https://orm.drizzle.team/docs/sqlite/batch-api>; wrangler + drizzle-kit flow: <https://orm.drizzle.team/docs/drizzle-config-file>, <https://orm.drizzle.team/docs/drizzle-kit-generate>.
+- Drizzle D1 batch semantics: <https://orm.drizzle.team/docs/sqlite/batch-api>; wrangler + drizzle-kit flow: <https://orm.drizzle.team/docs/drizzle-config-file>, <https://orm.drizzle.team/docs/sqlite/drizzle-kit-generate>; v1 folder layout (no journal; `<timestamp>_<name>/migration.sql`): <https://orm.drizzle.team/docs/v0-v1-changes>.
 - Cloudflare: DO SQL transactions (`sql.exec` cannot run `BEGIN`; use `transactionSync`): <https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/>; D1 migrations: <https://developers.cloudflare.com/d1/reference/migrations>.
 - Effect-schema incompatibility: <https://github.com/drizzle-team/drizzle-orm/issues/6412>.
 - Repo: `workers/briefing/wrangler.jsonc` (`migrations_dir`), `docs/operations/releases-and-recovery.md` (migration rules), `README.md` (snapshot moving, checks).
