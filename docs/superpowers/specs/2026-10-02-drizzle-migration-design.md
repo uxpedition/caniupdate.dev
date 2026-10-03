@@ -143,4 +143,4 @@ TDD applies normally: the D1 batch atomicity path and the DO transaction path ge
 - Drizzle D1 batch semantics: <https://orm.drizzle.team/docs/sqlite/batch-api>; wrangler + drizzle-kit flow: <https://orm.drizzle.team/docs/drizzle-config-file>, <https://orm.drizzle.team/docs/sqlite/drizzle-kit-generate>; v1 folder layout (no journal; `<timestamp>_<name>/migration.sql`): <https://orm.drizzle.team/docs/v0-v1-changes>.
 - Cloudflare: DO SQL transactions (`sql.exec` cannot run `BEGIN`; use `transactionSync`): <https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/>; D1 migrations: <https://developers.cloudflare.com/d1/reference/migrations>.
 - Effect-schema incompatibility: <https://github.com/drizzle-team/drizzle-orm/issues/6412>.
-- Repo: `workers/briefing/wrangler.jsonc` (`migrations_dir`), `docs/operations/releases-and-recovery.md` (migration rules), `README.md` (snapshot moving, checks).
+- Repo: `workers/briefing/wrangler.jsonc` (`migrations_dir`), `docs/engineering/ops/releases-and-recovery.md` (migration rules), `README.md` (snapshot moving, checks).

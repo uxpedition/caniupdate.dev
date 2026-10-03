@@ -22,7 +22,7 @@ The agreed footer behavior is:
 
 The conventional display uses a short hash prefix. The exact abbreviation length is a presentation detail, not a database or deployment identity; records retain the full hash.
 
-**Not implemented:** `package.json` currently has no `version`, and [`SiteFooter.vue`](../../app/components/SiteFooter.vue) has no build metadata. A release-version update procedure and build-time metadata wiring must exist before claiming the footer identifies releases. These documents do not add them or introduce a release branch convention.
+**Not implemented:** `package.json` currently has no `version`, and [`SiteFooter.vue`](../../../app/components/SiteFooter.vue) has no build metadata. A release-version update procedure and build-time metadata wiring must exist before claiming the footer identifies releases. These documents do not add them or introduce a release branch convention.
 
 ## Verification and release evidence
 
@@ -51,7 +51,7 @@ Exercise the actual public surface, not only bundle compilation:
 | Rate limiting, once implemented | General rejection behavior; new-generation allowance rejects before acceptance; D1 hits and pending joins do not consume that allowance |
 | Capacity                        | Workload, duration, cache state, concurrency, generator locations, deployed CPU/limits and observed failures                            |
 
-For frontend/build configuration changes, exercise both Firefox and Chromium. The historical Firefox startup failure is documented in the [handoff](../cloudflare-handoff.md#completed-work); API-only smoke missed it.
+For frontend/build configuration changes, exercise both Firefox and Chromium. The [entry-import-map decision](../adrs/firefox-entry-import-map.md) explains the retained startup workaround; the [handoff](../../cloudflare-handoff.md#completed-work) records the historical Firefox failure that API-only smoke missed.
 
 Routine contribution checks and default official preview configuration perform no real inference. The [local smoke](development.md#exercise-the-asynchronous-briefing-without-paid-inference) uses a fixture. A real-provider check is explicit, separately approved, and uses the intended environment's dedicated key. It can incur charges, including when the response or persistence fails.
 
@@ -62,7 +62,7 @@ Label these outcomes separately:
 - **Real generation:** deliberately exercised a provider call and checked its durable result.
 - **Not exercised:** no evidence for the path in this release.
 
-Do not silently retry failed paid checks or infer exactly-once billing. The application can retry invalid model output once, and a later explicit submission can start another generation. See [generation failure semantics](../architecture/briefing.md#result-storage-and-generation-failures).
+Do not silently retry failed paid checks or infer exactly-once billing. The application can retry invalid model output once, and a later explicit submission can start another generation. See [generation failure semantics](../briefing.md#result-storage-and-generation-failures).
 
 ### Individual release record
 
@@ -132,7 +132,7 @@ Do not delete databases, object namespaces, or briefing rows as routine troubles
 
 ### Legacy snapshot import
 
-The existing exporter is for pre-D1 local snapshots, not a backup system for the current full deployment. It reads the source SQLite file without modifying it, validates rows, and produces SQL that preserves existing target hashes. Stop the application owning the old file and take a backup first. See the [current import procedure](../../README.md#moving-existing-briefing-snapshots) and [`scripts/export-briefings.ts`](../../scripts/export-briefings.ts).
+The existing exporter is for pre-D1 local snapshots, not a backup system for the current full deployment. It reads the source SQLite file without modifying it, validates rows, and produces SQL that preserves existing target hashes. Stop the application owning the old file and take a backup first. See the [current import procedure](../../../README.md#moving-existing-briefing-snapshots) and [`scripts/export-briefings.ts`](../../../scripts/export-briefings.ts).
 
 Its D1 import does not restore Durable Object job state, Queue state, provider configuration, or access policies. Do not describe it as whole-system recovery.
 

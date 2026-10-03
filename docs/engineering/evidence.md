@@ -59,6 +59,8 @@ Release and changelog failures are isolated from npm, OSV, bundle, and archive r
 
 ## Cache keys, coalescing, expiry, and storage failures
 
+The [cache lifetime decision](adrs/evidence-cache-lifetimes.md) explains the freshness/reuse tradeoff and why TTL is not a storage cap.
+
 The collector receives cache/admission services from the object; it has no process-global cache of its own. Cache keys are SHA-256 digests of JSON-serialized scope inputs. The SQLite cache belongs to one package object, so mutable provider results and immutable archive inspections are reused by that package's callers, not by a separate global cache.
 
 | Evidence             | Key inputs                                                                                                 | Expiry and write rule                            |

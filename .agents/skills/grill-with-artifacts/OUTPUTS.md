@@ -27,7 +27,7 @@ Draft from established material. Show the proposed destination and request revie
 | Explain the current system | System documentation | Relevant document under `docs/` |
 | Work out an engineering solution | Design | Repository's design format |
 | Propose a change for discussion | RFC | `docs/rfcs/` |
-| Preserve a settled significant decision | ADR | `docs/adrs/` |
+| Preserve a settled significant decision | ADR | `docs/engineering/adrs/` |
 
 Intent determines the mode, not request size. One session has one primary output. Related artifacts can be linked or parked as later work; do not automatically turn a PRD into an issue backlog, RFC, and ADR.
 
@@ -66,13 +66,17 @@ Organize by reader question, not by implementation file:
 ```text
 README.md                 What is this, and how do I try it?
 docs/
+  CONTEXT.md              Why are the documents organized this way?
   product/                What does the product/result mean? What are its limits?
-  architecture/           How does the current system work?
-  adrs/                   What significant decisions were made, and why?
+  engineering/
+    <document-name>.md    How does the implemented system work now?
+    adrs/<adr-name>.md    What significant decisions were made, and why?
+    ops/                  How do I run, deploy, diagnose, and recover it?
   rfcs/                   What changes are proposed for discussion?
-  operations/             How do I run, deploy, diagnose, and recover it?
   archive/                What retired material still has unique useful context?
 ```
+
+Read [docs/CONTEXT.md](../../../docs/CONTEXT.md) before choosing destinations. In this repository, current-system explanations use `docs/engineering/<document-name>.md`; settled decision records use `docs/engineering/adrs/<adr-name>.md`; development, deployment, release, and recovery procedures use `docs/engineering/ops/<document-name>.md`. Engineering is the technical umbrella: explain current contracts in direct documents, preserve decision history in ADRs, and maintain executable procedures in ops, linked rather than duplicated. Use descriptive filenames consistent with the existing documents. Folder organization is explained in `docs/CONTEXT.md`, not a second documentation README.
 
 Inspect relevant existing docs and notes before drafting. Classify sections, not only files: a document can mix current instructions, old plans, and useful rationale. Present source, status (current, superseded, mixed, or unverified), and proposed destination for material affected by the session. Do not inventory the whole repository for a narrowly scoped topic.
 
@@ -94,11 +98,11 @@ Acceptance establishes agreement, not shipment. Keep rejected and withdrawn RFCs
 
 ## ADR
 
-Use `docs/adrs/` for settled decisions worth preserving: costly to reverse, surprising without context, and involving genuine alternatives. Otherwise record the conclusion in the primary artifact.
+Use `docs/engineering/adrs/` for settled decisions worth preserving: costly to reverse, surprising without context, and involving genuine alternatives. Otherwise record the conclusion in the primary artifact.
 
-Follow existing numbering; otherwise use `0001-short-decision-title.md` and continue the sequence. Include status, context, decision, considered alternatives, consequences, and evidence or related links. State whether rationale is historical or a present-day explanation when that distinction matters. If the original reason is unknown, say so.
+Use descriptive filenames matching the existing repository convention, such as `evidence-cache-lifetimes.md`; do not introduce numbering alongside the existing unnumbered records. Include status, context, decision, considered alternatives, consequences, and evidence or related links. State whether rationale is historical or a present-day explanation when that distinction matters. If the original reason is unknown, say so.
 
-An undecided proposal belongs in an RFC or design, not an accepted ADR. Keep superseded ADRs here, mark their status, and link the replacement. Current architecture documentation describes the implemented system; an ADR preserves the decision even when the system later changes.
+An undecided proposal belongs in an RFC or design, not an accepted ADR. Keep superseded ADRs here, mark their status, and link the replacement. Current engineering documents describe the implemented system; an ADR preserves the decision even when the system later changes.
 
 ## Examples
 

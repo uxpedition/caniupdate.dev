@@ -4,6 +4,16 @@ Compare two versions of one public npm package to spot consequential changes in 
 
 See [product meaning and limitations](docs/product/meaning-and-limitations.md) for what the results establish and what they cannot tell you about your project.
 
+## Decisions
+
+These ADRs explain the current choices and their costs under the knowledge and constraints at the time, not permanent rulings. [Engineering documents](docs/engineering/overview.md) own the detailed current contracts; historical observations are labelled in the records. See [documentation organization](docs/CONTEXT.md) for the folder purposes and maintenance rules.
+
+- [Evidence cache lifetimes](docs/engineering/adrs/evidence-cache-lifetimes.md): five-minute mutable freshness and indefinite verified archive reuse.
+- [Briefing identity follows evidence](docs/engineering/adrs/briefing-evidence-identity.md): unchanged evidence reuses the stored success.
+- [Durable jobs own generation](docs/engineering/adrs/durable-briefing-ownership.md): work outlives the page; uncertain outcomes do not automatically regenerate.
+- [Native RPC lifecycle handling](docs/engineering/adrs/native-rpc-lifecycle.md): honor Cloudflare disposal while strictly validating application data.
+- [Firefox entry-import-map workaround](docs/engineering/adrs/firefox-entry-import-map.md): preserve working browser startup while retaining SSR streaming.
+
 ## Legal pages
 
 `/privacy` and `/terms` currently display `TBD` while their contents are under review. Both use `app/layouts/site.vue`, the shared layout also used by comparisons. The homepage and shared layout link to them through `SiteFooter.vue`.

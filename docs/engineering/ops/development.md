@@ -1,17 +1,23 @@
 # Development operations
 
-**Status: reviewed.** Commands in this document describe the current checkout. Policy statements describe the agreed contributor workflow. Consolidation of the operational sections of the [README](../../README.md) remains separate work.
+**Status: reviewed.** Commands in this document describe the current checkout. Policy statements describe the agreed contributor workflow. Consolidation of the operational sections of the [README](../../../README.md) remains separate work.
 
 For remote environments, see [deployment](deployment.md). For verification evidence and state recovery, see [releases and recovery](releases-and-recovery.md).
 
 ## What do I need to contribute?
 
-Use Node 26, pinned in [`.node-version`](../../.node-version), and Nub, currently `0.8.3` in [`package.json`](../../package.json). Nub owns the lockfile and script execution. Pass `--node` when running project scripts so Nuxt and Worker processes use plain Node rather than Nub's runtime augmentation.
+Use Node 26, pinned in [`.node-version`](../../../.node-version), and Nub, currently `0.8.3` in [`package.json`](../../../package.json). Nub owns the lockfile and script execution. Pass `--node` when running project scripts so Nuxt and Worker processes use plain Node rather than Nub's runtime augmentation.
 
 ```bash
 nub ci
 nub run --node dev
 ```
+
+### Nub runtime verification (2026-10-03)
+
+The documented `--node` invocation disables Nub's runtime augmentation. The research shell had `NODE_COMPAT=1`, which also disables augmentation, so checks explicitly unset it. With augmentation enabled, the active Nub CLI reported `0.9.6`: `type-check` and `build` passed; `dev` started Nuxt and both Workers, Vue type-check reported zero errors, and `/api/health` returned `{"status":"ok"}`. `nub -p 'typeof Worker'` returned `function`; `nub --node -p 'typeof Worker'` returned `undefined`.
+
+This does not validate Nub 0.9.4: `package.json` currently pins `nub@0.8.3`, the active binary reports `0.9.6`, and the official 0.9.4 release and npm lookups returned 404. The 0.9.6 run did not reproduce the earlier `worker-polyfill.mjs` error report; no original stack trace was available to identify its cause.
 
 Open `http://localhost:5173`. A Cloudflare account, deployment token, and paid AI provider are not required for local contribution. Hosted previews are optional. Contributors may submit locally verified changes without deploying their own instance; maintainers may deploy a reviewed revision to the official integration preview.
 
@@ -19,7 +25,7 @@ The launcher exposes the frontend and briefing socket on all interfaces. Treat l
 
 ## What starts locally?
 
-[`scripts/dev.ts`](../../scripts/dev.ts) applies local D1 migrations, starts the two backend Workers, waits for readiness, and starts the frontend. It stops the processes on Ctrl-C or a sibling failure.
+[`scripts/dev.ts`](../../../scripts/dev.ts) applies local D1 migrations, starts the two backend Workers, waits for readiness, and starts the frontend. It stops the processes on Ctrl-C or a sibling failure.
 
 | Runtime         | Default port | Responsibility                                                    |
 | --------------- | ------------ | ----------------------------------------------------------------- |
@@ -33,7 +39,7 @@ The default persistence root is `.wrangler/state`. A `launcher.lock` prevents `d
 
 ## Where does configuration belong?
 
-See [`.env.example`](../../.env.example) for the current contract. Local environment files and Worker `.dev.vars` files are ignored by Git.
+See [`.env.example`](../../../.env.example) for the current contract. Local environment files and Worker `.dev.vars` files are ignored by Git.
 
 | Setting                     | Local owner                           | Remote owner                                              |
 | --------------------------- | ------------------------------------- | --------------------------------------------------------- |
@@ -99,7 +105,7 @@ node scripts/smoke.ts --preview
 
 The scenario uses temporary persistence and offset ports. It exercises submission, socket completion, a device-shaped Origin, restart, D1 reuse, and reconnect. Its fixture must be loopback; do not substitute a real provider. It starts no remote deployment and does not touch the normal `.wrangler/state` root. Evidence collection can still use public package providers, so this is not an offline test.
 
-Fixture success proves the exercised lifecycle, not model quality or production-provider integration. `--measure` adds local process-tree CPU sampling, not Cloudflare per-invocation CPU accounting. See [`scripts/smoke.ts`](../../scripts/smoke.ts) and the [historical local gate](../cloudflare-handoff.md#local-and-built-runtime-gate-2026-09-26).
+Fixture success proves the exercised lifecycle, not model quality or production-provider integration. `--measure` adds local process-tree CPU sampling, not Cloudflare per-invocation CPU accounting. See [`scripts/smoke.ts`](../../../scripts/smoke.ts) and the [historical local gate](../../cloudflare-handoff.md#local-and-built-runtime-gate-2026-09-26).
 
 ## How do I diagnose local failures?
 

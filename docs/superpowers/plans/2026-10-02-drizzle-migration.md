@@ -1086,8 +1086,8 @@ git commit -m "refactor: build the briefing export query with drizzle"
 ### Task 5: Verification and documentation
 
 **Files:**
-- Modify: `docs/operations/development.md`
-- Modify: `docs/operations/releases-and-recovery.md`
+- Modify: `docs/engineering/ops/development.md`
+- Modify: `docs/engineering/ops/releases-and-recovery.md`
 - Modify: `README.md`
 
 **Interfaces:**
@@ -1107,7 +1107,7 @@ Expected: all clean. Fix with `nub exec -- oxlint <paths> --fix` / `nub exec -- 
 
 - [ ] **Step 2: Run the local smoke**
 
-Ensure `workers/briefing/.dev.vars` has only the fixture values documented in `docs/operations/development.md`, then run:
+Ensure `workers/briefing/.dev.vars` has only the fixture values documented in `docs/engineering/ops/development.md`, then run:
 ```bash
 node scripts/smoke.ts
 ```
@@ -1120,11 +1120,11 @@ Expected: success; report the evidence worker, briefing worker, and Nuxt output 
 
 - [ ] **Step 4: Document the generation workflow**
 
-In `docs/operations/development.md`, next to the existing `db:migrate:local` instructions, add:
+In `docs/engineering/ops/development.md`, next to the existing `db:migrate:local` instructions, add:
 ```markdown
-Schema changes start in [`shared/db/briefingSchema.ts`](../../shared/db/briefingSchema.ts). Generate a migration with `nub run --node db:generate`; it writes a drizzle-kit folder under `drizzle/` and mirrors it to a flat `migrations/*.sql` file that wrangler applies. Commit both. Do not edit generated or already-applied migration files.
+Schema changes start in [`shared/db/briefingSchema.ts`](../../../shared/db/briefingSchema.ts). Generate a migration with `nub run --node db:generate`; it writes a drizzle-kit folder under `drizzle/` and mirrors it to a flat `migrations/*.sql` file that wrangler applies. Commit both. Do not edit generated or already-applied migration files.
 ```
-In `docs/operations/releases-and-recovery.md`, update rule 1 of "Database and stored data changes" to:
+In `docs/engineering/ops/releases-and-recovery.md`, update rule 1 of "Database and stored data changes" to:
 ```markdown
 1. Add a new generated migration for each schema change (`nub run --node db:generate`). Do not rewrite already-applied migration history.
 ```
@@ -1136,7 +1136,7 @@ Schema is declared in `shared/db/briefingSchema.ts`; `nub run --node db:generate
 - [ ] **Step 5: Commit the documentation**
 
 ```bash
-git add docs/operations/development.md docs/operations/releases-and-recovery.md README.md
+git add docs/engineering/ops/development.md docs/engineering/ops/releases-and-recovery.md README.md
 git commit -m "docs: document the drizzle migration workflow"
 ```
 

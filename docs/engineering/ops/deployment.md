@@ -1,6 +1,6 @@
 # Deployment operations
 
-**Status: reviewed.** This document separates current deployment mechanics from the agreed OSS deployment model. It is not evidence that production or portable fork deployment has been implemented. The [README](../../README.md) remains unchanged pending documentation consolidation.
+**Status: reviewed.** This document separates current deployment mechanics from the agreed OSS deployment model. It is not evidence that production or portable fork deployment has been implemented. The [README](../../../README.md) remains unchanged pending documentation consolidation.
 
 See [development](development.md) for local commands and [releases and recovery](releases-and-recovery.md) for promotion, verification, and migrations.
 
@@ -30,7 +30,7 @@ The system uses three Workers in the same account:
 
 Private submission and the public socket are different boundaries. The browser cannot submit generation directly to the briefing Worker's public route. Socket Origin allowlisting is not user authentication.
 
-Sources: [frontend config](../../wrangler.jsonc), [evidence config](../../workers/evidence/wrangler.jsonc), [briefing config](../../workers/briefing/wrangler.jsonc), and [briefing architecture](../architecture/briefing.md).
+Sources: [frontend config](../../../wrangler.jsonc), [evidence config](../../../workers/evidence/wrangler.jsonc), [briefing config](../../../workers/briefing/wrangler.jsonc), and [briefing architecture](../briefing.md).
 
 ## How should an account-local configuration be prepared?
 
@@ -80,7 +80,7 @@ Configure secrets for the exact Worker and environment. Do not put a real key in
 
 Production is intended to use OpenRouter at `https://openrouter.ai/api/v1/chat/completions`, with a dedicated key and an operator-configured spend limit. Budget amounts and reset intervals are operator choices, not prescribed here. Preview real-provider checks use a separate key. Default contributor checks and official preview configuration must not perform real inference.
 
-Self-hosters may choose another provider implementing the supported OpenAI-compatible Chat Completions contract. HTTPS is required except for loopback fixtures. Endpoint query parameters are rejected. Model output must satisfy the application's strict JSON/citation contract; API compatibility does not guarantee every model produces valid output. See [provider behavior](../architecture/briefing.md#result-storage-and-generation-failures).
+Self-hosters may choose another provider implementing the supported OpenAI-compatible Chat Completions contract. HTTPS is required except for loopback fixtures. Endpoint query parameters are rejected. Model output must satisfy the application's strict JSON/citation contract; API compatibility does not guarantee every model produces valid output. See [provider behavior](../briefing.md#result-storage-and-generation-failures).
 
 A spend cap does not protect Cloudflare quotas or guarantee fair access. Cached briefing success does not prove a valid provider key or a working new-generation path.
 
@@ -162,6 +162,6 @@ These are release requirements, not claims about current protections. This docum
 
 ## What deployment evidence already exists?
 
-The [Cloudflare handoff](../cloudflare-handoff.md#latest-preview-redeployment-and-smoke-2026-10-01) records the latest preview redeployment on 2026-10-01, including three Worker version IDs, API/browser smoke, and stored briefing reuse. An earlier entry records a one-location warm-cache load run, not cold-work or production capacity.
+The [Cloudflare handoff](../../cloudflare-handoff.md#latest-preview-redeployment-and-smoke-2026-10-01) records the latest preview redeployment on 2026-10-01, including three Worker version IDs, API/browser smoke, and stored briefing reuse. An earlier entry records a one-location warm-cache load run, not cold-work or production capacity.
 
 Those are dated historical observations. Preparation of this document did not include inspection of current remote versions, secrets, Access policies, dashboard log ingestion, or billing. Future releases must produce their own evidence rather than copying historical status into an evergreen runbook.
