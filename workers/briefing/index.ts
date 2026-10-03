@@ -9,6 +9,7 @@ import { Schema } from 'effect';
 import { briefingEvidenceHash } from '../../server/utils/packageBriefing';
 import { BriefingEvidenceSchema } from '../../shared/briefing.defs';
 import type { BriefingEvidence } from '../../shared/briefing.defs';
+import type { BriefingSubmission } from '../../shared/briefingJob.defs';
 import { briefingAllowedOrigins } from './allowedOrigins';
 import { BriefingSubmissionError, type BriefingEnv, type BriefingJobMessage } from './job';
 
@@ -52,12 +53,12 @@ function isJobMessage(value: unknown): value is BriefingJobMessage {
  * Nuxt's private submission path. It only addresses the job that the decoded packet hashes to; the object itself
  * re-derives and verifies that identity before it stores anything.
  *
- * The envelope crosses the RPC boundary as JSON text on purpose: workerd attaches an own `Symbol.dispose` to every
- * object it deserializes for a caller, and the frontend decodes the envelope strictly, where an undeclared key —
- * symbol or not — is an error. A string carries exactly what the envelope declares.
+ * The envelope crosses the RPC boundary as a native object. workerd attaches its own `Symbol.dispose` on the caller's
+ * deserialized result; the Nuxt boundary recognizes and invokes only that lifecycle hook before strictly decoding the
+ * application fields.
  */
 export class BriefingSubmitter extends WorkerEntrypoint<BriefingEnv> {
-  async submit(packet: BriefingEvidence): Promise<string> {
+  async submit(packet: BriefingEvidence): Promise<BriefingSubmission> {
     let evidence: BriefingEvidence;
     try {
       evidence = decodeEvidence(packet);
@@ -66,7 +67,7 @@ export class BriefingSubmitter extends WorkerEntrypoint<BriefingEnv> {
     }
 
     const jobs = this.env.BRIEFING_JOBS;
-    return JSON.stringify(await jobs.get(jobs.idFromName(briefingEvidenceHash(evidence))).submit(evidence));
+    return jobs.get(jobs.idFromName(briefingEvidenceHash(evidence))).submit(evidence);
   }
 }
 

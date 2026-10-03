@@ -20,6 +20,62 @@ import { getBriefingEvidence, PackageEvidenceClientError } from '../../../../uti
 const briefingServiceUnavailable = () =>
   createError({ statusCode: 503, statusMessage: 'Briefing service unavailable' });
 
+type BriefingService = { submit(packet: BriefingEvidence): Promise<unknown> };
+type DisposableRpcResult = object & { [Symbol.dispose](): void };
+
+// Cloudflare adds this documented lifecycle hook to every object returned over RPC. It is the sole runtime-owned
+// property permitted at this boundary; all application fields remain subject to the strict protocol decoder below.
+const isDisposableRpcResult = (value: unknown): value is DisposableRpcResult =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof Object.getOwnPropertyDescriptor(value, Symbol.dispose)?.value === 'function';
+
+// Copy every own string key, including non-enumerable ones, so strict decoding still rejects undeclared application
+// data. When present, the documented disposer is excluded because the caller invokes it unconditionally.
+const copyRpcSubmissionData = (submission: unknown): Record<string, unknown> => {
+  if (typeof submission !== 'object' || submission === null) {
+    throw new TypeError('Briefing service did not return an object');
+  }
+
+  const data: Record<string, unknown> = {};
+
+  for (const key of Reflect.ownKeys(submission)) {
+    if (key === Symbol.dispose) continue;
+    if (typeof key === 'symbol') throw new TypeError('Briefing service returned an unexpected symbol');
+
+    const descriptor = Object.getOwnPropertyDescriptor(submission, key);
+    if (descriptor === undefined || !('value' in descriptor)) {
+      throw new TypeError('Briefing service returned an accessor property');
+    }
+    Object.defineProperty(data, key, { enumerable: true, value: descriptor.value });
+  }
+
+  return data;
+};
+
+// Node's Miniflare bridge omits descriptor values while keeping ordinary property reads live. This is reachable only
+// through Nuxt's compile-time development branch below; built Workers retain the descriptor-only path above.
+const copyNodeDevelopmentRpcSubmissionData = (submission: unknown): Record<string, unknown> => {
+  if (typeof submission !== 'object' || submission === null) {
+    throw new TypeError('Briefing service did not return an object');
+  }
+
+  const data: Record<string, unknown> = {};
+
+  for (const key of Reflect.ownKeys(submission)) {
+    if (typeof key === 'symbol') throw new TypeError('Briefing service returned an unexpected symbol');
+
+    const descriptor = Object.getOwnPropertyDescriptor(submission, key);
+    if (descriptor === undefined || descriptor.writable === undefined) {
+      throw new TypeError('Briefing service returned an accessor property');
+    }
+    const value: unknown = Reflect.get(submission, key);
+    Object.defineProperty(data, key, { enumerable: true, value });
+  }
+
+  return data;
+};
+
 const SUBMISSION_FAILURE_TAG = 'BriefingSubmissionError';
 // Every reason the service's sanitized error type carries is a lowercase token; anything else in an error's text must
 // not reach the log, whatever the error is called.
@@ -48,6 +104,33 @@ const logSubmissionFailure = (error: unknown): void => {
 const refusedSubmission = (error: unknown) => {
   logSubmissionFailure(error);
   return briefingServiceUnavailable();
+};
+
+const receiveBriefingSubmission = async (
+  service: BriefingService,
+  evidence: BriefingEvidence,
+): Promise<BriefingSubmission> => {
+  try {
+    const rpcSubmission = await service.submit(evidence);
+    if (isDisposableRpcResult(rpcSubmission)) {
+      const dispose = rpcSubmission[Symbol.dispose];
+      try {
+        return decodeBriefingSubmission(copyRpcSubmissionData(rpcSubmission));
+      } finally {
+        dispose.call(rpcSubmission);
+      }
+    }
+
+    // Nuxt's Node development bridge intentionally hides every symbol on Miniflare RPC proxies. This branch keeps
+    // local development usable while retaining the same strict application-field decode; this compile-time Nuxt flag
+    // is false in the built Worker, which still requires and invokes Cloudflare's documented lifecycle hook.
+    if (import.meta.dev) {
+      return decodeBriefingSubmission(copyNodeDevelopmentRpcSubmissionData(rpcSubmission));
+    }
+    throw new TypeError('Briefing service did not return a disposable object');
+  } catch (error) {
+    throw refusedSubmission(error);
+  }
 };
 
 /**
@@ -96,14 +179,7 @@ export default defineEventHandler(async (event) => {
   const service = event.context.cloudflare?.env?.BRIEFING_SERVICE;
   if (service === undefined) throw briefingServiceUnavailable();
 
-  let submission: BriefingSubmission;
-  try {
-    // The service answers with JSON text because workerd decorates objects that cross its RPC boundary with an own
-    // `Symbol.dispose`; this decode is strict, so an undeclared key of any kind is refused rather than rendered.
-    submission = decodeBriefingSubmission(JSON.parse(await service.submit(evidence)));
-  } catch (error) {
-    throw refusedSubmission(error);
-  }
+  const submission = await receiveBriefingSubmission(service, evidence);
 
   // 200 is the stored briefing the page renders; 202 is a job it follows on the service's own socket URL.
   return submissionAnswer(event, submission);

@@ -130,6 +130,11 @@ const jobStub = (env, hash) => {
   const jobs = env.BRIEFING_JOBS;
   return jobs.get(jobs.idFromName(hash));
 };
+const disposeRpcResult = (value) => {
+  if (typeof value !== 'object' || value === null) return;
+  const disposer = value[Symbol.dispose];
+  if (typeof disposer === 'function') disposer.call(value);
+};
 
 export default {
   async fetch(request, env) {
@@ -140,9 +145,13 @@ export default {
       try {
         const submission =
           url.pathname === '/submit'
-            ? JSON.parse(await env.BRIEFING_SERVICE.submit(packet))
+            ? await env.BRIEFING_SERVICE.submit(packet)
             : await jobStub(env, url.searchParams.get('hash') ?? '').submit(packet);
-        return json(submission);
+        try {
+          return json(submission);
+        } finally {
+          disposeRpcResult(submission);
+        }
       } catch (error) {
         return json({ error: error instanceof Error ? error.message : 'submission failed' }, 503);
       }
@@ -152,14 +161,18 @@ export default {
       const packet = await readBody(request);
       try {
         const raw = await env.BRIEFING_SERVICE.submit(packet);
-        return json({
-          kind: typeof raw,
-          symbols:
-            typeof raw === 'object' && raw !== null
-              ? Reflect.ownKeys(raw).filter((key) => typeof key === 'symbol').map(String)
-              : [],
-          text: typeof raw === 'string' ? raw : null,
-        });
+        try {
+          return json({
+            kind: typeof raw,
+            symbols:
+              typeof raw === 'object' && raw !== null
+                ? Reflect.ownKeys(raw).filter((key) => typeof key === 'symbol').map(String)
+                : [],
+            text: typeof raw === 'string' ? raw : null,
+          });
+        } finally {
+          disposeRpcResult(raw);
+        }
       } catch (error) {
         return json({ error: error instanceof Error ? error.message : 'submission failed' }, 503);
       }
@@ -185,18 +198,17 @@ export type SubmitResult = {
 };
 
 /**
- * What the `BriefingSubmitter` entrypoint answered across the service binding, before any JSON conversion: the
- * value's `typeof`, the own symbol keys on it when it is an object, and the text itself when it is a string. The
- * symbols are the only channel through which the harness can report workerd's own-`Symbol.dispose` decoration, since
- * `json()` would drop it.
+ * What the `BriefingSubmitter` entrypoint answered across the service binding, before the harness serializes only
+ * application data: its `typeof`, any own symbol keys, and its text value if it regresses to the removed text
+ * contract. Symbol keys are reported separately because `json()` drops workerd's own `Symbol.dispose` decoration.
  */
 export type RawSubmission = {
   readonly httpStatus: number;
-  /** `typeof` the value the entrypoint returned; a contract-conforming answer is `'string'`. */
+  /** `typeof` the value the entrypoint returned; a contract-conforming answer is `'object'`. */
   readonly kind: string | undefined;
-  /** Own symbol keys of an object answer. Empty for the JSON-text contract, which cannot carry any. */
+  /** Own symbol keys the runtime exposes on its native object result. */
   readonly symbols: readonly string[];
-  /** The answer itself when it crossed as JSON text. */
+  /** Set only for a legacy text result, which the native contract must not return. */
   readonly text: string | undefined;
   readonly error: string | undefined;
 };

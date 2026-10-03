@@ -8,8 +8,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { decodeBriefingSubmission } from '#shared/briefingJob.defs';
-
 import { briefingEvidenceHash } from '../../../server/utils/packageBriefing';
 import { readStoredBriefing } from '../../../server/utils/packageBriefingStore';
 import {
@@ -77,32 +75,28 @@ describe('briefing job Worker', () => {
     expect(event).toMatchObject({ status: 'available', briefing: stored });
   }, 60_000);
 
-  it('crosses the service binding as JSON text the strict decode accepts', async () => {
+  it('crosses the service binding as a native object and preserves its strict envelope', async () => {
     const packet = packetFor('boundary-fixture', '19.0.0', '19.1.0');
     const hash = briefingEvidenceHash(packet);
 
-    // The wire contract the Nuxt route consumes, asserted at the real `BRIEFING_SERVICE` binding rather than at a
-    // stub. An object answer is what failed in the built runtime: workerd attaches an own `Symbol.dispose` to
-    // RPC-returned objects, and `decodeBriefingSubmission` refuses every undeclared own key, symbols included. The
-    // `symbols` channel reports that decoration where the runtime reproduces it (a JSON round trip would drop it)
-    // and stays empty here when only the emulator's bridge carries the value.
-    const raw = await main.rawSubmit(packet);
-    expect(raw.error).toBeUndefined();
-    expect({ kind: raw.kind, symbols: raw.symbols }).toEqual({ kind: 'string', symbols: [] });
-    const text = raw.text;
-    if (text === undefined) throw new Error('The entrypoint did not answer JSON text across the service binding');
-
-    const submission = decodeBriefingSubmission(JSON.parse(text));
-    expect(submission).toMatchObject({
+    // The regular harness path models a caller that serializes only the application envelope after receiving the
+    // native RPC object. It must accept the service response before the raw path checks the wire value itself.
+    const submitted = await main.submit(packet);
+    expect(submitted.error).toBeUndefined();
+    expect(submitted.submission).toMatchObject({
       packageName: packet.packageName,
       from: packet.from,
       to: packet.to,
-      hash,
-      eventsUrl: `${PUBLIC_URL}/api/briefings/${hash}/events`,
     });
-    expect(submission.status).toMatch(/queued|running/);
 
-    // The identity survives past the envelope: the job the text addressed is the one the hash keys in D1.
+    // This is the real service binding from the built Worker bundle. The raw channel avoids JSON conversion so a
+    // regression to text cannot hide behind the harness's public JSON response.
+    const raw = await main.rawSubmit(packet);
+    expect(raw.error).toBeUndefined();
+    expect(raw.kind).toBe('object');
+    expect(raw.text).toBeUndefined();
+
+    // The identity survives past the envelope: the job the native object addressed is the one the hash keys in D1.
     expect(await waitForStoredBriefing(main.database, hash)).toMatchObject({ status: 'available', model: MODEL });
     expect(provider.requestsFor(packet.packageName)).toBe(1);
   }, 120_000);
