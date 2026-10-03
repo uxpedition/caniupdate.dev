@@ -1,5 +1,5 @@
 import { Effect, Schema, SchemaTransformation } from 'effect';
-import { FetchHttpClient } from 'effect/unstable/http';
+import { FetchHttpClient } from 'effect/http';
 import { defineEventHandler, getValidatedQuery } from 'h3';
 
 import { RegistryPackagesSearchResponseSchema, toSearchResults } from '#shared/search.defs';

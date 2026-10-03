@@ -5,7 +5,7 @@
 import { createHash } from 'node:crypto';
 
 import { Effect, Schema } from 'effect';
-import { HttpClient } from 'effect/unstable/http';
+import { HttpClient } from 'effect/http';
 
 import type { BriefingInput } from '../../shared/briefing.defs';
 import { PackageBundleSizeSchema } from '../../shared/bundlephobia.defs';

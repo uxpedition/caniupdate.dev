@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { NodeRuntime, NodeServices } from '@effect/platform-node';
 import { Deferred, Effect, PlatformError, Scope, Stream, Data } from 'effect';
-import { ChildProcess, ChildProcessSpawner } from 'effect/unstable/process';
+import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 
 import { browserOrigins } from './browserOrigins.ts';
 

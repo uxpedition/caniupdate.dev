@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { FetchHttpClient } from 'effect/unstable/http';
+import { FetchHttpClient } from 'effect/http';
 import { defineEventHandler, getValidatedQuery, getValidatedRouterParams } from 'h3';
 
 import {

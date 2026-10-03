@@ -1,7 +1,7 @@
 import type * as Cloudflare from '@cloudflare/workers-types';
 import { DurableObject } from 'cloudflare:workers';
 import { Effect, Schema } from 'effect';
-import { FetchHttpClient } from 'effect/unstable/http';
+import { FetchHttpClient } from 'effect/http';
 
 import { buildBriefingEvidence } from '../../server/utils/packageBriefingEvidence';
 import {

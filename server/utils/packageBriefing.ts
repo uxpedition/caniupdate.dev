@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 
 import { Cause, Data, Effect, Layer, Result, Schema } from 'effect';
-import { LanguageModel, Prompt } from 'effect/unstable/ai';
-import { FetchHttpClient, HttpClient } from 'effect/unstable/http';
+import { LanguageModel, Prompt } from 'effect/ai';
+import { FetchHttpClient, HttpClient } from 'effect/http';
 
 import { BriefingBulletSchema } from '../../shared/briefing.defs';
 import type {

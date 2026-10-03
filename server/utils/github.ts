@@ -1,5 +1,5 @@
 import { Data, Duration, Effect, Option, Result, Schema } from 'effect';
-import { FetchHttpClient, Headers, HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/unstable/http';
+import { FetchHttpClient, Headers, HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
 
 const API_ORIGIN = 'https://api.github.com';
 const GITHUB_API_VERSION = '2022-11-28';

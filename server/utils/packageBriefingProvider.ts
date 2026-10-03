@@ -3,8 +3,8 @@
 
 import { OpenAiClient, OpenAiLanguageModel } from '@effect/ai-openai-compat';
 import { Duration, Effect, Layer, Redacted, Stream } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
-import { Headers, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from 'effect/unstable/http';
+import { LanguageModel } from 'effect/ai';
+import { Headers, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from 'effect/http';
 
 // OpenCode Go completes the same request in 6-49 seconds depending on model and load, so the deadline bounds a
 // normal provider call rather than a fast one. The briefing shares this deadline across both generation attempts,

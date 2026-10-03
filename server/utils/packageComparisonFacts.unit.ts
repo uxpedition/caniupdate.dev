@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 
 import { Effect } from 'effect';
-import { FetchHttpClient } from 'effect/unstable/http';
+import { FetchHttpClient } from 'effect/http';
 import { pack } from 'tar-stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

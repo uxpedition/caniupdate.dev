@@ -11,7 +11,7 @@
 import type * as Cloudflare from '@cloudflare/workers-types';
 import { DurableObject } from 'cloudflare:workers';
 import { Effect, Schema } from 'effect';
-import { FetchHttpClient } from 'effect/unstable/http';
+import { FetchHttpClient } from 'effect/http';
 
 import { briefingEvidenceHash, generateBriefing, readBriefingConfig } from '../../server/utils/packageBriefing';
 import { isBriefingStoreFailure, readStoredBriefing, saveBriefing } from '../../server/utils/packageBriefingStore';

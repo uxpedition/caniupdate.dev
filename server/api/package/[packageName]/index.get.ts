@@ -1,5 +1,5 @@
 import { Effect, Schema } from 'effect';
-import { FetchHttpClient } from 'effect/unstable/http';
+import { FetchHttpClient } from 'effect/http';
 import { createError, defineEventHandler, getRouterParam } from 'h3';
 
 import { RegistryPackageMetadataSchema, toPackageMetadata } from '#shared/package.defs';

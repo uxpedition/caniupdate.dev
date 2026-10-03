@@ -1,5 +1,5 @@
 import { Duration, Effect } from 'effect';
-import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/unstable/http';
+import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
 import { describe, expect, it, vi } from 'vitest';
 
 import { getPackageVulnerabilities } from './packageVulnerabilities';
