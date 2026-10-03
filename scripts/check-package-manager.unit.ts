@@ -30,7 +30,7 @@ describe('package manager install guard', () => {
   });
 
   it('allows Nub', () => {
-    const result = runGuard('nub/0.8.3 node/v26.8.1 linux x64');
+    const result = runGuard('nub/0.9.6 node/v26.8.1 linux x64');
 
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');

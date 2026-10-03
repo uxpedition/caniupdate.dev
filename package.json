@@ -56,9 +56,9 @@
   "devEngines": {
     "packageManager": {
       "name": "nub",
-      "version": "^0.8.3",
+      "version": "^0.9.6",
       "onFail": "ignore"
     }
   },
-  "packageManager": "nub@0.8.3"
+  "packageManager": "nub@0.9.6"
 }

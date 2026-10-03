@@ -459,7 +459,7 @@ const main = async (): Promise<void> => {
   if (preview) {
     const built = await readFile(builtFrontendConfig, 'utf8').catch(() => undefined);
     if (built === undefined) {
-      throw new SmokeFailure(`Missing ${builtFrontendConfig}. Run \`nub run --node build\` before --preview.`);
+      throw new SmokeFailure(`Missing ${builtFrontendConfig}. Run \`nub run build\` before --preview.`);
     }
   }
 

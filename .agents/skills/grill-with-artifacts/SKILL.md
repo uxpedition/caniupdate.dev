@@ -10,7 +10,7 @@ Build shared understanding of one engineering topic and produce the output the u
 
 ## Required composition
 
-Load `grilling` using the runtime's skill mechanism (or read `../grilling/SKILL.md`), then read [OUTPUTS.md](OUTPUTS.md) for the selected output mode. Before choosing a repository artifact destination, read [docs/CONTEXT.md](../../../docs/CONTEXT.md): current-system documents live directly under `docs/engineering/`, ADRs under `docs/engineering/adrs/`, and development, deployment, release, and recovery procedures under `docs/engineering/ops/`. Invoke skills by loading their instructions; do not assume a tool literally named `Skill` exists.
+Load `grilling` using the runtime's skill mechanism (or read `../grilling/SKILL.md`), then read [OUTPUTS.md](OUTPUTS.md) for the selected output mode. Before choosing a repository artifact destination, read [docs/CONTEXT.md](../../../docs/CONTEXT.md): current-system documents live directly under `docs/engineering/`, ADRs under `docs/engineering/adrs/`, engineering proposals under `docs/engineering/rfcs/`, and development, deployment, release, and recovery procedures under `docs/engineering/ops/`. `docs/superpowers/` is ignored local agent working material; retired reports are deleted, with history retained in Git. Invoke skills by loading their instructions; do not assume a tool literally named `Skill` exists.
 
 Use `grilling` for its decision tree, dependency-aware rounds, and separation of retrievable facts from user decisions. **This wrapper replaces its whole-frontier questioning, automatic recommendations, and whole-tree completion rules with the session contract below.** Facts are the agent's work; use available tools and delegate only when the runtime and task warrant it.
 

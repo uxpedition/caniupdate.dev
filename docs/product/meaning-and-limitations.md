@@ -56,4 +56,3 @@ The purpose and priority above were agreed during the product-documentation revi
 - [Current header and navigation](../../app/components/comparison/ComparisonDetails.vue).
 - [Result explanations and limitations](../../app/pages/[packageName]/comparisonView.ts).
 - [AI evidence packet](../../server/utils/packageBriefingEvidence.ts) and [briefing instructions](../../server/utils/packageBriefingPrompt.ts).
-- [Historical product proposal](../superpowers/specs/2026-09-16-package-upgrade-design.md), sections 1 and 2. This remains a proposal, not proof that all requested capabilities shipped.

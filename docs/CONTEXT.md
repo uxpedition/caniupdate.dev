@@ -9,6 +9,7 @@ Organize documentation by the reader's question. `engineering/` is the technical
 | `docs/engineering/<document-name>.md` | How does the implemented system work now?       | Update contracts, flows, ownership, and failure boundaries as implementation changes.                               |
 | `docs/engineering/adrs/<adr-name>.md` | What significant choice did we make, and why?   | Preserve its context, tradeoffs, and evidence; mark it superseded and link the replacement if the decision changes. |
 | `docs/engineering/ops/`               | How do I run, deploy, diagnose, and recover it? | Keep procedures and their prerequisites current; distinguish policies from implemented capabilities.                |
+| `docs/engineering/rfcs/`              | What engineering changes are proposed?          | Record review status, alternatives, risks, and open questions; acceptance does not establish implementation.        |
 
 An **ADR** is an Architecture Decision Record. The name describes the artifact, not a separate top-level architecture folder. Use descriptive Markdown filenames consistent with the existing documents.
 
@@ -32,12 +33,18 @@ These are engineering operations, not general business operations. Procedures be
 
 For example, the briefing document explains how the RPC result is validated and disposed today. Its ADR explains why native object RPC was chosen over JSON-text transport. Link these accounts instead of duplicating a full contract in the ADR.
 
-A decision is a choice under the knowledge and constraints available when it was made, not a permanent ruling. Distinguish source-backed current behavior, historical reports or recollections, present-day choices, and unknowns. Accepting a proposal does not prove it has been implemented.
+ADRs and RFCs preserve decision and proposal history. All other published documents are living guidance: update them as the product, implementation, and procedures change, rather than append superseded instructions or dated investigation logs. A decision is a choice under the knowledge and constraints available when it was made, not a permanent ruling. Within ADRs and RFCs, distinguish source-backed behavior, historical reports or recollections, present-day choices, and unknowns. Accepting a proposal does not prove it has been implemented.
 
-## Other material
+## Proposals and local agent work
 
-`docs/cloudflare-handoff.md`, `docs/optimization-plan.md`, and `docs/superpowers/` retain existing reports, designs, and plans. They can mix dated observations, current details, and superseded instructions; do not treat a plan or historical report as current implementation evidence. This organization does not move or endorse those documents wholesale.
+Engineering proposals for durable review belong in `docs/engineering/rfcs/`. RFC statuses are draft, discussion, accepted, rejected, and withdrawn. Acceptance records agreement, not shipment. Keep rejected and withdrawn RFCs with their explicit status rather than treating them as current-system guidance.
 
-Proposals belong in the relevant design format or `docs/rfcs/` when an RFC is needed. Retired material with unique useful context may belong in `docs/archive/`. Create those folders only when there is an actual artifact to put in them; neither is a second source of current guidance.
+The [Drizzle database-layer proposal](engineering/rfcs/0001-drizzle-database-layer.md) is in discussion and awaits review; it is not an implemented database contract.
+
+`docs/superpowers/` is ignored local working material for agent designs and execution plans. It is not part of the published documentation, and current documents must not depend on files there.
+
+## Retired material
+
+Migrate still-needed procedures and decision context into the appropriate current documents before deleting competing reports and runbooks. Keep necessary historical observations explicitly labelled in decision records. Git preserves retired reports and execution checklists; do not create archive copies.
 
 When moving a document, update incoming links and its own relative links. The [artifact-grilling output guidance](../.agents/skills/grill-with-artifacts/OUTPUTS.md) uses this organization.

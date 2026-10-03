@@ -4,13 +4,13 @@ pre-commit:
   parallel: true
   commands:
     lint:
-      run: nub run --node lint:check
+      run: nub run lint:check
     type-check:
-      run: nub run --node type-check
+      run: nub run type-check
     format:
-      run: nub run --node format:check
+      run: nub run format:check
 
 commit-msg:
   commands:
     commitlint:
-      run: nub run --node commitlint --edit {1}
+      run: nub run commitlint --edit {1}

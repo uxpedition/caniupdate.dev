@@ -1,6 +1,6 @@
 # Releases and recovery
 
-**Status: reviewed.** This document records the agreed maintainer release and recovery policy, with current capabilities and missing prerequisites identified explicitly. It does not authorize a release or replace historical evidence.
+**Status: reviewed.** This document records the agreed maintainer release and recovery policy, with current capabilities and missing prerequisites identified explicitly. It neither authorizes a release nor asserts a current remote environment state.
 
 See [development](development.md) for local checks and [deployment](deployment.md) for environment ownership, credentials, and deploy order.
 
@@ -51,7 +51,7 @@ Exercise the actual public surface, not only bundle compilation:
 | Rate limiting, once implemented | General rejection behavior; new-generation allowance rejects before acceptance; D1 hits and pending joins do not consume that allowance |
 | Capacity                        | Workload, duration, cache state, concurrency, generator locations, deployed CPU/limits and observed failures                            |
 
-For frontend/build configuration changes, exercise both Firefox and Chromium. The [entry-import-map decision](../adrs/firefox-entry-import-map.md) explains the retained startup workaround; the [handoff](../../cloudflare-handoff.md#completed-work) records the historical Firefox failure that API-only smoke missed.
+For frontend/build configuration changes, exercise both Firefox and Chromium. The [entry-import-map decision](../adrs/firefox-entry-import-map.md) records the historical Firefox failure, retained startup workaround, and limits of the observation.
 
 Routine contribution checks and default official preview configuration perform no real inference. The [local smoke](development.md#exercise-the-asynchronous-briefing-without-paid-inference) uses a fixture. A real-provider check is explicit, separately approved, and uses the intended environment's dedicated key. It can incur charges, including when the response or persistence fails.
 
@@ -132,9 +132,22 @@ Do not delete databases, object namespaces, or briefing rows as routine troubles
 
 ### Legacy snapshot import
 
-The existing exporter is for pre-D1 local snapshots, not a backup system for the current full deployment. It reads the source SQLite file without modifying it, validates rows, and produces SQL that preserves existing target hashes. Stop the application owning the old file and take a backup first. See the [current import procedure](../../../README.md#moving-existing-briefing-snapshots) and [`scripts/export-briefings.ts`](../../../scripts/export-briefings.ts).
+This procedure imports pre-D1 briefing snapshots into this checkout's **local** D1 database. It is not a backup or restore procedure for the current full deployment. Stop the application that owns the source SQLite file, preserve a backup of that file, and stop any local `dev` or `preview` process using the target `.wrangler/state` before continuing.
 
-Its D1 import does not restore Durable Object job state, Queue state, provider configuration, or access policies. Do not describe it as whole-system recovery.
+The default source is `.data/briefings.db`. If an older setup used a custom `AI_BRIEFING_CACHE_PATH`, pass that SQLite file as the source argument; the path is no longer a runtime setting. The [`scripts/export-briefings.ts` exporter](../../../scripts/export-briefings.ts) is an offline operational script that opens the source read-only, leaves it in place, and is not part of the application server or Worker graph. Run it with plain Node 26 from [`.node-version`](../../../.node-version), which provides the `node:sqlite` API:
+
+```bash
+cp .data/briefings.db .data/briefings.db.bak
+node scripts/export-briefings.ts .data/briefings.db .data/briefings-export.sql
+nub run db:migrate:local
+nub exec -- wrangler d1 execute BRIEFINGS_DB --local --config workers/briefing/wrangler.jsonc --persist-to .wrangler/state --file .data/briefings-export.sql
+```
+
+For a custom source, first make its backup, then use its path as the export command's source argument. The exporter requires a new output path and refuses to overwrite an existing file; choose an unused SQL output path before running it. It validates every source row before producing importable output. A malformed row, a key other than a 64-character lowercase SHA-256 hash, or a stored response that fails the current briefing schema stops export without a partial SQL file. Legacy snapshots whose sources were numbered by packet position fail that schema check and cannot be imported by this exporter.
+
+The generated SQL preserves each `response_json` string and `created_at` value verbatim, escaping SQL literals without decoding and re-encoding the JSON. Inserts use `ON CONFLICT (evidence_hash) DO NOTHING`, so an existing local D1 row with the same hash is preserved. The final `wrangler d1 execute` command targets only local `BRIEFINGS_DB`; this procedure does not apply the import remotely.
+
+This import does not restore Durable Object job state, Queue state, provider configuration, or access policies. Do not describe it as whole-system recovery.
 
 ## Preview lifetime and teardown
 
@@ -143,15 +156,3 @@ Keep one persistent official integration preview initially. Maintain a record of
 Contributor demos remain contributor-owned. Before teardown, identify the exact account, Worker names, Queue, D1 database, and associated Durable Object state. Decide whether any stored results must be retained and remove only resources belonging exclusively to that demo. Removing a public URL alone is not proof that all persistent resources or credentials were removed.
 
 Revoke unused demo/provider/access credentials and account for retained state and pending work. Never provide a blanket deletion command targeting names copied from the maintainer configuration. Teardown is destructive and requires explicit operator intent.
-
-## Documentation consolidation
-
-| Source material                                                        | Status                                                        | Proposed disposition                                                                          |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| README setup, development, checks, local persistence and built runtime | Current commands mixed with stale ownership/runtime wording   | Keep quick start; replace detailed guidance with links to these approved operations documents |
-| README remote preview instructions                                     | Existing maintainer-specific procedure and dated observations | Separate bootstrap/redeploy procedures from historical evidence                               |
-| `.env.example`                                                         | Current configuration ownership                               | Preserve as the setting reference; link instead of creating competing secret guidance         |
-| Cloudflare handoff                                                     | Dated evidence mixed with older deployment/roadmap material   | Preserve unique history with dates; do not use as an undated current-state ledger             |
-| Optimization plan                                                      | Implemented behavior mixed with remaining work                | Retain relevant readiness limitations without presenting planned protections as delivered     |
-
-These reviewed documents leave those sources unchanged pending documentation consolidation. The next documentation migration must update affected links and remove competing current guidance rather than leave two authoritative runbooks.

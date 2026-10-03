@@ -19,4 +19,3 @@ Reconsider the policy if freshness requirements or observed storage/workload cos
 
 - [Current cache keys, write rules, and storage behavior](../evidence.md#cache-keys-coalescing-expiry-and-storage-failures).
 - [Collector constants and cache policy](../../../server/utils/packageComparisonFacts.ts) and [SQLite cache](../../../workers/evidence/store.ts): source evidence for the implemented behavior.
-- [Optimization plan cache policy](../../optimization-plan.md#cache-policy): earlier design rationale, not a current deployment runbook.

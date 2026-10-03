@@ -30,3 +30,6 @@ logs
 
 # Local inspiration repository
 /npmx.dev/
+
+# Local agent designs and execution plans
+/docs/superpowers/

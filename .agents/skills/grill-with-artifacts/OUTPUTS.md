@@ -26,7 +26,7 @@ Draft from established material. Show the proposed destination and request revie
 | Specify actionable work | Issue | Repository issue template or in-chat issue draft |
 | Explain the current system | System documentation | Relevant document under `docs/` |
 | Work out an engineering solution | Design | Repository's design format |
-| Propose a change for discussion | RFC | `docs/rfcs/` |
+| Propose a change for discussion | RFC | `docs/engineering/rfcs/` |
 | Preserve a settled significant decision | ADR | `docs/engineering/adrs/` |
 
 Intent determines the mode, not request size. One session has one primary output. Related artifacts can be linked or parked as later work; do not automatically turn a PRD into an issue backlog, RFC, and ADR.
@@ -72,17 +72,17 @@ docs/
     <document-name>.md    How does the implemented system work now?
     adrs/<adr-name>.md    What significant decisions were made, and why?
     ops/                  How do I run, deploy, diagnose, and recover it?
-  rfcs/                   What changes are proposed for discussion?
-  archive/                What retired material still has unique useful context?
+    rfcs/                 What engineering changes are proposed for discussion?
+  superpowers/            Ignored local agent designs and execution plans
 ```
 
 Read [docs/CONTEXT.md](../../../docs/CONTEXT.md) before choosing destinations. In this repository, current-system explanations use `docs/engineering/<document-name>.md`; settled decision records use `docs/engineering/adrs/<adr-name>.md`; development, deployment, release, and recovery procedures use `docs/engineering/ops/<document-name>.md`. Engineering is the technical umbrella: explain current contracts in direct documents, preserve decision history in ADRs, and maintain executable procedures in ops, linked rather than duplicated. Use descriptive filenames consistent with the existing documents. Folder organization is explained in `docs/CONTEXT.md`, not a second documentation README.
 
 Inspect relevant existing docs and notes before drafting. Classify sections, not only files: a document can mix current instructions, old plans, and useful rationale. Present source, status (current, superseded, mixed, or unverified), and proposed destination for material affected by the session. Do not inventory the whole repository for a narrowly scoped topic.
 
-Document behaviour, rationale where supported, limitations, and open questions. Create only useful documents. README remains an introduction and quick start, not a duplicate architecture manual.
+Document behaviour, rationale where supported, limitations, and open questions. Create only useful documents. README remains an introduction and quick start, not a duplicate architecture manual. ADRs and RFCs preserve historical decisions and proposals; all other published documentation is living guidance updated as behavior and procedures change. Do not append obsolete commands or investigation logs to current-system or operations documents.
 
-Migrate only after replacement content is approved. Update affected links and remove competing current guidance. Preserve unique useful history with explicit status; Git already retains discarded execution checklists. Do not use the archive as a second current documentation system. Implementation problems discovered during documentation are findings, not permission to fix code.
+Migrate only after replacement content is approved. Update affected links and remove competing current guidance. Retain context needed to understand current decisions in the relevant documents, labelled as historical where appropriate; delete retired reports and redundant execution material. Git preserves their history; do not create an archive copy. `docs/superpowers/` is ignored local agent working material, not published documentation. Move proposals that need durable review into `docs/engineering/rfcs/`, not their execution checklists. Implementation problems discovered during documentation are findings, not permission to fix code.
 
 ## Design
 
@@ -90,11 +90,11 @@ Describe the selected engineering solution: problem, goals and non-goals, curren
 
 ## RFC
 
-Use `docs/rfcs/` for proposals. Follow existing numbering; otherwise use `0001-short-proposal-title.md` and continue the sequence.
+Use `docs/engineering/rfcs/` for proposals. Follow existing numbering; otherwise use `0001-short-proposal-title.md` and continue the sequence.
 
 Include status, motivation, goals and non-goals, proposed design, alternatives, trade-offs and risks, rollout or compatibility considerations where relevant, and open questions. Status progresses from draft to discussion and then accepted, rejected, or withdrawn through explicit decisions.
 
-Acceptance establishes agreement, not shipment. Keep rejected and withdrawn RFCs here with status rather than moving them to `archive/`. Link resulting ADRs or current system docs when relevant, without automatically creating them.
+Acceptance establishes agreement, not shipment. Keep rejected and withdrawn RFCs here with their status. Link resulting ADRs or current system docs when relevant, without automatically creating them.
 
 ## ADR
 

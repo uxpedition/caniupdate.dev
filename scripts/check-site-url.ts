@@ -14,7 +14,7 @@ const parsed = parseSiteOrigin(process.env['NUXT_PUBLIC_SITE_URL']);
 if (!parsed.ok) {
   process.stderr.write(
     `NUXT_PUBLIC_SITE_URL ${parsed.reason}. Set it to the public origin this build publishes, for example:\n` +
-      '  NUXT_PUBLIC_SITE_URL=https://caniupdate.dev nub run --node build\n',
+      '  NUXT_PUBLIC_SITE_URL=https://caniupdate.dev nub run build\n',
   );
   process.exitCode = 1;
 }

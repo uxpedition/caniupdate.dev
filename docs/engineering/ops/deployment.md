@@ -1,6 +1,6 @@
 # Deployment operations
 
-**Status: reviewed.** This document separates current deployment mechanics from the agreed OSS deployment model. It is not evidence that production or portable fork deployment has been implemented. The [README](../../../README.md) remains unchanged pending documentation consolidation.
+**Status: reviewed.** This document separates current deployment mechanics from the agreed OSS deployment model. It is not evidence that production or portable fork deployment has been implemented.
 
 See [development](development.md) for local commands and [releases and recovery](releases-and-recovery.md) for promotion, verification, and migrations.
 
@@ -107,7 +107,7 @@ The following commands are specific to the checked-in maintainer preview. They a
 Build without deployment credentials:
 
 ```bash
-NUXT_PUBLIC_SITE_URL=https://can-i-update-preview.caniupdate-dev.workers.dev nub run --node build
+NUXT_PUBLIC_SITE_URL=https://can-i-update-preview.caniupdate-dev.workers.dev nub run build
 ```
 
 Then load the authorized external credentials in a subshell and deploy. The credentials file must not be committed; the documented maintainer convention is directory mode `700` and file mode `600`.
@@ -120,10 +120,10 @@ Then load the authorized external credentials in a subshell and deploy. The cred
   set +a
   export CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false
   export CLOUDFLARE_INCLUDE_PROCESS_ENV=false
-  nub x --node wrangler d1 migrations apply BRIEFINGS_DB --remote --config workers/briefing/wrangler.jsonc --env preview &&
-    nub x --node wrangler deploy --config workers/evidence/wrangler.jsonc --env preview &&
-    nub x --node wrangler deploy --config workers/briefing/wrangler.jsonc --env preview &&
-    nub x --node wrangler deploy --config .output/server/wrangler.json --env preview
+  nub x wrangler d1 migrations apply BRIEFINGS_DB --remote --config workers/briefing/wrangler.jsonc --env preview &&
+    nub x wrangler deploy --config workers/evidence/wrangler.jsonc --env preview &&
+    nub x wrangler deploy --config workers/briefing/wrangler.jsonc --env preview &&
+    nub x wrangler deploy --config .output/server/wrangler.json --env preview
 )
 ```
 
@@ -135,7 +135,7 @@ The agreed policy is a restricted environment for a growing maintainer team, not
 
 Cover both the frontend and briefing socket hostnames. Cloudflare documents that Worker-level Access does not support WebSockets; use hostname-based Access for the socket. A multi-domain application can cover both concrete hostnames, but verify the actual browser login and cross-host socket flow. Origin allowlisting does not replace Access. See [Workers Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) and [Access cookies](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/).
 
-The existing handoff reports authenticated frontend checks. It does not establish current protection of both hosts. Fresh access checks are required before treating the environment as restricted.
+An authenticated frontend-only check does not establish protection of both browser-facing hosts. Fresh access checks are required on both the frontend and socket host before treating the environment as restricted.
 
 ## What remains necessary for production?
 
@@ -146,6 +146,10 @@ Build-time and deployed `NUXT_PUBLIC_SITE_URL` must both be `https://caniupdate.
 Cloudflare documents Free support for Workers, SQLite Durable Objects, D1, and Queues. Availability is not proof of this application's sustained suitability. Ordinary Worker CPU and separate request/storage/Queue quotas need representative deployed checks. Queues Free currently includes 10,000 operations/day and 24-hour retention; a successful small message normally uses three operations. Check current [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [DO pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/), [D1 limits](https://developers.cloudflare.com/d1/platform/limits/), and [Queue pricing](https://developers.cloudflare.com/queues/platform/pricing/) before release.
 
 Paid is a compatible target if observed requirements exceed Free. A successful smoke response or client latency sample is not Cloudflare CPU accounting.
+
+### Remaining performance work
+
+Separate from platform quota verification, the open performance work is to reduce comparison-page SSR work and measure its CPU separately; assess whether per-file SHA-256 values are still needed before removing that inspection cost, while preserving whole-archive integrity verification; and investigate filtering redundant Effect HTTP response-header trace attributes without dropping business headers, spans, or propagation. These are investigation targets, not established causes or quantified savings. Representative deployed checks still need to include cold and warm work, SSR CPU, concurrency/memory pressure, and relevant quotas.
 
 Cloudflare branch Previews are not a drop-in isolated three-Worker deployment: service bindings target production deployments and branch Previews cannot consume Queues. Use separately deployed resources for this topology unless deliberately redesigning it. See [Preview resource limitations](https://developers.cloudflare.com/workers/previews/resources/).
 
@@ -159,9 +163,3 @@ Cloudflare branch Previews are not a drop-in isolated three-Worker deployment: s
 - Footer metadata and release versioning described in [release identity](releases-and-recovery.md#release-identity).
 
 These are release requirements, not claims about current protections. This document adds none of them to runtime code.
-
-## What deployment evidence already exists?
-
-The [Cloudflare handoff](../../cloudflare-handoff.md#latest-preview-redeployment-and-smoke-2026-10-01) records the latest preview redeployment on 2026-10-01, including three Worker version IDs, API/browser smoke, and stored briefing reuse. An earlier entry records a one-location warm-cache load run, not cold-work or production capacity.
-
-Those are dated historical observations. Preparation of this document did not include inspection of current remote versions, secrets, Access policies, dashboard log ingestion, or billing. Future releases must produce their own evidence rather than copying historical status into an evergreen runbook.

@@ -4,9 +4,9 @@
 
 ## Why
 
-The handoff records a Firefox startup failure: server-rendered HTML was visible, but the application did not hydrate. Search and comparison remained non-interactive, with an unresolved `#entry`, `NUXT_E1005`, and no API requests.
+An import map translates a module alias such as `#entry` into a file URL. The historical investigation attributed the Firefox failure to HTTP module-preload headers causing Firefox to encounter that alias before the entry import map was registered. Disabling this optimization switched startup to direct chunk imports.
 
-An import map translates a module alias such as `#entry` into a file URL. The recorded explanation is that HTTP module-preload headers caused Firefox to encounter that alias before the entry import map was registered. Disabling this optimization switched startup to direct chunk imports; the handoff records that interactions then worked.
+**Historical observation (reported 2026-09-26):** A clean Firefox session showed server-rendered HTML but did not hydrate; search and comparison remained non-interactive, the console reported an unresolved `#entry` / `NUXT_E1005`, and no API requests were made. The report says direct chunk imports restored interaction. Later historical checks reported Firefox and Chromium search/comparison flows working locally and on a remote preview. These are dated observations, not a fresh reproduction or a guarantee for future framework/browser versions.
 
 The owner accepted retaining this compatibility fix. A visible server-rendered page or a successful API check is not sufficient proof of a functioning application.
 
@@ -21,5 +21,4 @@ Reconsider after relevant framework/browser changes, using actual Firefox and Ch
 ## Artifacts
 
 - [Nuxt configuration](../../../nuxt.config.ts): source evidence for the current flags.
-- [Recorded Firefox failure and fix](../../cloudflare-handoff.md#completed-work): historical reported observations, not a fresh reproduction in this documentation pass.
 - [Release verification policy](../ops/releases-and-recovery.md#verification-and-release-evidence): current browser-check requirements.
