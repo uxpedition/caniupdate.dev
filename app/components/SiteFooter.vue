@@ -13,8 +13,8 @@
         class="flex flex-wrap gap-x-6 gap-y-2 [&_a]:underline-offset-4 [&_a:hover]:underline [&_a:focus-visible]:outline-2 [&_a:focus-visible]:outline-offset-4 [&_a:focus-visible]:outline-ring"
       >
         <a href="/privacy">Privacy</a>
-        <a href="/terms">Terms</a>
-        <a href="mailto:hello@adrianani.com">Contact</a>
+        <a href="/about">About</a>
+        <a href="https://gitlab.com/uxpedition/can-i-npm-update/-/issues">Issues</a>
       </nav>
     </div>
   </footer>
