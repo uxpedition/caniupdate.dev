@@ -9,10 +9,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
 import { readStoredBriefing } from '../../../server/comparison/briefing/store';
+import { installBriefingSchema } from '../../../test/helpers/briefingDatabase.harness';
 import { MODEL, startProviderFixture, type ProviderFixture } from '../test/provider.stub';
 import {
   QUIET_MS,
-  installBriefingSchema,
   openStateDir,
   packetFor,
   removeStateDirs,
@@ -80,7 +80,7 @@ describe('briefing job Worker', () => {
       await parked.dispose();
     }
 
-    const resumed = await startRuntime({ stateDir });
+    const resumed = await startRuntime({ stateDir, installSchema: false });
     try {
       // The redelivery comes from the 30-second recovery alarm, so this window spans that alarm plus the generation.
       const stored = await waitForStoredBriefing(resumed.database, hash, 90_000);

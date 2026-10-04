@@ -1,33 +1,32 @@
 # RFC 0001: Drizzle database layer
 
-**Status:** DISCUSSION — awaiting explicit user review  
+**Status:** APPROVED — implementation verified; local cutover pending; preview cutover blocked on maintenance/quiescence  
+**ADR:** [Drizzle database layer](../adrs/drizzle-database-layer.md)  
 **Date:** 2026-10-03  
-**Decision:** None. This RFC does not approve implementation, dependency changes, or database operations.
-
-An earlier discussion was recorded as approving a design. That is historical context, not a decision this RFC treats as accepted. This record is deliberately open because the old proposal's assumptions may no longer match the repository or operational policy.
+**Decision (2026-10-04):** The user approved the proposed Drizzle database-layer design after reviewing the feasibility research and explicitly approved restarting migration history and resetting the local and preview D1 databases for the cutover. The user confirmed that the application is not yet deployed to production. This is a scoped exception to the no-rewrite migration policy, not a general permission to reset other databases. Approval does not mean implementation or full compatibility verification is complete. No reset has been executed as part of recording this decision; rollout remains subject to the implementation acceptance checks below.
 
 ## Summary
 
 Adopt Drizzle as the typed query layer for the application's SQLite-backed data paths: Cloudflare D1 briefing storage, synchronous Durable Object (DO) evidence storage, and SQL construction in the offline briefing exporter. Keep Wrangler as the D1 migration applier. Declare table shapes in TypeScript, generate D1 migration SQL from the briefing schema, and preserve the current query, transaction, validation, and data-compatibility behavior.
 
-The main unresolved design risk is migration history. The existing D1 migration is tracked in `migrations/0001_package_briefings.sql`, and the current operations policy says not to rewrite applied migration history. Therefore, this RFC does **not** carry forward the earlier proposal to reset migration history or drop and recreate a database table. A non-destructive Drizzle baseline strategy must be demonstrated before implementation proceeds.
+Migration history will restart at the user-approved cutover: replace the current D1 migration history with generated initial migrations and reset both local and preview D1 databases before applying them with Wrangler. Preserving the existing `0001_package_briefings.sql` history or proving a non-destructive baseline is no longer an adoption gate. Exact reset targets, data retention/export requirements, and the operator procedure must be recorded before execution; this decision does not extend to Durable Object state or any production database.
 
-## Current source baseline
+## Pre-adoption source baseline
 
-The following describes checked-in source, not the proposed end state:
+This is the decision's historical baseline; source links now point to the migrated implementations. Current operation and the scoped reset procedure are documented in [development](../ops/development.md#how-do-i-change-or-apply-the-database-schema) and [releases/recovery](../ops/releases-and-recovery.md#one-time-drizzle-adoption-cutover).
 
-- [`server/comparison/briefing/store.ts`](../../../server/comparison/briefing/store.ts) issues raw D1 SQL. Reads use `first()`; writes use one D1 `batch()` containing an insert with `ON CONFLICT DO NOTHING` and a select. The select returns the first stored success, preserving first-writer-wins behavior.
-- [`workers/evidence/store.ts`](../../../workers/evidence/store.ts) uses synchronous SQL through `transactionSync`. It creates its own evidence tables and partial expiry index, stores chunked JSON, and validates metadata, chunk order, byte length, and JSON when reading.
-- [`scripts/export-briefings.ts`](../../../scripts/export-briefings.ts) scans with `node:sqlite` `DatabaseSync.prepare(...).iterate()`. It validates rows and streams escaped SQL output while preserving stored response JSON bytes.
-- [`migrations/0001_package_briefings.sql`](../../../migrations/0001_package_briefings.sql) is the current briefing-table migration. [`workers/briefing/wrangler.jsonc`](../../../workers/briefing/wrangler.jsonc) points both the local and preview D1 bindings at `../../migrations`. The reviewed [release and recovery policy](../ops/releases-and-recovery.md#database-and-stored-data-changes) requires new numbered migrations and says not to rewrite applied history.
-- [`package.json`](../../../package.json) currently declares Effect `4.0.0`, h3 `^2.0.1-rc.32`, and no direct `drizzle-orm` or `drizzle-kit` dependency. The old proposal's Effect `4.0.0-rc.115` and Drizzle `1.0.0-rc.4` pins are historical investigation values, not current dependencies or approved versions. Its API/type probes against Drizzle rc.4 must be repeated against whichever versions are selected.
-- Existing validation uses Effect Schema from shared definition modules such as [`shared/briefing.defs.ts`](../../../shared/briefing.defs.ts). The repository's current Oxlint config bans type assertions and explicit `any`; any adopted driver/test design must work within those rules.
+- The [briefing store](../../../server/comparison/briefing/store.ts) previously issued raw D1 SQL using `first()` and one insert/select `batch()`. Its Drizzle replacement retains that batch and first-writer-wins contract.
+- The [evidence store](../../../workers/evidence/store.ts) previously built synchronous SQL directly through `transactionSync`. Its typed full-storage client retains synchronous transactions, constructor DDL, chunked JSON and read validation.
+- The [offline exporter](../../../scripts/export-briefings.ts) still executes `DatabaseSync.prepare(...).iterate()`, validates each row and streams escaped SQL preserving original JSON/timestamps; Drizzle replaces only SELECT construction.
+- The old initial history was `0001_package_briefings.sql`. The [briefing declaration](../../../shared/db/briefingSchema.ts) now generates [SQL/snapshot history](../../../drizzle/) and [flat Wrangler mirrors](../../../migrations/). Both [D1 bindings](../../../workers/briefing/wrangler.jsonc) retain `../../migrations`; subsequent applied history remains append-only.
+- The pre-adoption [manifest](../../../package.json) had Effect `4.0.0`, h3 `^2.0.1-rc.32`, and no direct Drizzle dependency. ORM and Kit are now exact-pinned to the approved `1.0.0-rc.5-ab785fc`, without upgrading Effect or the baseline dependency versions. Earlier Effect `4.0.0-rc.115` and Drizzle `1.0.0-rc.4` proposal values remain superseded, not adopted pins.
+- Validation continues to use independent Effect Schema definitions such as [briefing.defs.ts](../../../shared/briefing.defs.ts). Driver compatibility uses narrowly imported SDK type aliases instead of blanket Cloudflare globals; implementation remains subject to the assertion/explicit-`any` rules.
 
-The earlier proposal also assumed a preview-only deployment with no production database and treated restarting migration history as acceptable. Those are not established by the package manifest or Wrangler config. The current operations policy is the safer default until deployment state and any exception are explicitly reviewed.
+The user confirmed on 2026-10-04 that the application is not yet deployed to production and explicitly approved local and preview database resets and restarting migration history. This user decision supplies the deployment context and scoped policy exception; the package manifest and Wrangler config alone do not establish it.
 
 ## Motivation and goals
 
-Raw SQL is currently spread across three distinct runtime environments. A typed schema and query layer could reduce mismatches between column names, query projections, and application row types while keeping the existing Cloudflare and Node execution models intact.
+Before adoption, handwritten SQL was spread across three distinct runtime environments. A typed schema and query layer was selected to reduce mismatches between column names, query projections, and application row types while keeping the existing Cloudflare and Node execution models intact.
 
 Goals:
 
@@ -46,7 +45,7 @@ Goals:
 - Moving DO table creation to Wrangler migrations. The DO storage has a separate lifecycle and no equivalent Wrangler D1 migration path in this design.
 - Using Drizzle runtime migrators, `push`, `pull`, `studio`, or a Drizzle command to apply changes to a database.
 - Removing SQL where it intentionally exercises the low-level failure surface: test fault injection/fixture setup and the DO constructor's table/index DDL.
-- Resetting a D1 database or deleting applied migration records as an assumed prerequisite.
+- Resetting databases outside the user-approved local and preview D1 targets, or resetting Durable Object state.
 
 ## Proposed design
 
@@ -83,9 +82,9 @@ The earlier design proposed `drizzle.config.ts` with the briefing schema and a `
 
 If the selected drizzle-kit version still uses per-migration folders, a small sync step could mirror each generated `migration.sql` to a flat, timestamp-prefixed migration file for Wrangler. A drift check should compare generated and mirrored files and reject unrecognized stale files. Both generator output and the Wrangler-applied SQL would be committed. Test harnesses would apply committed migrations in sorted filename order and split on Drizzle's statement-breakpoint marker where present.
 
-This adapter/layout is a proposal, not a verified current drizzle-kit contract. Its output format, filename ordering, breakpoint behavior, baseline support, and compatibility with the installed Wrangler version need a focused compatibility check before implementation. The sync guard must account for the immutable existing `0001_package_briefings.sql`; it must never delete or silently rewrite that historical migration.
+The selected toolchain's output format, filename ordering, breakpoint behavior, and compatibility with Wrangler must be verified before implementation. At the approved cutover, replace the old `0001_package_briefings.sql` migration with the new generated initial history and mirror it for Wrangler. Reset the local and preview D1 databases before applying that history: do not apply the fresh initial `CREATE TABLE` to an existing table and treat the resulting collision as a baseline requirement. The sync guard should enforce the new generated history after cutover; ordinary future migrations remain append-only under the release policy.
 
-Most importantly, prove how drizzle-kit can learn the existing `package_briefings` schema without emitting a second `CREATE TABLE` migration for a database that already applied `0001`. Prefer a supported baseline/snapshot mechanism that preserves `0001` and generates only future changes. If the chosen toolchain cannot do that safely, stop and revise the migration design instead of resetting history by default.
+Rehearse the reset and fresh initialization locally before the preview operation. Record the exact preview database identity and resolve data retention/export requirements before resetting it. A production database reset is outside this decision.
 
 ### Allowed raw SQL
 
@@ -101,7 +100,7 @@ All ordinary production selects, inserts, updates/deletes, ordering, and predica
 
 ### Keep the current raw SQL
 
-This avoids dependency, bundle, and generated-migration complexity and is already explicit about the SQL being executed. It leaves the schema and projections manually coordinated across runtime code and migrations. This remains a reasonable choice if the baseline problem or bundle cost outweighs the type-safety benefit.
+This avoids dependency, bundle, and generated-migration complexity and is already explicit about the SQL being executed. It leaves the schema and projections manually coordinated across runtime code and migrations. This remains a reasonable choice if tooling or bundle cost outweighs the type-safety benefit.
 
 ### Kysely or a lightweight query builder
 
@@ -109,14 +108,29 @@ A typed SQL builder could improve query typing without adopting an ORM's schema 
 
 ### Drizzle for queries but hand-maintained SQL migrations
 
-This would avoid a generated-folder-to-Wrangler adapter and ease preservation of the current migration file, but the TypeScript schema and manually authored DDL could drift. It is a viable fallback if a safe Drizzle baseline is unavailable; it weakens the schema-generation goal and would need explicit review.
+This would avoid a generated-folder-to-Wrangler adapter, but the TypeScript schema and manually authored DDL could drift. It remains an alternative if generation tooling costs outweigh its benefits; it weakens the schema-generation goal and would need explicit review. The approved reset removes lack of a safe baseline as a reason to require this fallback.
+
+## Feasibility research (2026-10-04)
+
+The throwaway spike demonstrated workable query paths, not full application compatibility. Its isolated worktree was removed afterward; no application dependencies or remote databases were changed.
+
+- Stable `drizzle-orm` `0.45.3` lacked the proposed `node-sqlite` entrypoint. Runtime probes used installed `drizzle-orm` and `drizzle-kit` `1.0.0-rc.5-ab785fc`. The `rc` alias lookup reported rc.4, but the package manager's caret resolution installed this later prerelease. Exact installed versions must be pinned and verified during implementation rather than relying on aliases or ranges.
+- The RC generated a text primary key without explicit `NOT NULL` from the column-level declaration, even with `.notNull()`. A table-level primary-key declaration generated matching `PRAGMA table_info` metadata for the briefing table. This is an implementation requirement to recheck against the chosen versions.
+- Two competing local workerd D1 requests using Drizzle's insert-and-select batch returned the same stored winner. This does not establish all failure/error-tag behavior.
+- A local workerd Durable Object successfully executed synchronous inserts inside `transactionSync` and read them through Drizzle. Atomic replacement, rollback on failure, expiry cleanup, and corruption checks were not exercised by this probe.
+- The Node SQLite adapter generated a zero-parameter ordered select executable through `DatabaseSync.iterate()`, preserving stored JSON in a one-row fixture. Full exporter behavior and large-data streaming remain acceptance checks.
+- A narrow D1/DO adapter type probe passed with `skipLibCheck`, consistent with the briefing worker's current setting. Full application type-checking and cast-free test helpers remain unverified; standalone declaration checking encountered conflicts, including a missing `@miniflare/d1` reference.
+- Minimal D1 worker dry-run sizes were 198.77 KiB / 38.27 KiB gzip with Drizzle and 0.59 KiB / 0.35 KiB gzip for the raw-SQL control. This is an indicative dependency cost, not a real Worker/Nuxt before-and-after measurement or browser-boundary verification.
+- A snapshot-and-delta baseline was feasible with the RC and a generated column addition applied through local Wrangler preserved a fixture row. The approved local/preview reset means this baseline is not required for adoption.
+
+No architectural blocker was demonstrated. The unchecked behavior and actual application bundle impact must be verified before rollout; the spike alone is not rollout approval.
 
 ## Tradeoffs and risks
 
 | Risk or tradeoff                                                                | Mitigation / evidence required                                                                                                                                                     |
 | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Drizzle API or migration format changes; old probe results are version-specific | Select versions only after review, then re-run strict type checks, SQL generation probes, and runtime tests against those exact versions. Do not pin the obsolete rc.4 by inertia. |
-| Existing D1 history conflicts with generator bootstrap                          | Preserve `0001` and follow the no-rewrite migration policy. Demonstrate a non-destructive baseline; otherwise revise before touching databases.                                    |
+| Existing D1 history conflicts with generator bootstrap                          | Use the user-approved local/preview reset at cutover; verify target identities and fresh initialization. Do not extend this exception to future migrations or production.          |
 | Generated DDL changes primary-key nullability or defaults                       | Compare `sqlite_master`, `PRAGMA table_info`, and indexes between existing and generated schemas using the selected version.                                                       |
 | D1/DO transaction behavior differs through a new driver                         | Exercise real Miniflare D1 and workerd DO paths, including competing D1 writers, DO cleanup, and atomic chunk replacement. Keep API behavior and error-tag tests.                  |
 | Typed evidence schema can diverge from constructor DDL                          | Keep exact names/types/keys aligned and test the constructor-created schema through the existing workerd/unit coverage. The asymmetry is intentional and should be documented.     |
@@ -127,29 +141,30 @@ This would avoid a generated-folder-to-Wrangler adapter and ease preservation of
 
 ## Migration and rollout proposal
 
-1. **Resolve review gates first.** Choose Drizzle/drizzle-kit versions, establish current database/deployment state, and prove a baseline path compatible with the immutable `0001` migration. No production or preview operation is included in this RFC.
+1. **Select and exact-pin the implementation versions.** Adoption of the proposed design is approved. Confirm the installed Drizzle/drizzle-kit pair and repeat compatibility checks for that pair. The user has confirmed no production deployment and approved local/preview database resets; a non-destructive migration baseline is not required.
 2. **Characterize the existing schema and behavior.** Record the current D1 table/index metadata and exercise the existing D1 batch, DO synchronous transactions, error wrappers, and exporter output as the baseline. Any generated DDL must be introspection-equivalent before it is considered.
-3. **Add schema and generation tooling without changing runtime queries.** Establish schema modules, configuration, and the Wrangler migration mirror only after the baseline strategy works. Preserve the current migration file and state.
+3. **Add schema and generation tooling.** Establish schema modules, configuration, generated initial migrations, and the Wrangler migration mirror. Replace the old migration history as part of the approved cutover and prove fresh initialization in a disposable local database.
 4. **Convert one boundary at a time.** Migrate D1 reads/writes first, then DO cache queries/transactions, then exporter query construction. Keep each public API and stored format unchanged; use real runtime suites for each boundary.
 5. **Update documentation and measure.** Document the generation workflow and migration ownership in the current development/release documentation; run the repository's relevant full verification and smoke paths once integrated; report bundle changes rather than assuming neutrality.
-6. **Treat any remote D1 migration as a separate operations decision.** Follow the current release/recovery policy, identify exact target state, rehearse backup/restore and compatibility, and obtain explicit approval before applying. Do not drop tables, clear `d1_migrations`, re-import rows, or claim a history reset is harmless as part of this RFC.
+6. **Execute the scoped local and preview reset.** Identify exact target databases, resolve data retention/export requirements, rehearse the operator procedure locally, then reset local and preview D1 state and apply the fresh migrations through Wrangler. Verify schema, migration records, and store behavior afterward. Do not reset Durable Object state or target production. Record actual execution separately from this approval; future applied migration history remains append-only.
 
-The old reset plan relied on an assumption that preview data/history could be discarded or rebuilt and suggested exporting/re-importing before dropping the table and clearing migration records. That is retained only as an option requiring a specific policy exception and verified operator procedure; it is not the recommended rollout. The current release policy emphasizes preserving applied history and stored results.
+The local/preview reset is now the user-approved migration strategy, not an assumption inferred by an agent. The exception is limited to this pre-production cutover; the general release/recovery policy remains in force outside that scope.
 
-## Review questions
+## Implementation acceptance checks
 
-1. Is adopting Drizzle still desirable, given the new dependency, bundle, and migration-bridge costs, or should the current raw SQL remain?
-2. Which currently supported `drizzle-orm` and `drizzle-kit` versions should be evaluated, and should they be exact-pinned together? The old `1.0.0-rc.4` values are not a recommendation.
-3. What is the acceptable way to seed Drizzle's migration state from the existing `0001_package_briefings.sql` without reapplying its DDL or rewriting history? If no supported path exists, is hand-maintained SQL migration history an acceptable compromise?
-4. What is the verified current state of preview/other D1 databases and their stored rows? Is any exception to the reviewed no-rewrite/no-discard policy under consideration? This RFC assumes none.
-5. Is keeping evidence-table DDL in the DO constructor while using a typed Drizzle schema acceptable, or should schema management be revisited separately?
-6. Are the proposed raw-SQL exceptions (DO setup DDL, test fault injection, exporter execution) the right boundary?
-7. What bundle-size increase, if any, is acceptable for the Worker and Nuxt deployments?
-8. Should Effect Schema remain independent of Drizzle as proposed, or should a typed adapter be evaluated after checking current-version compatibility?
+The approved design keeps DO constructor DDL, the stated raw-SQL exceptions, and Effect Schema independent of Drizzle. These are decisions, not open adoption questions.
+
+1. Exact-pin and verify the installed ORM/Kit versions; demonstrate the three required runtime adapters and full application type compatibility without introducing casts or explicit `any`.
+2. Prove generated schema equivalence, including explicit primary-key nullability, defaults, and indexes; verify migration mirror ordering and statement splitting.
+3. Exercise real D1 competing writers, misses, and failures, and preserve public error tags and causes.
+4. Exercise real DO atomic chunk replacement, rollback on failure, expiry cleanup, ordering, and application corruption checks; retain synchronous operations and transaction boundaries.
+5. Verify the actual exporter preserves stored JSON and escaped output while retaining streaming iteration and zero query bindings.
+6. Measure real Worker and Nuxt before-and-after bundle sizes and verify database schema/driver imports do not enter browser bundles. If measured impact materially changes the adoption tradeoff, bring that evidence back for review before rollout.
+7. Record the local/preview reset procedure, exact targets, and stored-data retention/export requirements; rehearse fresh initialization locally and verify migration records and store behavior after reset. Production and DO state are outside the reset approval.
 
 ## References
 
-- Current code and configuration: [`package.json`](../../../package.json), [`workers/briefing/wrangler.jsonc`](../../../workers/briefing/wrangler.jsonc), [`migrations/0001_package_briefings.sql`](../../../migrations/0001_package_briefings.sql), [`server/comparison/briefing/store.ts`](../../../server/comparison/briefing/store.ts), [`workers/evidence/store.ts`](../../../workers/evidence/store.ts), [`scripts/export-briefings.ts`](../../../scripts/export-briefings.ts).
+- Current code and configuration: [`package.json`](../../../package.json), [`workers/briefing/wrangler.jsonc`](../../../workers/briefing/wrangler.jsonc), [briefing schema](../../../shared/db/briefingSchema.ts), [generated migrations](../../../migrations/), [`server/comparison/briefing/store.ts`](../../../server/comparison/briefing/store.ts), [`workers/evidence/store.ts`](../../../workers/evidence/store.ts), [`scripts/export-briefings.ts`](../../../scripts/export-briefings.ts).
 - Project migration policy: [Database and stored-data changes](../ops/releases-and-recovery.md#database-and-stored-data-changes).
 - Drizzle documentation: [D1 batch API](https://orm.drizzle.team/docs/sqlite/batch-api), [SQLite migrations](https://orm.drizzle.team/docs/sqlite/drizzle-kit-generate), [Drizzle config](https://orm.drizzle.team/docs/drizzle-config-file), [v0-to-v1 changes](https://orm.drizzle.team/docs/v0-v1-changes).
 - Cloudflare documentation: [Durable Object SQLite transactions](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/), [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/).

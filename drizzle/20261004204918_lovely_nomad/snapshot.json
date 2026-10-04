@@ -1,0 +1,50 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "34874ec6-1c01-40f8-b17c-69e2d841deaa",
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
+  "ddl": [
+    {
+      "name": "package_briefings",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "evidence_hash",
+      "entityType": "columns",
+      "table": "package_briefings"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "response_json",
+      "entityType": "columns",
+      "table": "package_briefings"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "package_briefings"
+    },
+    {
+      "columns": ["evidence_hash"],
+      "nameExplicit": false,
+      "name": "package_briefings_pk",
+      "entityType": "pks",
+      "table": "package_briefings"
+    }
+  ],
+  "renames": []
+}

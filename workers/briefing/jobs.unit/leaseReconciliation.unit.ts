@@ -54,7 +54,7 @@ describe('briefing job Worker', () => {
       sources: packet.sources.map((source, position) => ({ ...source, number: position })),
     };
 
-    const resumed = await startRuntime({ stateDir });
+    const resumed = await startRuntime({ stateDir, installSchema: false });
     try {
       // The crashed generation never committed, so the row can only come from this write.
       expect(await readStoredBriefing(resumed.database, hash)).toBeUndefined();

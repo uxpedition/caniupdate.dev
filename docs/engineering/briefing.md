@@ -55,7 +55,7 @@ A matching queued delivery reads D1 before any provider call. A D1 hit commits/r
 
 ## Result storage and generation failures
 
-D1 is the authority for available briefing content. The [store](../../server/comparison/briefing/store.ts) validates an available response, batches an `INSERT ... ON CONFLICT DO NOTHING` with a select, and returns the selected row. Thus concurrent writers for one hash converge on the first stored validated success rather than overwrite it. A write is not success until the row can be read back. The [schema](../../migrations/0001_package_briefings.sql) keys rows by evidence hash. The Durable Object keeps terminal state/revision, not a second canonical copy of the briefing; available snapshots read D1 again.
+D1 is the authority for available briefing content. The [store](../../server/comparison/briefing/store.ts) validates an available response, batches an `INSERT ... ON CONFLICT DO NOTHING` with a select, and returns the selected row. Thus concurrent writers for one hash converge on the first stored validated success rather than overwrite it. A write is not success until the row can be read back. The [typed schema](../../shared/db/briefingSchema.ts) keys rows by evidence hash; [generated migrations](../../migrations/) preserve text JSON/timestamps, explicit nullability and the SQLite timestamp default. Drizzle supplies the typed D1 insert/select batch; Effect Schema validation and tagged read/write/corruption failures remain independent. The Durable Object keeps terminal state/revision, not a second canonical copy of the briefing; available snapshots read D1 again.
 
 These ordering choices keep distinct failures distinct:
 

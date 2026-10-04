@@ -1,10 +1,13 @@
 import type { D1Database } from '@cloudflare/workers-types';
+import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/d1';
 import { Data, Schema } from 'effect';
 
 import { AvailablePackageBriefingSchema, type AvailablePackageBriefing } from '../../../shared/briefing.defs';
+import { packageBriefings } from '../../../shared/db/briefingSchema';
+import type {} from '../../../shared/db/d1.types';
 
 const decodeBriefing = Schema.decodeUnknownSync(AvailablePackageBriefingSchema);
-const SELECT_BRIEFING = 'SELECT response_json FROM package_briefings WHERE evidence_hash = ?';
 
 export const BriefingStoreError = Data.TaggedError('BriefingStoreError')<{
   readonly operation: 'read' | 'write';
@@ -38,21 +41,23 @@ function decodeRow(value: unknown): AvailablePackageBriefing {
   }
 }
 
-/**
- * Read the snapshot stored for an evidence hash. The table is installed by `migrations/0001_package_briefings.sql`, so a
- * missing schema or binding surfaces as a rejection rather than an empty cache.
- */
 export async function readStoredBriefing(
   database: D1Database,
   evidenceHash: string,
 ): Promise<AvailablePackageBriefing | undefined> {
-  let row: { response_json: unknown } | null;
+  let row: { responseJson: string } | undefined;
   try {
-    row = await database.prepare(SELECT_BRIEFING).bind(evidenceHash).first<{ response_json: unknown }>();
+    const db = drizzle(database);
+    const rows = await db
+      .select({ responseJson: packageBriefings.responseJson })
+      .from(packageBriefings)
+      .where(eq(packageBriefings.evidenceHash, evidenceHash))
+      .limit(1);
+    row = rows[0];
   } catch (cause) {
     throw new BriefingStoreError({ operation: 'read', cause });
   }
-  return row === null ? undefined : decodeRow(row.response_json);
+  return row === undefined ? undefined : decodeRow(row.responseJson);
 }
 
 /** Keep the first validated success for a snapshot; the insert/select batch returns that winner to every caller. */
@@ -70,15 +75,19 @@ export async function saveBriefing(
 
   let responseJson: unknown;
   try {
-    const [, selected] = await database.batch<{ response_json: unknown }>([
-      database
-        .prepare(
-          'INSERT INTO package_briefings (evidence_hash, response_json) VALUES (?, ?) ON CONFLICT (evidence_hash) DO NOTHING',
-        )
-        .bind(evidenceHash, JSON.stringify(validated)),
-      database.prepare(SELECT_BRIEFING).bind(evidenceHash),
+    const db = drizzle(database);
+    const [, selected] = await db.batch([
+      db
+        .insert(packageBriefings)
+        .values({ evidenceHash, responseJson: JSON.stringify(validated) })
+        .onConflictDoNothing({ target: packageBriefings.evidenceHash }),
+      db
+        .select({ responseJson: packageBriefings.responseJson })
+        .from(packageBriefings)
+        .where(eq(packageBriefings.evidenceHash, evidenceHash))
+        .limit(1),
     ]);
-    responseJson = selected?.results[0]?.response_json;
+    responseJson = selected[0]?.responseJson;
   } catch (cause) {
     throw new BriefingStoreError({ operation: 'write', cause });
   }

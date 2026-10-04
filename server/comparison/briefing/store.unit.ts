@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { installBriefingSchema, openBriefingD1, type BriefingD1 } from '../../../test/helpers/briefingDatabase.harness';
-import { readStoredBriefing, saveBriefing } from './store';
+import { BriefingStoreError, BriefingStoreValidationError, readStoredBriefing, saveBriefing } from './store';
 
 const briefing = {
   status: 'available' as const,
@@ -49,6 +49,39 @@ describe('package briefing store', () => {
     expect(results[0]).toEqual(results[1]);
     expect([briefing, alternative]).toContainEqual(results[0]);
     expect(await readStoredBriefing(database(), 'same-evidence')).toEqual(results[0]);
+  });
+
+  it('rejects runtime-invalid briefings before writing a row', async () => {
+    const invalid = {
+      ...briefing,
+      bullets: briefing.bullets.map((bullet) => ({ ...bullet, evidenceNumbers: [1.5] })),
+    };
+
+    const failure = await saveBriefing(database(), 'invalid-evidence', invalid).catch((cause: unknown) => cause);
+    if (!(failure instanceof BriefingStoreValidationError)) throw new Error('Expected a tagged validation failure');
+    expect(failure.cause).toBeInstanceOf(Error);
+    await expect(
+      database()
+        .prepare('SELECT response_json FROM package_briefings WHERE evidence_hash = ?')
+        .bind('invalid-evidence')
+        .first(),
+    ).resolves.toBeNull();
+  });
+
+  it('preserves the cause when a D1 insert fails', async () => {
+    await database()
+      .prepare(
+        "CREATE TRIGGER reject_briefing_insert BEFORE INSERT ON package_briefings BEGIN SELECT RAISE(FAIL, 'briefing insert refused'); END;",
+      )
+      .run();
+    try {
+      const failure = await saveBriefing(database(), 'rejected-evidence', briefing).catch((cause: unknown) => cause);
+      if (!(failure instanceof BriefingStoreError)) throw new Error('Expected a tagged storage failure');
+      expect(failure.operation).toBe('write');
+      expect(failure.cause).toBeInstanceOf(Error);
+    } finally {
+      await database().prepare('DROP TRIGGER reject_briefing_insert').run();
+    }
   });
 
   it('rejects a corrupt saved result instead of treating it as a miss', async () => {

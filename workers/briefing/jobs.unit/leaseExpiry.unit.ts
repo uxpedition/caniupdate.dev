@@ -37,7 +37,7 @@ describe('briefing job Worker', () => {
     const hash = await crashRunningGeneration(stateDir, packet);
     expect(provider.requestsFor(packet.packageName)).toBe(1);
 
-    const resumed = await startRuntime({ stateDir });
+    const resumed = await startRuntime({ stateDir, installSchema: false });
     try {
       // The crashed generation still owns the lease: a new POST must not start a second paid call.
       const during = await resumed.submit(packet);

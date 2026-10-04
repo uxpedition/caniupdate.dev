@@ -30,6 +30,7 @@ import {
 
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
 import { readStoredBriefing } from '../../../server/comparison/briefing/store';
+import { installBriefingSchema } from '../../../test/helpers/briefingDatabase.harness';
 import type { BriefingJobMessage } from '../job';
 import { FIXTURE_API_KEY, MODEL, SOURCE_ID, providerFixture } from './provider.stub';
 
@@ -37,7 +38,6 @@ const execFileAsync = promisify(execFile);
 
 export const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 const WRANGLER_BIN = join(REPO_ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
-const MIGRATION_PATH = join(REPO_ROOT, 'migrations', '0001_package_briefings.sql');
 export const WORKER_NAME = 'can-i-update-local-briefing';
 const HARNESS_NAME = 'briefing-submission-harness';
 const HARNESS_MODULE = 'harness.js';
@@ -294,10 +294,6 @@ async function bundleWorker(): Promise<Record<string, { type: 'esm'; contents: s
   } finally {
     await rm(outdir, { recursive: true, force: true });
   }
-}
-
-export async function installBriefingSchema(database: D1Database): Promise<void> {
-  await database.prepare(await readFile(MIGRATION_PATH, 'utf8')).run();
 }
 
 export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixture> {

@@ -1,0 +1,12 @@
+{
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "can-i-update-evidence-cache-test",
+  "main": "cache.worker.ts",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "durable_objects": {
+    "bindings": [{ "name": "EVIDENCE_CACHE", "class_name": "EvidenceCacheFixture" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EvidenceCacheFixture"] }],
+}

@@ -3,9 +3,11 @@ import { closeSync, existsSync, linkSync, openSync, unlinkSync, writeFileSync } 
 import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import { drizzle } from 'drizzle-orm/node-sqlite';
 import { Schema } from 'effect';
 
 import { AvailablePackageBriefingSchema } from '../shared/briefing.defs.ts';
+import { packageBriefings } from '../shared/db/briefingSchema.ts';
 
 const [sourceArg, outputArg] = process.argv.slice(2);
 if (!sourceArg || !outputArg) {
@@ -33,9 +35,18 @@ try {
   database.exec('BEGIN');
   descriptor = openSync(temporary, 'wx', 0o600);
   temporaryCreated = true;
-  for (const row of database
-    .prepare('SELECT evidence_hash, response_json, created_at FROM package_briefings ORDER BY evidence_hash')
-    .iterate()) {
+  const db = drizzle({ client: database });
+  const query = db
+    .select({
+      evidence_hash: packageBriefings.evidenceHash,
+      response_json: packageBriefings.responseJson,
+      created_at: packageBriefings.createdAt,
+    })
+    .from(packageBriefings)
+    .orderBy(packageBriefings.evidenceHash)
+    .toSQL();
+  if (query.params.length !== 0) throw new Error('Briefing export query must not contain bindings');
+  for (const row of database.prepare(query.sql).iterate()) {
     const hash = row.evidence_hash;
     const response = row.response_json;
     const createdAt = row.created_at;

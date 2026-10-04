@@ -1,35 +1,20 @@
 import { Buffer } from 'node:buffer';
 
+import type { DurableObjectStorage } from '@cloudflare/workers-types';
+import { and, asc, eq, inArray, isNotNull, lte } from 'drizzle-orm';
+import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
+
 import { EvidenceStorageCorruptionError, EvidenceStorageError } from '../../server/comparison/evidence/errors';
 import type {
   ComparisonEvidenceCache,
   ComparisonEvidenceCacheOptions,
 } from '../../server/comparison/evidence/services';
+import { evidenceChunks, evidenceRecords } from '../../shared/db/evidenceSchema';
 
 export { EvidenceStorageCorruptionError, EvidenceStorageError };
 
 const CHUNK_BYTES = 128 * 1024;
-type SqlStorageValue = string | number | ArrayBuffer | null;
-
-type EvidenceCacheStorage = {
-  readonly sql: {
-    exec<T extends Record<string, SqlStorageValue>>(query: string, ...bindings: SqlStorageValue[]): { toArray(): T[] };
-  };
-  transactionSync<T>(operation: () => T): T;
-};
-
-type RecordRow = Record<string, string | number | null> & {
-  key: string;
-  expires_at: number | null;
-  chunk_count: number;
-  byte_length: number;
-};
-
-type ChunkRow = Record<string, string | number | null> & {
-  chunk_index: number;
-  payload: string;
-};
-
+type RecordRow = typeof evidenceRecords.$inferSelect;
 type CachedValue = { found: true; value: unknown } | { found: false };
 
 const CHUNK_UTF16_UNITS = Math.floor(CHUNK_BYTES / 3);
@@ -37,8 +22,9 @@ const CHUNK_UTF16_UNITS = Math.floor(CHUNK_BYTES / 3);
 /** SQLite-backed cache used by one PackageEvidence object. Rows and chunks are replaced atomically. */
 export class SqlEvidenceCache implements ComparisonEvidenceCache {
   private readonly inFlight = new Map<string, Promise<unknown>>();
+  private readonly db: DrizzleSqliteDODatabase;
 
-  constructor(private readonly storage: EvidenceCacheStorage) {
+  constructor(storage: DurableObjectStorage) {
     try {
       storage.sql.exec(
         `CREATE TABLE IF NOT EXISTS evidence_records (
@@ -59,6 +45,7 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
       storage.sql.exec(
         'CREATE INDEX IF NOT EXISTS evidence_expiry_index ON evidence_records(expires_at) WHERE expires_at IS NOT NULL',
       );
+      this.db = drizzle(storage);
     } catch (cause) {
       throw new EvidenceStorageError({ operation: 'initialize', cause });
     }
@@ -83,12 +70,11 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
 
   cleanupExpired(now = Date.now()): void {
     storageOperation('cleanup', () => {
-      this.storage.transactionSync(() => {
-        this.storage.sql.exec(
-          'DELETE FROM evidence_chunks WHERE key IN (SELECT key FROM evidence_records WHERE expires_at IS NOT NULL AND expires_at <= ?)',
-          now,
-        );
-        this.storage.sql.exec('DELETE FROM evidence_records WHERE expires_at IS NOT NULL AND expires_at <= ?', now);
+      this.db.transaction((tx) => {
+        const expired = and(isNotNull(evidenceRecords.expiresAt), lte(evidenceRecords.expiresAt, now));
+        const keys = tx.select({ key: evidenceRecords.key }).from(evidenceRecords).where(expired);
+        tx.delete(evidenceChunks).where(inArray(evidenceChunks.key, keys)).run();
+        tx.delete(evidenceRecords).where(expired).run();
       });
     });
   }
@@ -104,16 +90,12 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
   }
 
   private read(key: string, now: number): CachedValue {
-    const row = storageOperation(
-      'read',
-      () =>
-        this.storage.sql
-          .exec<RecordRow>('SELECT key, expires_at, chunk_count, byte_length FROM evidence_records WHERE key = ?', key)
-          .toArray()[0],
+    const row = storageOperation('read', () =>
+      this.db.select().from(evidenceRecords).where(eq(evidenceRecords.key, key)).get(),
     );
     if (row === undefined) return { found: false };
     validateMetadata(row);
-    if (row.expires_at !== null && row.expires_at <= now) {
+    if (row.expiresAt !== null && row.expiresAt <= now) {
       this.delete(key);
       return { found: false };
     }
@@ -129,24 +111,24 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
 
   private readSerialized(row: RecordRow): string {
     const chunks = storageOperation('read', () =>
-      this.storage.sql
-        .exec<ChunkRow>(
-          'SELECT chunk_index, payload FROM evidence_chunks WHERE key = ? ORDER BY chunk_index ASC',
-          row.key,
-        )
-        .toArray(),
+      this.db
+        .select({ chunkIndex: evidenceChunks.chunkIndex, payload: evidenceChunks.payload })
+        .from(evidenceChunks)
+        .where(eq(evidenceChunks.key, row.key))
+        .orderBy(asc(evidenceChunks.chunkIndex))
+        .all(),
     );
-    if (chunks.length !== row.chunk_count)
+    if (chunks.length !== row.chunkCount)
       throw new EvidenceStorageCorruptionError({ detail: 'Evidence chunks are incomplete' });
     let serialized = '';
     for (let index = 0; index < chunks.length; index += 1) {
       const chunk = chunks[index];
-      if (chunk === undefined || chunk.chunk_index !== index || typeof chunk.payload !== 'string') {
+      if (chunk === undefined || chunk.chunkIndex !== index || typeof chunk.payload !== 'string') {
         throw new EvidenceStorageCorruptionError({ detail: 'Evidence chunk order is invalid' });
       }
       serialized += chunk.payload;
     }
-    if (Buffer.byteLength(serialized, 'utf8') !== row.byte_length) {
+    if (Buffer.byteLength(serialized, 'utf8') !== row.byteLength) {
       throw new EvidenceStorageCorruptionError({ detail: 'Evidence payload length is invalid' });
     }
     return serialized;
@@ -163,23 +145,12 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
     const expiresAt = ttlMs === null ? null : Date.now() + ttlMs;
     const byteLength = Buffer.byteLength(serialized, 'utf8');
     storageOperation('write', () =>
-      this.storage.transactionSync(() => {
-        this.storage.sql.exec('DELETE FROM evidence_chunks WHERE key = ?', key);
-        this.storage.sql.exec('DELETE FROM evidence_records WHERE key = ?', key);
-        this.storage.sql.exec(
-          'INSERT INTO evidence_records (key, expires_at, chunk_count, byte_length) VALUES (?, ?, ?, ?)',
-          key,
-          expiresAt,
-          chunks.length,
-          byteLength,
-        );
-        for (const [index, payload] of chunks.entries()) {
-          this.storage.sql.exec(
-            'INSERT INTO evidence_chunks (key, chunk_index, payload) VALUES (?, ?, ?)',
-            key,
-            index,
-            payload,
-          );
+      this.db.transaction((tx) => {
+        tx.delete(evidenceChunks).where(eq(evidenceChunks.key, key)).run();
+        tx.delete(evidenceRecords).where(eq(evidenceRecords.key, key)).run();
+        tx.insert(evidenceRecords).values({ key, expiresAt, chunkCount: chunks.length, byteLength }).run();
+        for (const [chunkIndex, payload] of chunks.entries()) {
+          tx.insert(evidenceChunks).values({ key, chunkIndex, payload }).run();
         }
       }),
     );
@@ -187,9 +158,9 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
 
   private delete(key: string): void {
     storageOperation('delete', () =>
-      this.storage.transactionSync(() => {
-        this.storage.sql.exec('DELETE FROM evidence_chunks WHERE key = ?', key);
-        this.storage.sql.exec('DELETE FROM evidence_records WHERE key = ?', key);
+      this.db.transaction((tx) => {
+        tx.delete(evidenceChunks).where(eq(evidenceChunks.key, key)).run();
+        tx.delete(evidenceRecords).where(eq(evidenceRecords.key, key)).run();
       }),
     );
   }
@@ -214,11 +185,11 @@ function validateValue<T>(value: unknown, options: ComparisonEvidenceCacheOption
 
 function validateMetadata(row: RecordRow): void {
   if (
-    !Number.isSafeInteger(row.chunk_count) ||
-    row.chunk_count <= 0 ||
-    !Number.isSafeInteger(row.byte_length) ||
-    row.byte_length < 0 ||
-    (row.expires_at !== null && !Number.isSafeInteger(row.expires_at))
+    !Number.isSafeInteger(row.chunkCount) ||
+    row.chunkCount <= 0 ||
+    !Number.isSafeInteger(row.byteLength) ||
+    row.byteLength < 0 ||
+    (row.expiresAt !== null && !Number.isSafeInteger(row.expiresAt))
   )
     throw new EvidenceStorageCorruptionError({ detail: 'Evidence metadata is invalid' });
 }

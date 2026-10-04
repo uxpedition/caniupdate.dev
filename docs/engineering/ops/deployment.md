@@ -120,10 +120,10 @@ Then load the authorized external credentials in a subshell and deploy. The cred
   set +a
   export CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false
   export CLOUDFLARE_INCLUDE_PROCESS_ENV=false
-  nub x wrangler d1 migrations apply BRIEFINGS_DB --remote --config workers/briefing/wrangler.jsonc --env preview &&
-    nub x wrangler deploy --config workers/evidence/wrangler.jsonc --env preview &&
-    nub x wrangler deploy --config workers/briefing/wrangler.jsonc --env preview &&
-    nub x wrangler deploy --config .output/server/wrangler.json --env preview
+  nub exec wrangler d1 migrations apply BRIEFINGS_DB --remote --config workers/briefing/wrangler.jsonc --env preview &&
+    nub exec wrangler deploy --config workers/evidence/wrangler.jsonc --env preview &&
+    nub exec wrangler deploy --config workers/briefing/wrangler.jsonc --env preview &&
+    nub exec wrangler deploy --config .output/server/wrangler.json --env preview
 )
 ```
 

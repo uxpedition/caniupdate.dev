@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
 import { readStoredBriefing } from '../../../server/comparison/briefing/store';
+import { installBriefingSchema } from '../../../test/helpers/briefingDatabase.harness';
 import {
   FIXTURE_API_KEY,
   MODEL,
@@ -21,7 +22,6 @@ import {
   JOB_WAIT_MS,
   PUBLIC_URL,
   QUIET_MS,
-  installBriefingSchema,
   openStateDir,
   packetFor,
   pendingOf,
@@ -134,7 +134,7 @@ describe('briefing job Worker', () => {
       await configured.dispose();
     }
 
-    const unconfigured = await startRuntime({ stateDir, aiConfig: false });
+    const unconfigured = await startRuntime({ stateDir, aiConfig: false, installSchema: false });
     try {
       const warm = await unconfigured.submit(packet);
       expect(warm.submission).toMatchObject({ status: 'available', briefing: { status: 'available', model: MODEL } });

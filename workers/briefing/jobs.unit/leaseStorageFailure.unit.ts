@@ -35,7 +35,7 @@ describe('briefing job Worker', () => {
     const hash = await crashRunningGeneration(stateDir, packet);
     expect(provider.requestsFor(packet.packageName)).toBe(1);
 
-    const resumed = await startRuntime({ stateDir });
+    const resumed = await startRuntime({ stateDir, installSchema: false });
     try {
       expect((await resumed.jobEvent(hash))?.status).toBe('running');
       // The real D1 fault: the crashed generation's row cannot be read back at all.

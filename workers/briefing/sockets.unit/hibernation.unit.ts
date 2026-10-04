@@ -117,7 +117,7 @@ describe('hibernating subscribers', () => {
     if (durable === undefined) throw new Error('The first runtime never settled this job');
 
     // A fresh runtime against the same persistence directory: the object that owned the job is gone.
-    const after = await startRuntime({ stateDir });
+    const after = await startRuntime({ stateDir, installSchema: false });
     try {
       expect(after.queueDeliveries()).toBe(0);
       const subscription = await subscribe(after, hash);
