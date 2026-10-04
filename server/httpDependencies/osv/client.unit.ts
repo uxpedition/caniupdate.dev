@@ -2,7 +2,7 @@ import { Cause, Effect, Result } from 'effect';
 import { HttpClient, HttpClientResponse } from 'effect/http';
 import { describe, expect, it, vi } from 'vitest';
 
-import { getVulnerability, queryBatch } from './osv';
+import { getVulnerability, queryBatch } from './client';
 
 /** Runs an OSV effect against a stub client that replies with `body`, capturing outgoing request URLs. */
 function runWithStub<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, body: unknown, status = 200) {

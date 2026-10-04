@@ -2,7 +2,7 @@ import { Effect } from 'effect';
 import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
 import { describe, expect, it } from 'vitest';
 
-import { getGithubFile, listGithubDirectory, listGithubReleases } from './github';
+import { getGithubFile, listGithubDirectory, listGithubReleases } from './client';
 
 const RELEASES_PER_PAGE = 100;
 const MAX_BODY_BYTES = 1_048_576;

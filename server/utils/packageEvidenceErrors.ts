@@ -1,8 +1,6 @@
 import { Data } from 'effect';
 
-export const RegistryRequestError = Data.TaggedError('RegistryRequestError')<{
-  readonly cause: unknown;
-}>;
+import { RegistryRequestError } from '../httpDependencies/npm/errors';
 
 export const EvidenceCacheError = Data.TaggedError('EvidenceCacheError')<{
   readonly cause: unknown;

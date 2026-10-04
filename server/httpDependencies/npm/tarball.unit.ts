@@ -5,8 +5,8 @@ import { Effect } from 'effect';
 import { pack, type Header } from 'tar-stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { RegistryVersionManifest } from '../../shared/package.defs';
-import { getPackageTarball } from './packageTarball';
+import type { RegistryVersionManifest } from '../../../shared/package.defs';
+import { getPackageTarball } from './tarball';
 
 async function archive(
   entries: { name: string; body?: string | Uint8Array; type?: Header['type']; linkname?: string }[],

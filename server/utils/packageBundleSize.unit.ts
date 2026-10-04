@@ -2,7 +2,7 @@ import { Effect } from 'effect';
 import { HttpClient, HttpClientResponse } from 'effect/http';
 import { describe, expect, it } from 'vitest';
 
-import { bundlephobiaSizeUrl } from './bundlephobia';
+import { bundlephobiaSizeUrl } from '../httpDependencies/bundlephobia/client';
 import { getPackageBundleSize } from './packageBundleSize';
 
 const measurements: Record<string, unknown> = {

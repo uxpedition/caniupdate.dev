@@ -4,8 +4,8 @@ import { defineEventHandler, getValidatedQuery } from 'h3';
 
 import { RegistryPackagesSearchResponseSchema, toSearchResults } from '#shared/search.defs';
 
-import { getRegistryJson } from '../../utils/npmRegistry';
-import { RegistryRequestError } from '../../utils/packageEvidenceErrors';
+import { RegistryRequestError } from '../../httpDependencies/npm/errors';
+import { getRegistryJson } from '../../httpDependencies/npm/registry';
 
 const EndpointQueryParamsSchema = Schema.Struct({
   text: Schema.Trim.pipe(Schema.decode(SchemaTransformation.toLowerCase())).check(

@@ -3,7 +3,7 @@ import { gzipSync } from 'node:zlib';
 
 import { Effect } from 'effect';
 
-import { inspectTarball, type TarParser } from '../../../server/utils/packageTarballStreaming';
+import { inspectTarball, type TarParser } from '../../../server/httpDependencies/npm/tarballStreaming';
 
 function archiveFor(mode: string): Buffer | undefined {
   if (mode === 'valid') return gzipSync(Buffer.alloc(1024));

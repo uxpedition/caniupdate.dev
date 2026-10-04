@@ -6,7 +6,7 @@ import {
   OsvQueryBatchResponseSchema,
   OsvVulnerabilitySchema,
   type OsvQueryBatchRequest,
-} from '../../shared/osv.defs';
+} from '../../../shared/osv.defs';
 
 const API_ORIGIN = 'https://api.osv.dev';
 const REQUEST_TIMEOUT = Duration.seconds(5);

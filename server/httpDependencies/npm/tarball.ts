@@ -5,9 +5,9 @@ import { posix } from 'node:path';
 import { Effect } from 'effect';
 import { type Header } from 'tar-stream';
 
-import type { RegistryVersionManifest } from '../../shared/package.defs';
-import type { PackageTarball, PublishedFile, ShippedChangelog } from '../../shared/tarball.defs';
-import { inspectTarball, type TarParser } from './packageTarballStreaming';
+import type { RegistryVersionManifest } from '../../../shared/package.defs';
+import type { PackageTarball, PublishedFile, ShippedChangelog } from '../../../shared/tarball.defs';
+import { inspectTarball, type TarParser } from './tarballStreaming';
 
 const MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES = 32 * 1024 * 1024;

@@ -26,18 +26,18 @@ import {
   type RegistryVersionManifest,
 } from '../../shared/package.defs';
 import { PackageTarballSchema, type PackageTarball } from '../../shared/tarball.defs';
-import { getRegistryJson } from './npmRegistry';
+import { RegistryRequestError } from '../httpDependencies/npm/errors';
+import { getRegistryJson } from '../httpDependencies/npm/registry';
+import { getPackageTarball } from '../httpDependencies/npm/tarball';
 import { getVersionBundleSize } from './packageBundleSize';
 import { compareDeclarations, compareMeasurements } from './packageComparison';
 import {
   EvidenceCollectionError,
-  RegistryRequestError,
   toEvidenceCacheFailure,
   toPackageEvidenceFailure,
   type PackageEvidenceFailure,
 } from './packageEvidenceErrors';
 import { getPackageReleaseNotes } from './packageReleaseNotes';
-import { getPackageTarball } from './packageTarball';
 import { getPackageVulnerabilities } from './packageVulnerabilities';
 
 const VERSION_MAX_LENGTH = 256;

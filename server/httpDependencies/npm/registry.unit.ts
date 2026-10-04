@@ -2,7 +2,7 @@ import { Effect } from 'effect';
 import { FetchHttpClient } from 'effect/http';
 import { beforeEach, expect, it, vi } from 'vitest';
 
-import { getRegistryJson } from './npmRegistry';
+import { getRegistryJson } from './registry';
 
 const INSTALL_V1_ACCEPT = 'application/vnd.npm.install-v1+json';
 

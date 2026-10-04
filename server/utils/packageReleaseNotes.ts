@@ -10,7 +10,7 @@ import {
   type GithubEntry,
   type GithubRelease,
   type GithubRepository,
-} from './github';
+} from '../httpDependencies/github/client';
 
 type Source = { repository: GithubRepository; directory: string };
 type SourceResult = { ok: true; value: Source } | { ok: false; reason: string };

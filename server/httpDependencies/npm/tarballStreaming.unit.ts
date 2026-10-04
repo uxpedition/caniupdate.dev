@@ -5,7 +5,7 @@ import { Effect, Fiber } from 'effect';
 import { pack } from 'tar-stream';
 import { describe, expect, it, vi } from 'vitest';
 
-import { inspectTarball } from './packageTarballStreaming';
+import { inspectTarball } from './tarballStreaming';
 
 async function archiveWithEntry(body: Buffer): Promise<Buffer> {
   const output = pack();

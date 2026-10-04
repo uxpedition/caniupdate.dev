@@ -4,8 +4,8 @@ import { createError, defineEventHandler, getRouterParam } from 'h3';
 
 import { RegistryPackageMetadataSchema, toPackageMetadata } from '#shared/package.defs';
 
-import { getRegistryJson } from '../../../utils/npmRegistry';
-import { RegistryRequestError } from '../../../utils/packageEvidenceErrors';
+import { RegistryRequestError } from '../../../httpDependencies/npm/errors';
+import { getRegistryJson } from '../../../httpDependencies/npm/registry';
 
 const REGISTRY_METADATA_ACCEPT = 'application/vnd.npm.install-v1+json';
 
