@@ -39,7 +39,7 @@ ADRs and RFCs preserve decision and proposal history. All other published docume
 
 Engineering proposals for durable review belong in `docs/engineering/rfcs/`. RFC statuses are draft, discussion, accepted, rejected, and withdrawn. Acceptance records agreement, not shipment. Keep rejected and withdrawn RFCs with their explicit status rather than treating them as current-system guidance.
 
-The [Drizzle database-layer proposal](engineering/rfcs/0001-drizzle-database-layer.md) is in discussion and awaits review; it is not an implemented database contract.
+The [Drizzle database-layer proposal](engineering/rfcs/0001-drizzle-database-layer.md) is in discussion and awaits review; it is not an implemented database contract. The [server module ownership proposal](engineering/rfcs/0002-server-module-ownership.md) is accepted as the target organization; acceptance does not mean the relocation has shipped.
 
 `docs/superpowers/` is ignored local working material for agent designs and execution plans. It is not part of the published documentation, and current documents must not depend on files there.
 
