@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ComparisonEvidenceCacheOptions } from '../../server/utils/packageComparisonFacts';
+import type { ComparisonEvidenceCacheOptions } from '../../server/comparison/evidence/services';
 import { SqlEvidenceCache } from './store';
 
 const options = {

@@ -1,10 +1,10 @@
 import { Buffer } from 'node:buffer';
 
+import { EvidenceStorageCorruptionError, EvidenceStorageError } from '../../server/comparison/evidence/errors';
 import type {
   ComparisonEvidenceCache,
   ComparisonEvidenceCacheOptions,
-} from '../../server/utils/packageComparisonFacts';
-import { EvidenceStorageCorruptionError, EvidenceStorageError } from '../../server/utils/packageEvidenceErrors';
+} from '../../server/comparison/evidence/services';
 
 export { EvidenceStorageCorruptionError, EvidenceStorageError };
 

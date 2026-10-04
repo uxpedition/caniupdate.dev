@@ -1,10 +1,7 @@
 import { createError, defineEventHandler, getValidatedQuery, getValidatedRouterParams } from 'h3';
 
-import {
-  decodePackageComparisonQuery,
-  decodePackageComparisonRouterParams,
-} from '../../../../../utils/packageComparisonFacts';
 import { getPackageMeasurements, PackageEvidenceClientError } from '../_internals/evidenceClient';
+import { decodePackageComparisonQuery, decodePackageComparisonRouterParams } from '../_internals/request';
 
 // Sizes, advisories, and inspected-archive summaries are collected by the private package object so a public request
 // never performs archive/provider work in the Nuxt Worker.

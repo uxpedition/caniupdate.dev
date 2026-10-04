@@ -5,8 +5,9 @@ import type { ComparisonVersion } from '../../shared/comparison.defs';
 import type { PackageReleaseNotes } from '../../shared/github.defs';
 import type { PackageAdvisory } from '../../shared/osv.defs';
 import { toPackageVersion } from '../../shared/package.defs';
+import { compareDeclarations } from '../comparison/declarations/compare';
+import { compareMeasurements } from '../comparison/measurements/compare';
 import { buildBriefingEvidence } from './packageBriefingEvidence';
-import { comparePackages } from './packageComparison';
 
 // Keep the fixture close to the comparison boundary: briefing packaging must consume computed facts rather than
 // inspect manifests or derive a second comparison.
@@ -58,7 +59,7 @@ function input(
     packageName: 'widget',
     from,
     to,
-    comparison: comparePackages(from, to),
+    comparison: { ...compareDeclarations(from, to), ...compareMeasurements(from, to) },
     releaseNotes,
   };
 }
@@ -164,7 +165,7 @@ describe('buildBriefingEvidence', () => {
   it('keeps the packet UTF-8 bounded and records omitted and partial evidence', () => {
     const from = version('1.0.0');
     const to = version('2.0.0');
-    const base = comparePackages(from, to);
+    const base = { ...compareDeclarations(from, to), ...compareMeasurements(from, to) };
     const hugeComparison = {
       ...base,
       dependencies: Array.from({ length: 30_000 }, (_, index) => ({

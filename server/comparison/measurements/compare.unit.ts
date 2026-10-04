@@ -4,7 +4,7 @@ import type { ComparisonVersion } from '#shared/comparison.defs';
 import type { PackageAdvisory, PackageVulnerabilities } from '#shared/osv.defs';
 import { toPackageVersion } from '#shared/package.defs';
 
-import { compareDeclarations, compareMeasurements, comparePackages } from './packageComparison';
+import { compareMeasurements } from './compare';
 
 function version(overrides: Partial<ComparisonVersion> = {}): ComparisonVersion {
   return {
@@ -42,35 +42,7 @@ function vulnerabilities(
   return { status, count: advisories.length, advisories };
 }
 
-describe('local comparison boundaries', () => {
-  it('distinguishes an explicit null export map from an absent declaration', () => {
-    expect(comparePackages(version(), version({ moduleFormat: { exports: null } })).exports).toMatchObject({
-      changed: true,
-    });
-  });
-
-  it('ignores dependency ordering and overridden runtime ranges but retains additions and removals', () => {
-    const from = version({
-      dependencies: { same: '^1', overridden: 'old', removed: '*' },
-      optionalDependencies: { overridden: '^2' },
-    });
-    const to = version({
-      dependencies: { overridden: 'new', same: '^1', added: '*' },
-      optionalDependencies: { overridden: '^2' },
-    });
-    expect(comparePackages(from, to).dependencies).toEqual([
-      { name: 'added', kind: 'added', from: null, to: { category: 'runtime', range: '*' } },
-      { name: 'removed', kind: 'removed', from: { category: 'runtime', range: '*' }, to: null },
-    ]);
-  });
-
-  it('retains nested type conditions and condition precedence', () => {
-    const from = version({ moduleFormat: { exports: { '.': { import: { types: './a.d.ts', default: './a.js' } } } } });
-    const to = version({ moduleFormat: { exports: { '.': { import: { default: './a.js', types: './a.d.ts' } } } } });
-    expect(comparePackages(from, to)).toMatchObject({ exports: { changed: true }, types: { changed: true } });
-    expect(comparePackages(from, from)).toMatchObject({ exports: { changed: false }, types: { changed: false } });
-  });
-
+describe('measurement and advisory comparison rules', () => {
   it('uses complete tarball inventories despite partial changelog text and handles a zero baseline', () => {
     const from = version({ dist: { tarball: '', unpackedSize: 0 } });
     const to = version({
@@ -85,7 +57,7 @@ describe('local comparison boundaries', () => {
         ],
       },
     });
-    expect(comparePackages(from, to).sizes.unpacked).toEqual({
+    expect(compareMeasurements(from, to).sizes.unpacked).toEqual({
       status: 'available',
       from: 0,
       to: 120,
@@ -94,14 +66,14 @@ describe('local comparison boundaries', () => {
       reasons: [],
       sources: { from: 'registry', to: 'tarball' },
     });
-    expect(comparePackages(to, version()).sizes.unpacked).toMatchObject({
+    expect(compareMeasurements(to, version()).sizes.unpacked).toMatchObject({
       status: 'partial',
       from: 120,
       to: null,
       delta: null,
       percent: null,
     });
-    expect(comparePackages(to, from).sizes.unpacked).toMatchObject({ delta: -120, percent: -100 });
+    expect(compareMeasurements(to, from).sizes.unpacked).toMatchObject({ delta: -120, percent: -100 });
   });
 
   it('keeps provider estimates separate and suppresses deltas for builds omitting dependencies', () => {
@@ -128,11 +100,11 @@ describe('local comparison boundaries', () => {
         gzip: 40,
       },
     });
-    expect(comparePackages(from, to).sizes.bundle).toMatchObject({
+    expect(compareMeasurements(from, to).sizes.bundle).toMatchObject({
       minified: { delta: 20, percent: 20 },
       gzip: { delta: -10, percent: -20 },
     });
-    expect(comparePackages(from, to).sizes.unpacked.delta).toBeNull();
+    expect(compareMeasurements(from, to).sizes.unpacked.delta).toBeNull();
     const incomplete = version({
       bundleSize: {
         ...to.bundleSize,
@@ -145,7 +117,7 @@ describe('local comparison boundaries', () => {
         ignoredMissingDependencies: ['native'],
       },
     });
-    expect(comparePackages(from, incomplete).sizes.bundle.minified).toMatchObject({
+    expect(compareMeasurements(from, incomplete).sizes.bundle.minified).toMatchObject({
       status: 'partial',
       from: 100,
       to: 120,
@@ -158,7 +130,7 @@ describe('local comparison boundaries', () => {
     const old = advisory('OLD', ['CVE-1']);
     const bridge = advisory('BRIDGE', ['CVE-1', 'CVE-2']);
     const target = advisory('TARGET', ['CVE-2']);
-    const result = comparePackages(
+    const result = compareMeasurements(
       version({ vulnerabilities: vulnerabilities([old, advisory('FIXED')]) }),
       version({ vulnerabilities: vulnerabilities([target, bridge, advisory('NEW')]) }),
     ).advisories;
@@ -174,50 +146,12 @@ describe('local comparison boundaries', () => {
   it('does not classify absent advisories as resolved or introduced under incomplete coverage', () => {
     const old = version({ vulnerabilities: vulnerabilities([advisory('OLD')]) });
     const target = version({ vulnerabilities: vulnerabilities([advisory('NEW')], 'partial') });
-    const result = comparePackages(old, target).advisories;
+    const result = compareMeasurements(old, target).advisories;
     expect(result).toMatchObject({ status: 'partial', fromOnly: [], toOnly: [], both: [] });
     expect(result.uncertain.map((group) => group.ids)).toEqual([['NEW'], ['OLD']]);
     expect(
-      comparePackages(old, version({ vulnerabilities: { status: 'unavailable', count: null, advisories: [] } }))
+      compareMeasurements(old, version({ vulnerabilities: { status: 'unavailable', count: null, advisories: [] } }))
         .advisories,
     ).toMatchObject({ status: 'partial', fromOnly: [], uncertain: [{ ids: ['OLD'] }] });
-  });
-});
-
-describe('declaration and measurement split', () => {
-  it('compares declarations from manifest fields without measurement evidence', () => {
-    const declaredFrom = {
-      name: 'example-package',
-      version: '1.0.0',
-      dist: { tarball: 'https://registry.npmjs.org/example-package/-/example-package-1.0.0.tgz' },
-      licenses: ['MIT'],
-      deprecated: false,
-      engines: { node: '>=18' },
-      dependencies: { dep: '^1.0.0' },
-      peerDependencies: {},
-      optionalDependencies: {},
-      optionalPeers: [],
-      installScripts: [],
-      installScriptCommands: {},
-      moduleFormat: { main: 'index.js' },
-    };
-    const declaredTo = { ...declaredFrom, version: '2.0.0', engines: { node: '>=20' } };
-
-    expect(compareDeclarations(declaredFrom, declaredTo)).toMatchObject({
-      node: { changed: true, from: '>=18', to: '>=20' },
-      dependencies: [],
-      peers: [],
-      installScripts: [],
-    });
-  });
-
-  it('splits a combined comparison into its declaration and measurement halves', () => {
-    const from = version();
-    const to = version({ version: '2.0.0' });
-
-    expect(comparePackages(from, to)).toEqual({
-      ...compareDeclarations(from, to),
-      ...compareMeasurements(from, to),
-    });
   });
 });

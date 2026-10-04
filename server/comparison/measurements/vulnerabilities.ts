@@ -5,8 +5,8 @@ import type {
   OsvVulnerability,
   PackageAdvisory,
   PackageVulnerabilities,
-} from '../../shared/osv.defs';
-import { getVulnerability, queryBatch } from '../httpDependencies/osv/client';
+} from '../../../shared/osv.defs';
+import { getVulnerability, queryBatch } from '../../httpDependencies/osv/client';
 
 const unavailable: PackageVulnerabilities = { status: 'unavailable', count: null, advisories: [] };
 const COLLECTION_TIMEOUT = Duration.seconds(30);

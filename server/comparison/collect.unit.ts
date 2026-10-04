@@ -7,12 +7,8 @@ import { pack } from 'tar-stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ArchiveCapacityError } from '../../workers/evidence/admission';
-import {
-  getComparisonFacts,
-  getComparisonMeasurements,
-  type ComparisonEvidenceCache,
-  type ComparisonEvidenceCacheOptions,
-} from './packageComparisonFacts';
+import { getComparisonFacts, getComparisonMeasurements } from './collect';
+import type { ComparisonEvidenceCache, ComparisonEvidenceCacheOptions } from './evidence/services';
 
 const registry = { json: vi.fn<(path: string) => Promise<unknown>>() };
 

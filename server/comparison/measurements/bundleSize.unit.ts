@@ -2,8 +2,8 @@ import { Effect } from 'effect';
 import { HttpClient, HttpClientResponse } from 'effect/http';
 import { describe, expect, it } from 'vitest';
 
-import { bundlephobiaSizeUrl } from '../httpDependencies/bundlephobia/client';
-import { getPackageBundleSize } from './packageBundleSize';
+import { bundlephobiaSizeUrl } from '../../httpDependencies/bundlephobia/client';
+import { getPackageBundleSize } from './bundleSize';
 
 const measurements: Record<string, unknown> = {
   '1.0.0': { name: 'widget', version: '1.0.0', size: 100, gzip: 50 },

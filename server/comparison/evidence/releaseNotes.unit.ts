@@ -2,7 +2,7 @@ import { Effect } from 'effect';
 import { HttpClient, HttpClientResponse } from 'effect/http';
 import { describe, expect, it } from 'vitest';
 
-import { getPackageReleaseNotes } from './packageReleaseNotes';
+import { getPackageReleaseNotes } from './releaseNotes';
 
 type ManifestOptions = {
   repository?: string | { type?: string; url: string; directory?: string } | null;

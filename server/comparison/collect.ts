@@ -20,7 +20,6 @@ import type {
 import { PackageReleaseNotesSchema } from '../../shared/github.defs';
 import { PackageVulnerabilitiesSchema } from '../../shared/osv.defs';
 import {
-  PackageNameSchema,
   RegistryVersionManifestSchema,
   toPackageVersion,
   type RegistryVersionManifest,
@@ -29,62 +28,22 @@ import { PackageTarballSchema, type PackageTarball } from '../../shared/tarball.
 import { RegistryRequestError } from '../httpDependencies/npm/errors';
 import { getRegistryJson } from '../httpDependencies/npm/registry';
 import { getPackageTarball } from '../httpDependencies/npm/tarball';
-import { getVersionBundleSize } from './packageBundleSize';
-import { compareDeclarations, compareMeasurements } from './packageComparison';
+import { compareDeclarations } from './declarations/compare';
 import {
   EvidenceCollectionError,
   toEvidenceCacheFailure,
   toPackageEvidenceFailure,
   type PackageEvidenceFailure,
-} from './packageEvidenceErrors';
-import { getPackageReleaseNotes } from './packageReleaseNotes';
-import { getPackageVulnerabilities } from './packageVulnerabilities';
-
-const VERSION_MAX_LENGTH = 256;
-
-const VersionQueryParamSchema = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(VERSION_MAX_LENGTH));
-
-export const PackageComparisonQuerySchema = Schema.Struct({
-  from: VersionQueryParamSchema,
-  to: VersionQueryParamSchema,
-});
-
-export const PackageComparisonRouterParamsSchema = Schema.Struct({
-  packageName: Schema.StringFromUriComponent.pipe(Schema.decodeTo(PackageNameSchema)),
-});
-
-export const decodePackageComparisonRouterParams = Schema.decodeUnknownSync(PackageComparisonRouterParamsSchema, {
-  errors: 'all',
-});
-export const decodePackageComparisonQuery = Schema.decodeUnknownSync(PackageComparisonQuerySchema, { errors: 'all' });
+} from './evidence/errors';
+import { getPackageReleaseNotes } from './evidence/releaseNotes';
+import type { ComparisonEvidenceCacheOptions, ComparisonEvidenceServices } from './evidence/services';
+import { getVersionBundleSize } from './measurements/bundleSize';
+import { compareMeasurements } from './measurements/compare';
+import { getPackageVulnerabilities } from './measurements/vulnerabilities';
 
 export const EVIDENCE_CACHE_MAX_AGE_MS = 300_000;
 export const EVIDENCE_COLLECTOR_REVISION = 'comparison-evidence-v1';
 export const ARCHIVE_INSPECTOR_REVISION = 'archive-inspector-v2';
-
-export type ComparisonEvidenceCacheOptions<T> = {
-  readonly ttlMs: number | null;
-  readonly cacheable: (value: T) => boolean;
-  readonly isValid: (value: unknown) => value is T;
-};
-
-/**
- * Persistence/coalescing is deliberately supplied by the caller. The comparison collector never owns a process
- * global cache, so a Durable Object can scope this service to one package object and tests can use an uncached stub.
- */
-export type ComparisonEvidenceCache = {
-  load<T>(key: string, loader: () => Promise<T>, options: ComparisonEvidenceCacheOptions<T>): Promise<T>;
-};
-
-export type ArchiveAdmission = {
-  withPermit<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | PackageEvidenceFailure, R>;
-};
-
-export type ComparisonEvidenceServices = {
-  readonly cache?: ComparisonEvidenceCache;
-  readonly archiveAdmission?: ArchiveAdmission;
-  readonly githubToken?: string;
-};
 
 const cacheKey = (scope: string, input: unknown): string => {
   const serialized = JSON.stringify(input) ?? 'undefined';

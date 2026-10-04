@@ -1,8 +1,8 @@
 import { Effect, Result, Schema } from 'effect';
 
-import { compareSemver, isExactSemver } from '../../shared/compareSemver';
-import type { PackageRelease, PackageReleaseNotes } from '../../shared/github.defs';
-import type { RegistryVersionManifest } from '../../shared/package.defs';
+import { compareSemver, isExactSemver } from '../../../shared/compareSemver';
+import type { PackageRelease, PackageReleaseNotes } from '../../../shared/github.defs';
+import type { RegistryVersionManifest } from '../../../shared/package.defs';
 import {
   getGithubFile,
   listGithubDirectory,
@@ -10,7 +10,7 @@ import {
   type GithubEntry,
   type GithubRelease,
   type GithubRepository,
-} from '../httpDependencies/github/client';
+} from '../../httpDependencies/github/client';
 
 type Source = { repository: GithubRepository; directory: string };
 type SourceResult = { ok: true; value: Source } | { ok: false; reason: string };

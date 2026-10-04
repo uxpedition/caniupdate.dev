@@ -10,11 +10,8 @@ import {
 import type { BriefingEvidence } from '#shared/briefing.defs';
 import { decodeBriefingSubmission, type BriefingSubmission } from '#shared/briefingJob.defs';
 
-import {
-  decodePackageComparisonQuery,
-  decodePackageComparisonRouterParams,
-} from '../../../../../utils/packageComparisonFacts';
 import { getBriefingEvidence, PackageEvidenceClientError } from '../_internals/evidenceClient';
+import { decodePackageComparisonQuery, decodePackageComparisonRouterParams } from '../_internals/request';
 import { browserBriefingSocketUrl } from './_internals/socketUrl';
 
 const briefingServiceUnavailable = () =>

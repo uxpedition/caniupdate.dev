@@ -2,7 +2,7 @@ import { Duration, Effect } from 'effect';
 import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
 import { describe, expect, it, vi } from 'vitest';
 
-import { getPackageVulnerabilities } from './packageVulnerabilities';
+import { getPackageVulnerabilities } from './vulnerabilities';
 
 const modified = '2026-03-13T22:11:31.390433Z';
 const match = (id: string) => ({ id, modified });

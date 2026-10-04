@@ -2,83 +2,11 @@ import type {
   AdvisoryComparison,
   AdvisoryGroup,
   ComparisonVersion,
-  DeclaredPackageVersion,
-  DeclarationChange,
-  DeclarationComparison,
-  DependencyRequirement,
   MeasurementComparison,
   PackageComparison,
   SizeComparison,
-  ValueComparison,
 } from '#shared/comparison.defs';
 import type { PackageAdvisory, PackageVulnerabilities } from '#shared/osv.defs';
-
-// Keep object order for conditional exports and typesVersions: first matching conditions win.
-const equal = (from: unknown, to: unknown): boolean => JSON.stringify(from) === JSON.stringify(to);
-const compareValue = <T>(from: T | undefined, to: T | undefined): ValueComparison<T> => ({
-  changed: !equal(from, to),
-  from: from ?? null,
-  to: to ?? null,
-  fromDeclared: from !== undefined,
-  toDeclared: to !== undefined,
-});
-
-function compareDeclarationMaps<T>(from: ReadonlyMap<string, T>, to: ReadonlyMap<string, T>): DeclarationChange<T>[] {
-  const changes: DeclarationChange<T>[] = [];
-  for (const name of [...new Set([...from.keys(), ...to.keys()])].sort()) {
-    const before = from.get(name);
-    const after = to.get(name);
-    if (!equal(before, after))
-      changes.push({
-        name,
-        kind: before === undefined ? 'added' : after === undefined ? 'removed' : 'changed',
-        from: before ?? null,
-        to: after ?? null,
-      });
-  }
-  return changes;
-}
-
-function dependencies(version: DeclaredPackageVersion): Map<string, DependencyRequirement> {
-  const result = new Map<string, DependencyRequirement>();
-  for (const [name, range] of Object.entries(version.dependencies)) result.set(name, { category: 'runtime', range });
-  for (const [name, range] of Object.entries(version.optionalDependencies))
-    result.set(name, { category: 'optional', range });
-  return result;
-}
-
-function peers(version: DeclaredPackageVersion) {
-  const optional = new Set(version.optionalPeers);
-  return new Map(
-    Object.entries(version.peerDependencies).map(([name, range]) => [name, { range, optional: optional.has(name) }]),
-  );
-}
-
-function moduleDeclaration(version: DeclaredPackageVersion) {
-  const { type, main, module } = version.moduleFormat;
-  return {
-    ...(type === undefined ? {} : { type }),
-    ...(main === undefined ? {} : { main }),
-    ...(module === undefined ? {} : { module }),
-  };
-}
-
-function hasTypeCondition(value: unknown): boolean {
-  if (value === null || typeof value !== 'object') return false;
-  return Object.entries(value).some(
-    ([key, child]) => key === 'types' || key.startsWith('types@') || hasTypeCondition(child),
-  );
-}
-
-function typeDeclaration(version: DeclaredPackageVersion) {
-  const { types, typings, typesVersions, exports } = version.moduleFormat;
-  return {
-    ...(types === undefined ? {} : { types }),
-    ...(typings === undefined ? {} : { typings }),
-    ...(typesVersions === undefined ? {} : { typesVersions }),
-    exports: hasTypeCondition(exports) ? (exports ?? null) : null,
-  };
-}
 
 function unpackedSize(version: ComparisonVersion): { value: number | null; source: 'registry' | 'tarball' | null } {
   const declared = version.dist.unpackedSize;
@@ -134,16 +62,11 @@ function advisoryRoot(parents: Map<string, string>, id: string): string {
   return current;
 }
 
-function groupAdvisories(from: PackageVulnerabilities, to: PackageVulnerabilities): AdvisoryGroup[] {
-  // Union-find joins aliases transitively; `related` records are deliberately not identities.
-  const parents = new Map<string, string>();
-  for (const record of [...from.advisories, ...to.advisories]) {
-    for (const alias of advisoryAliases(record)) {
-      const left = advisoryRoot(parents, record.id);
-      const right = advisoryRoot(parents, alias);
-      if (left !== right) parents.set(right, left);
-    }
-  }
+function groupsByAdvisoryIdentity(
+  parents: Map<string, string>,
+  from: PackageVulnerabilities,
+  to: PackageVulnerabilities,
+): Map<string, AdvisoryGroup> {
   const groups = new Map<string, AdvisoryGroup>();
   for (const [side, evidence] of [
     ['from', from],
@@ -159,7 +82,20 @@ function groupAdvisories(from: PackageVulnerabilities, to: PackageVulnerabilitie
       group[side].push(record);
     }
   }
-  return [...groups.values()]
+  return groups;
+}
+
+function groupAdvisories(from: PackageVulnerabilities, to: PackageVulnerabilities): AdvisoryGroup[] {
+  // Union-find joins aliases transitively; `related` records are deliberately not identities.
+  const parents = new Map<string, string>();
+  for (const record of [...from.advisories, ...to.advisories]) {
+    for (const alias of advisoryAliases(record)) {
+      const left = advisoryRoot(parents, record.id);
+      const right = advisoryRoot(parents, alias);
+      if (left !== right) parents.set(right, left);
+    }
+  }
+  return [...groupsByAdvisoryIdentity(parents, from, to).values()]
     .map((group) => {
       const records = [...group.from, ...group.to];
       group.ids = [...new Set(records.map((record) => record.id))].sort();
@@ -199,9 +135,7 @@ function compareAdvisories(from: PackageVulnerabilities, to: PackageVulnerabilit
     if (evidence.status !== 'available')
       result.reasons.push(`${side} advisory coverage ${evidence.status}; absence is not proof of resolution`);
   }
-  for (const group of groupAdvisories(from, to)) {
-    result[advisoryCategory(group, complete)].push(group);
-  }
+  for (const group of groupAdvisories(from, to)) result[advisoryCategory(group, complete)].push(group);
   return result;
 }
 
@@ -230,37 +164,9 @@ function compareSizes(from: ComparisonVersion, to: ComparisonVersion): PackageCo
   };
 }
 
-export function compareDeclarations(from: DeclaredPackageVersion, to: DeclaredPackageVersion): DeclarationComparison {
-  const oldLicenses = [...new Set(from.licenses)].sort();
-  const newLicenses = [...new Set(to.licenses)].sort();
-  return {
-    dependencies: compareDeclarationMaps(dependencies(from), dependencies(to)),
-    peers: compareDeclarationMaps(peers(from), peers(to)),
-    node: compareValue(from.engines.node, to.engines.node),
-    moduleFormat: compareValue(moduleDeclaration(from), moduleDeclaration(to)),
-    exports: compareValue(from.moduleFormat.exports, to.moduleFormat.exports),
-    types: compareValue(typeDeclaration(from), typeDeclaration(to)),
-    licenses: {
-      changed: !equal(oldLicenses, newLicenses),
-      from: oldLicenses,
-      to: newLicenses,
-      added: newLicenses.filter((license) => !oldLicenses.includes(license)),
-      removed: oldLicenses.filter((license) => !newLicenses.includes(license)),
-    },
-    installScripts: compareDeclarationMaps(
-      new Map(Object.entries(from.installScriptCommands)),
-      new Map(Object.entries(to.installScriptCommands)),
-    ),
-  };
-}
-
 export function compareMeasurements(from: ComparisonVersion, to: ComparisonVersion): MeasurementComparison {
   return {
     sizes: compareSizes(from, to),
     advisories: compareAdvisories(from.vulnerabilities, to.vulnerabilities),
   };
-}
-
-export function comparePackages(from: ComparisonVersion, to: ComparisonVersion): PackageComparison {
-  return { ...compareDeclarations(from, to), ...compareMeasurements(from, to) };
 }

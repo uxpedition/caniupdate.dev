@@ -1,7 +1,7 @@
 import { Effect, Option, Semaphore } from 'effect';
 
-import type { ArchiveAdmission } from '../../server/utils/packageComparisonFacts';
-import { ArchiveCapacityError, ResponseCapacityError } from '../../server/utils/packageEvidenceErrors';
+import { ArchiveCapacityError, ResponseCapacityError } from '../../server/comparison/evidence/errors';
+import type { ArchiveAdmission } from '../../server/comparison/evidence/services';
 
 export { ArchiveCapacityError, ResponseCapacityError };
 
