@@ -43,9 +43,7 @@ interface ComboboxProps {
 
 const props = withDefaults(defineProps<ComboboxProps>(), {
   options: () => [],
-  placeholder: 'Search an npm package to check for updates',
   loading: false,
-  inputAriaLabel: 'Search npm packages',
   size: 'lg',
 });
 

@@ -79,6 +79,12 @@ nub run test
 
 `lint:check` and `format:check` are non-fixing checks. The `lint` and `format` scripts modify files; use them intentionally rather than as read-only verification.
 
+### Comparison interface
+
+The shared comparison form moves from the homepage into the navigation header after a successful comparison and resets for another search. Compact screens wrap it to a second header row. In-app home links and browser Back animate it back to the homepage; Forward animates it into the header again. On homepage load or reload, the form fades in and rises 12 px over 400 ms after a 60 ms delay; this intro does not replay on in-app return. The hero enters on initial load and when returning home. Hero, form, and comparison-content motion honor reduced-motion preferences. Exercise submission, reset, Back/Forward, fragment links, compact layouts, and reduced motion when changing this interface.
+
+`Combobox` leaves placeholder and accessible input-label copy to its caller; `ComparisonForm` supplies “Search packages” and “Search npm packages” for package search.
+
 ### Exercise the asynchronous briefing without paid inference
 
 The existing smoke script starts its own loopback provider fixture. Put only these fixture values in `workers/briefing/.dev.vars`:

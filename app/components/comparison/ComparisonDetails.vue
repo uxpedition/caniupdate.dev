@@ -99,10 +99,10 @@ const revealCitation = async (event: MouseEvent) => {
       <h2 class="text-base font-semibold tracking-[-0.02em]">This comparison couldn’t be loaded.</h2>
       <p>
         Check the package and versions, then
-        <a
-          href="/"
+        <NuxtLink
+          to="/"
           class="underline hover:underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring"
-          >try again from package search</a
+          >try again from package search</NuxtLink
         >.
       </p>
     </div>

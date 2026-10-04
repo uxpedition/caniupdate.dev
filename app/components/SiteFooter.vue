@@ -3,10 +3,10 @@
     <div
       class="mx-auto flex max-w-[1040px] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-10 py-6 max-[700px]:px-5"
     >
-      <a
-        href="/"
+      <NuxtLink
+        to="/"
         class="font-mono text-[10px] font-semibold tracking-[-0.04em] text-foreground hover:underline hover:underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring"
-        >can i update<span class="text-change" aria-hidden="true">?</span></a
+        >can i update<span class="text-change" aria-hidden="true">?</span></NuxtLink
       >
       <nav
         aria-label="Legal and contact"
