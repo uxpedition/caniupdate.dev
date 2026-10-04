@@ -13,12 +13,7 @@ import type {
   PackageBriefing,
 } from '../../../shared/briefing.defs';
 import { SYSTEM_PROMPT, USER_PROMPT_LINES } from './prompt';
-import {
-  readBoundedResponse,
-  REQUEST_TIMEOUT,
-  providerLayer,
-  type BriefingProviderTarget,
-} from './provider';
+import { readBoundedResponse, REQUEST_TIMEOUT, providerLayer, type BriefingProviderTarget } from './provider';
 
 const MAX_BULLET_TEXT = 600;
 const MAX_BULLETS = 5;

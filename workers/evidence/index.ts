@@ -3,9 +3,9 @@ import { DurableObject } from 'cloudflare:workers';
 import { Effect, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/http';
 
+import { buildBriefingEvidence } from '../../server/comparison/briefing/evidence/build';
 import { getComparisonFacts, getComparisonMeasurements } from '../../server/comparison/collect';
 import type { ComparisonEvidenceServices } from '../../server/comparison/evidence/services';
-import { buildBriefingEvidence } from '../../server/comparison/briefing/evidence/build';
 import type { BriefingEvidence } from '../../shared/briefing.defs';
 import { PackageNameSchema } from '../../shared/package.defs';
 import {

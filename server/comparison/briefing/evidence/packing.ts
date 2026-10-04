@@ -1,4 +1,9 @@
-import type { BriefingEvidence, BriefingInput, BriefingSource, BriefingSourceDraft } from '../../../../shared/briefing.defs';
+import type {
+  BriefingEvidence,
+  BriefingInput,
+  BriefingSource,
+  BriefingSourceDraft,
+} from '../../../../shared/briefing.defs';
 import type { ComparisonVersion, PackageComparison } from '../../../../shared/comparison.defs';
 import type { PackageReleaseNotes } from '../../../../shared/github.defs';
 
