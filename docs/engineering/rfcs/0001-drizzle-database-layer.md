@@ -16,7 +16,7 @@ The main unresolved design risk is migration history. The existing D1 migration 
 
 The following describes checked-in source, not the proposed end state:
 
-- [`server/utils/packageBriefingStore.ts`](../../../server/utils/packageBriefingStore.ts) issues raw D1 SQL. Reads use `first()`; writes use one D1 `batch()` containing an insert with `ON CONFLICT DO NOTHING` and a select. The select returns the first stored success, preserving first-writer-wins behavior.
+- [`server/comparison/briefing/store.ts`](../../../server/comparison/briefing/store.ts) issues raw D1 SQL. Reads use `first()`; writes use one D1 `batch()` containing an insert with `ON CONFLICT DO NOTHING` and a select. The select returns the first stored success, preserving first-writer-wins behavior.
 - [`workers/evidence/store.ts`](../../../workers/evidence/store.ts) uses synchronous SQL through `transactionSync`. It creates its own evidence tables and partial expiry index, stores chunked JSON, and validates metadata, chunk order, byte length, and JSON when reading.
 - [`scripts/export-briefings.ts`](../../../scripts/export-briefings.ts) scans with `node:sqlite` `DatabaseSync.prepare(...).iterate()`. It validates rows and streams escaped SQL output while preserving stored response JSON bytes.
 - [`migrations/0001_package_briefings.sql`](../../../migrations/0001_package_briefings.sql) is the current briefing-table migration. [`workers/briefing/wrangler.jsonc`](../../../workers/briefing/wrangler.jsonc) points both the local and preview D1 bindings at `../../migrations`. The reviewed [release and recovery policy](../ops/releases-and-recovery.md#database-and-stored-data-changes) requires new numbered migrations and says not to rewrite applied history.
@@ -149,7 +149,7 @@ The old reset plan relied on an assumption that preview data/history could be di
 
 ## References
 
-- Current code and configuration: [`package.json`](../../../package.json), [`workers/briefing/wrangler.jsonc`](../../../workers/briefing/wrangler.jsonc), [`migrations/0001_package_briefings.sql`](../../../migrations/0001_package_briefings.sql), [`server/utils/packageBriefingStore.ts`](../../../server/utils/packageBriefingStore.ts), [`workers/evidence/store.ts`](../../../workers/evidence/store.ts), [`scripts/export-briefings.ts`](../../../scripts/export-briefings.ts).
+- Current code and configuration: [`package.json`](../../../package.json), [`workers/briefing/wrangler.jsonc`](../../../workers/briefing/wrangler.jsonc), [`migrations/0001_package_briefings.sql`](../../../migrations/0001_package_briefings.sql), [`server/comparison/briefing/store.ts`](../../../server/comparison/briefing/store.ts), [`workers/evidence/store.ts`](../../../workers/evidence/store.ts), [`scripts/export-briefings.ts`](../../../scripts/export-briefings.ts).
 - Project migration policy: [Database and stored-data changes](../ops/releases-and-recovery.md#database-and-stored-data-changes).
 - Drizzle documentation: [D1 batch API](https://orm.drizzle.team/docs/sqlite/batch-api), [SQLite migrations](https://orm.drizzle.team/docs/sqlite/drizzle-kit-generate), [Drizzle config](https://orm.drizzle.team/docs/drizzle-config-file), [v0-to-v1 changes](https://orm.drizzle.team/docs/v0-v1-changes).
 - Cloudflare documentation: [Durable Object SQLite transactions](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/), [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/).

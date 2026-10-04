@@ -1,10 +1,10 @@
 # RFC 0002: Server module ownership
 
-**Status:** ACCEPTED — structure and scope approved in conversation; implementation not yet started
+**Status:** ACCEPTED — implementation complete; see the current [system overview](../overview.md), [evidence architecture](../evidence.md), and [briefing architecture](../briefing.md).
 
 **Date:** 2026-10-04
 
-Acceptance records the agreed direction, not shipment. The full cutover remains subject to review of this written design and a separate implementation plan.
+Acceptance records the agreed direction. The completed cutover follows this design; the current-system documents above own its living behavior and source references.
 
 ## Summary
 
@@ -16,7 +16,7 @@ Move every current `server/utils` implementation and its tests, update all route
 
 This section records the source state when the RFC was accepted:
 
-- [`server/utils/`](../../../server/utils/) contains registry, GitHub, OSV, and Bundlephobia integrations; comparison and evidence collection; briefing generation and storage; tarball inspection; a Cloudflare evidence client; and route helpers. Their ownership is not legible from the common directory.
+- `server/utils/` contains registry, GitHub, OSV, and Bundlephobia integrations; comparison and evidence collection; briefing generation and storage; tarball inspection; a Cloudflare evidence client; and route helpers. Their ownership is not legible from the common directory.
 - Nuxt handlers live directly in `server/api/` directories that mix endpoint handlers with shared code currently imported from `server/utils/`. For example, comparison selectors and collection operations are both imported from `packageComparisonFacts.ts` by the declarations and briefing handlers.
 - The briefing and evidence Workers import application comparison and briefing implementations from `server/utils/`. Moving those modules must update Worker imports; it does not move Worker runtime code or make those modules Nuxt-specific.
 - `nuxt.config.ts` currently excludes `**/*.unit.ts` from Nitro discovery, while Vitest includes `**/*.unit.ts` beneath `server/`. Nitro maps every other TypeScript file beneath its scanned API directory to a route; a helper filename or leading underscore alone does not suppress route discovery.
@@ -154,28 +154,28 @@ Provider adapters depend on shared schemas and runtime HTTP libraries, not the c
 
 All current implementation and unit-test files in `server/utils/` move as follows; `.unit.ts` files travel with the module they exercise and retain behavior coverage:
 
-| Current module(s) | New ownership |
-|---|---|
-| `npmRegistry.ts`, `npmRegistry.unit.ts` | `server/httpDependencies/npm/registry.ts`, adjacent unit test |
-| `github.ts`, `github.unit.ts` | `server/httpDependencies/github/client.ts`, adjacent unit test |
-| `osv.ts`, `osv.unit.ts` | `server/httpDependencies/osv/client.ts`, adjacent unit test |
-| `bundlephobia.ts` | `server/httpDependencies/bundlephobia/client.ts` |
-| `packageTarball.ts`, `packageTarball.unit.ts`, `packageTarballStreaming.ts`, `packageTarballStreaming.unit.ts` | `server/httpDependencies/npm/tarball.ts` and `tarballStreaming.ts`, with adjacent tests |
-| `packageComparison.ts`, `packageComparison.unit.ts` | split into `comparison/declarations/compare.ts` and `comparison/measurements/compare.ts`, with tests alongside the matching rules |
-| `packageComparisonFacts.ts`, `packageComparisonFacts.unit.ts` | `server/comparison/collect.ts` and its unit test; remove API schemas into `compare/_internals/request.ts` |
-| `packageEvidenceErrors.ts` | `comparison/evidence/errors.ts`, except `RegistryRequestError` moves to `httpDependencies/npm/errors.ts` |
-| `packageBundleSize.ts`, `packageBundleSize.unit.ts` | `comparison/measurements/bundleSize.ts` and adjacent unit test |
-| `packageVulnerabilities.ts`, `packageVulnerabilities.unit.ts` | `comparison/measurements/vulnerabilities.ts` and adjacent unit test |
-| `packageReleaseNotes.ts`, `packageReleaseNotes.unit.ts` | `comparison/evidence/releaseNotes.ts` and adjacent unit test |
-| `packageEvidenceClient.ts`, `packageEvidenceClient.unit.ts` | `server/api/package/[packageName]/compare/_internals/evidenceClient.ts` and its unit test |
-| `packageBriefing.ts`, `packageBriefingGeneration.unit.ts` | `comparison/briefing/generation.ts` and adjacent unit test |
-| `packageBriefingProvider.ts` | `comparison/briefing/provider.ts` |
-| `packageBriefingPrompt.ts` | `comparison/briefing/prompt.ts` |
-| `packageBriefingStore.ts`, `packageBriefingStore.unit.ts` | `comparison/briefing/store.ts` and adjacent unit test |
-| `packageBriefingEvidence.ts`, `packageBriefingEvidence.unit.ts` | `comparison/briefing/evidence/build.ts` and adjacent unit test |
-| `packageBriefingEvidenceChangelog.ts` | `comparison/briefing/evidence/changelog.ts` |
-| `packageBriefingEvidencePacking.ts` | `comparison/briefing/evidence/packing.ts` |
-| `briefingSocketUrl.ts`, `briefingSocketUrl.unit.ts` | `server/api/package/[packageName]/compare/briefing/_internals/socketUrl.ts` and its unit test |
+| Current module(s)                                                                                              | New ownership                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `npmRegistry.ts`, `npmRegistry.unit.ts`                                                                        | `server/httpDependencies/npm/registry.ts`, adjacent unit test                                                                     |
+| `github.ts`, `github.unit.ts`                                                                                  | `server/httpDependencies/github/client.ts`, adjacent unit test                                                                    |
+| `osv.ts`, `osv.unit.ts`                                                                                        | `server/httpDependencies/osv/client.ts`, adjacent unit test                                                                       |
+| `bundlephobia.ts`                                                                                              | `server/httpDependencies/bundlephobia/client.ts`                                                                                  |
+| `packageTarball.ts`, `packageTarball.unit.ts`, `packageTarballStreaming.ts`, `packageTarballStreaming.unit.ts` | `server/httpDependencies/npm/tarball.ts` and `tarballStreaming.ts`, with adjacent tests                                           |
+| `packageComparison.ts`, `packageComparison.unit.ts`                                                            | split into `comparison/declarations/compare.ts` and `comparison/measurements/compare.ts`, with tests alongside the matching rules |
+| `packageComparisonFacts.ts`, `packageComparisonFacts.unit.ts`                                                  | `server/comparison/collect.ts` and its unit test; remove API schemas into `compare/_internals/request.ts`                         |
+| `packageEvidenceErrors.ts`                                                                                     | `comparison/evidence/errors.ts`, except `RegistryRequestError` moves to `httpDependencies/npm/errors.ts`                          |
+| `packageBundleSize.ts`, `packageBundleSize.unit.ts`                                                            | `comparison/measurements/bundleSize.ts` and adjacent unit test                                                                    |
+| `packageVulnerabilities.ts`, `packageVulnerabilities.unit.ts`                                                  | `comparison/measurements/vulnerabilities.ts` and adjacent unit test                                                               |
+| `packageReleaseNotes.ts`, `packageReleaseNotes.unit.ts`                                                        | `comparison/evidence/releaseNotes.ts` and adjacent unit test                                                                      |
+| `packageEvidenceClient.ts`, `packageEvidenceClient.unit.ts`                                                    | `server/api/package/[packageName]/compare/_internals/evidenceClient.ts` and its unit test                                         |
+| `packageBriefing.ts`, `packageBriefingGeneration.unit.ts`                                                      | `comparison/briefing/generation.ts` and adjacent unit test                                                                        |
+| `packageBriefingProvider.ts`                                                                                   | `comparison/briefing/provider.ts`                                                                                                 |
+| `packageBriefingPrompt.ts`                                                                                     | `comparison/briefing/prompt.ts`                                                                                                   |
+| `packageBriefingStore.ts`, `packageBriefingStore.unit.ts`                                                      | `comparison/briefing/store.ts` and adjacent unit test                                                                             |
+| `packageBriefingEvidence.ts`, `packageBriefingEvidence.unit.ts`                                                | `comparison/briefing/evidence/build.ts` and adjacent unit test                                                                    |
+| `packageBriefingEvidenceChangelog.ts`                                                                          | `comparison/briefing/evidence/changelog.ts`                                                                                       |
+| `packageBriefingEvidencePacking.ts`                                                                            | `comparison/briefing/evidence/packing.ts`                                                                                         |
+| `briefingSocketUrl.ts`, `briefingSocketUrl.unit.ts`                                                            | `server/api/package/[packageName]/compare/briefing/_internals/socketUrl.ts` and its unit test                                     |
 
 Additionally, the declarations and measurements endpoint tests move beside their respective new handlers. Search, package metadata, and health handler tests (if present at cutover) move beside their endpoint directories. Test contents should change only where imports/setup require it; retain consumer-visible behavior assertions.
 
@@ -219,5 +219,5 @@ The cutover is complete only when `server/utils` is absent, Nitro discovers exac
 ## References
 
 - [Documentation organization](../../CONTEXT.md) and current [system overview](../overview.md), [evidence architecture](../evidence.md), and [briefing architecture](../briefing.md).
-- Current API routes under [`server/api/`](../../../server/api/) and current implementation under [`server/utils/`](../../../server/utils/) (source baseline at acceptance time).
+- Current API routes under [`server/api/`](../../../server/api/) and historical implementation under `server/utils/` (source baseline at acceptance time).
 - [Nuxt Nitro configuration](../../../nuxt.config.ts), [Vitest configuration](../../../vitest.config.ts), [`workers/evidence/`](../../../workers/evidence/), and [`workers/briefing/`](../../../workers/briefing/).

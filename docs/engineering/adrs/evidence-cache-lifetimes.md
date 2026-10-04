@@ -18,4 +18,4 @@ Reconsider the policy if freshness requirements or observed storage/workload cos
 ## Artifacts
 
 - [Current cache keys, write rules, and storage behavior](../evidence.md#cache-keys-coalescing-expiry-and-storage-failures).
-- [Collector constants and cache policy](../../../server/utils/packageComparisonFacts.ts) and [SQLite cache](../../../workers/evidence/store.ts): source evidence for the implemented behavior.
+- [Collector constants and cache policy](../../../server/comparison/collect.ts) and [SQLite cache](../../../workers/evidence/store.ts): source evidence for the implemented behavior.

@@ -55,4 +55,4 @@ The purpose and priority above were agreed during the product-documentation revi
 
 - [Current header and navigation](../../app/components/comparison/ComparisonDetails.vue).
 - [Result explanations and limitations](../../app/pages/[packageName]/comparisonView.ts).
-- [AI evidence packet](../../server/utils/packageBriefingEvidence.ts) and [briefing instructions](../../server/utils/packageBriefingPrompt.ts).
+- [AI evidence packet](../../server/comparison/briefing/evidence/build.ts) and [briefing instructions](../../server/comparison/briefing/prompt.ts).

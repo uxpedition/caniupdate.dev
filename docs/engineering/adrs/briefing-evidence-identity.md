@@ -20,4 +20,4 @@ Reconsider identity only if the product deliberately changes what warrants regen
 ## Artifacts
 
 - [Current identity and submission contract](../briefing.md#evidence-identity-and-private-submission).
-- [Evidence hash](../../../server/utils/packageBriefing.ts), [validated result store](../../../server/utils/packageBriefingStore.ts), and [D1 schema](../../../migrations/0001_package_briefings.sql): source evidence for identity and first-writer-wins storage.
+- [Evidence hash](../../../server/comparison/briefing/generation.ts), [validated result store](../../../server/comparison/briefing/store.ts), and [D1 schema](../../../migrations/0001_package_briefings.sql): source evidence for identity and first-writer-wins storage.

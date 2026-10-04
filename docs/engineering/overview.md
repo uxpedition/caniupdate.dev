@@ -44,13 +44,13 @@ All three routes decode the package name and trim nonempty `from`/`to` inputs, e
 | `GET /api/package/{encodedPackageName}/compare/measurements?from=…&to=…` | Size/advisory comparison and per-version evidence, including compact tarball summaries. Uses the private evidence backend; no per-file inventory or changelog bodies reach this response.                                |
 | `POST /api/package/{encodedPackageName}/compare/briefing?from=…&to=…`    | Builds evidence server-side and submits it privately. Returns `200` with a stored briefing, `202` with pending job identity/socket information, or a sanitized refusal. Can initiate paid generation; it is not a read.  |
 
-Sources: [shared collection and validation](../../server/utils/packageComparisonFacts.ts), [declarations route](../../server/api/package/[packageName]/compare/index.get.ts), [measurements route](../../server/api/package/[packageName]/compare/measurements.get.ts), [briefing route](../../server/api/package/[packageName]/compare/briefing.post.ts), and [evidence client boundary](../../server/utils/packageEvidenceClient.ts).
+Sources: [collection and validation](../../server/comparison/collect.ts), [declaration comparator](../../server/comparison/declarations/compare.ts), [measurement comparator](../../server/comparison/measurements/compare.ts), [declarations route](../../server/api/package/[packageName]/compare/index.get.ts), [measurements route](../../server/api/package/[packageName]/compare/measurements/index.get.ts), [briefing route](../../server/api/package/[packageName]/compare/briefing/index.post.ts), and [evidence client boundary](../../server/api/package/[packageName]/compare/_internals/evidenceClient.ts).
 
 The browser supplies only package/version selectors, never trusted comparison facts. Measurements responses undergo envelope/version/no-inventory checks; briefing packets and service responses are schema-decoded. Missing bindings, transport failures, upstream failures, or protocol violations become sanitized service failures rather than falling back to frontend collection or generation.
 
 ## Declaration comparison invariants
 
-The [local comparator](../../server/utils/packageComparison.ts) runs on resolved manifest declarations without extra I/O or executing package code. Direction is the requested `from` → `to`; identical versions and downgrades do not take a separate approval path.
+The [declaration comparator](../../server/comparison/declarations/compare.ts) runs on resolved manifest declarations without extra I/O or executing package code. Direction is the requested `from` → `to`; identical versions and downgrades do not take a separate approval path.
 
 - Dependency changes cover runtime and optional requirements, not dev dependencies. Optional requirements override same-name runtime declarations; a category move is one change. Peers are separate and include required/optional transitions.
 - Declaration maps emit sorted differences. Scalar/composite results retain before/after values and `changed`; presence flags distinguish an absent declaration from explicit JSON `null`.
