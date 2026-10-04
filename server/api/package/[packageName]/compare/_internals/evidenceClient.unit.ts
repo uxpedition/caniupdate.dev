@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { BriefingEvidence } from '#shared/briefing.defs';
 import type { PackageEvidenceNamespace, PackageEvidenceResponse } from '#shared/packageEvidence.defs';
 
-import { getBriefingEvidence, getPackageMeasurements } from './packageEvidenceClient';
+import { getBriefingEvidence, getPackageMeasurements } from './evidenceClient';
 
 const request = { packageName: 'minimist', from: '1.0.0', to: '2.0.0' };
 const evidence: BriefingEvidence = {

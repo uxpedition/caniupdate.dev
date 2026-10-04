@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeasuredPackageVersion, PackageMeasurementsResponse } from '#shared/comparison.defs';
 import type { PackageEvidenceNamespace, PackageEvidenceObject } from '#shared/packageEvidence.defs';
 
-import handler from './measurements.get';
+import handler from './index.get';
 
 const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
 const idFromName = vi.fn((name: string) => ({ name }));

@@ -6,7 +6,7 @@ import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/briefin
 import type { BriefingSubmission } from '#shared/briefingJob.defs';
 import type { PackageEvidenceNamespace, PackageEvidenceObject } from '#shared/packageEvidence.defs';
 
-import handler from './briefing.post';
+import handler from './index.post';
 
 const HASH = 'b637f83283a13491f7fee3cd9a108ab6ea20994d00a95a6646ba7a1bd48818b4';
 const EVENTS_URL = `ws://localhost:8791/api/briefings/${HASH}/events`;

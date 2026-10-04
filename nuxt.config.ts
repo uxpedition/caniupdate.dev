@@ -44,7 +44,7 @@ export default defineNuxtConfig({
     '/': { prerender: true },
   },
   nitro: {
-    ignore: ['**/*.unit.ts'],
+    ignore: ['**/*.unit.ts', '**/_internals/**'],
     preset: 'cloudflare_module',
     cloudflare: {
       deployConfig: true,

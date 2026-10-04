@@ -10,12 +10,12 @@ import {
 import type { BriefingEvidence } from '#shared/briefing.defs';
 import { decodeBriefingSubmission, type BriefingSubmission } from '#shared/briefingJob.defs';
 
-import { browserBriefingSocketUrl } from '../../../../utils/briefingSocketUrl';
 import {
   decodePackageComparisonQuery,
   decodePackageComparisonRouterParams,
-} from '../../../../utils/packageComparisonFacts';
-import { getBriefingEvidence, PackageEvidenceClientError } from '../../../../utils/packageEvidenceClient';
+} from '../../../../../utils/packageComparisonFacts';
+import { getBriefingEvidence, PackageEvidenceClientError } from '../_internals/evidenceClient';
+import { browserBriefingSocketUrl } from './_internals/socketUrl';
 
 const briefingServiceUnavailable = () =>
   createError({ statusCode: 503, statusMessage: 'Briefing service unavailable' });
