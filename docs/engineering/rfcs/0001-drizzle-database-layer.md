@@ -1,9 +1,11 @@
 # RFC 0001: Drizzle database layer
 
-**Status:** APPROVED — implementation verified; local cutover pending; preview cutover blocked on maintenance/quiescence  
+**Status:** APPROVED — implementation and local cutover verified; preview cutover blocked on maintenance/quiescence  
 **ADR:** [Drizzle database layer](../adrs/drizzle-database-layer.md)  
 **Date:** 2026-10-03  
 **Decision (2026-10-04):** The user approved the proposed Drizzle database-layer design after reviewing the feasibility research and explicitly approved restarting migration history and resetting the local and preview D1 databases for the cutover. The user confirmed that the application is not yet deployed to production. This is a scoped exception to the no-rewrite migration policy, not a general permission to reset other databases. Approval does not mean implementation or full compatibility verification is complete. No reset has been executed as part of recording this decision; rollout remains subject to the implementation acceptance checks below.
+
+**Retention amendment (2026-10-05):** The user explicitly approved discarding the old briefing rows instead of restoring them. The local reset is executed and verified; preview remains unmodified because maintenance/quiescence prerequisites are unavailable. Actual execution evidence is recorded in the ADR.
 
 ## Summary
 

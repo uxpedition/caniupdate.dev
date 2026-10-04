@@ -2,7 +2,7 @@
 
 **Decision (2026-10-04):** Adopt Drizzle for typed query construction in D1 briefing storage, Durable Object SQLite evidence storage, and the offline briefing exporter. Keep Wrangler as the only D1 migration applier. Reset the local and preview D1 databases and restart migration history at the pre-production cutover, as explicitly approved by the user.
 
-**Status:** Accepted; implementation verified, local cutover pending, preview cutover blocked on maintenance/quiescence. Approval is not reset or rollout evidence.
+**Status:** Accepted; implementation and local cutover verified, preview cutover blocked on maintenance/quiescence. Approval is not reset or rollout evidence.
 
 ## Why
 
@@ -39,7 +39,7 @@ Same-origin production bundle measurements (`http://localhost:5273`):
 
 The actual client output graph contained 14 chunks/379 module occurrences, with no Drizzle or database-schema module. Backend cost matches the approximately 38-KiB-gzip feasibility result; it does not materially change the approved decision. Final verification passed: 49 test files/413 tests, root and both Worker type checks, focused D1/DO/Node constructor/result anti-`any` probes, migration drift check and formatting. Lint retained only the 12 pre-existing warnings. The 21 real-workerd cache cases include synchronous replacement/cleanup rollback, coalescing, corruption, serialization and SQL failures; Worker/Queue/socket and exporter regressions also passed.
 
-**Local:** The original persistence target was identified read-only with 30 briefing rows and only `0001_package_briefings.sql` applied. Backup/reset/restore has not yet executed.
+**Local (2026-10-05):** The user explicitly changed retention to discard old briefing rows. After stopping the original launcher and backing up its D1 subtree, verified implementation revision `bae6694` reset only `package_briefings` and its old migration history in `/home/adrian/projects/can-i-npm-update/.wrangler/state`. Wrangler applied `20261004204918_lovely_nomad.sql`; observed row count is zero, primary-key/nullability/default/index metadata matches, and no migrations remain pending. The verified worktree launcher restarted against that exact persistence path with the existing operator settings; actual frontend `/api/health` returned `200 {"status":"ok"}`. No rows were restored, no new provider call was submitted for this verification, and DO/Queue state was not reset. The original `main` launcher remains stopped; do not restart it on the new history.
 
 **Preview:** No new deployment, backup/reset, queue pause or state mutation. D1 identity matches the approved target. Authorized existing-preview health returned `200 {"status":"ok"}`; unauthenticated frontend redirects to Access. Management app-list queries expose zero applications even with pagination and audience filters, so the frontend maintenance rule cannot be targeted. Queue realtime backlog is zero, but complete namespace pagination found 14 persisted `BriefingJob` objects whose KV job states are not inspectable through available APIs. Missing acceptance exclusion and authoritative terminal-job observation block destructive cutover; a fixed wait or zero backlog is insufficient. An operator must supply the actual manageable Access application and verifiable quiescence (or obtain separately reviewed control/risk approval). Production remains untouched.
 

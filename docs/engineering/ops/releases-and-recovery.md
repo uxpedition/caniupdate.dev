@@ -99,64 +99,45 @@ There is no rule requiring a new table for every attribute. Normalize around ent
 
 ### One-time Drizzle adoption cutover
 
-The [accepted Drizzle ADR](../adrs/drizzle-database-layer.md) authorizes replacing the old initial D1 schema/history **once, for local and the existing maintainer preview only**. Preserve all briefing rows and timestamps; retained jobs can reference them. Production is not deployed and is excluded. Do not delete/recreate databases or reset Durable Object/Queue state. Subsequent migrations remain append-only.
+The [accepted Drizzle ADR](../adrs/drizzle-database-layer.md) authorizes replacing the old initial D1 schema/history **once, for local and the existing maintainer preview only**. On 2026-10-05 the user explicitly amended retention: **discard old briefing rows, without restoration**. Retained jobs can reference discarded results; those old references are not preserved. Production is excluded. Do not delete/recreate databases or reset Durable Object/Queue state. Subsequent migrations remain append-only.
 
-Use the verified source checkout and installed `nub exec wrangler`. In an isolated worktree, `LOCAL_PERSIST_TO` must be the **actual original checkout's absolute persistence path**, not the worktree's empty state. Positively identify `LOCAL_D1_SQLITE` within that target's `v3/d1` subtree. Set `CUTOVER_DIR` to a new ignored `.data` backup directory; use `umask 077` and create it with mode `700`, without overwriting an earlier backup.
+Use the verified source checkout and installed `nub exec wrangler`. `LOCAL_PERSIST_TO` must be the **actual original checkout's absolute persistence path**, not the worktree's empty state. Set `CUTOVER_DIR` to a new ignored `.data` backup directory with mode `700` and `umask 077`, without overwriting an earlier backup.
 
 Before destruction:
 
 1. Verify config/account/binding/database identity. Local is `can-i-update-local-briefings`, ID `00000000-0000-0000-0000-000000000001`; preview account is `8a0be24aad326a55ba610b94b106be81`, database `can-i-update-preview-briefings`, ID `351da802-5296-4e6a-a186-f9d1e99036b6`, briefing config `--env preview`.
 2. Stop the actual local launcher and its children; do not bypass its live lock. For preview, block acceptance through the **frontend** Access controls and prove accepted work has settled. Socket denial alone does not block the private submission binding. A zero Queue backlog or fixed sleep does not establish terminal Durable Object KV job state. Stop if maintenance/quiescence cannot be proved; do not add a pause/admin subsystem as incidental migration work.
 3. Inspect table/index inventory and migration records. The reset SQL below is valid only when `package_briefings` is the sole application table and `d1_migrations` belongs entirely to its replaced history. Unexpected tables/history require reassessment. If the migration table does not exist, omit the `DELETE` rather than suppressing unrelated SQL errors.
-4. Back up full schema/history and every row. Validate row-only exports contain no DDL or migration-record inserts. Rehearse restoring them against the generated schema in disposable state, comparing **every** evidence hash, original JSON string and timestamp. Export validation failures are not permission to discard rows.
+4. Retain a full D1 backup for recovery. Do not perform row-only export, retention validation, or row restoration for this explicitly approved empty cutover. Generated initial and subsequent migrations have already been rehearsed in disposable state.
 
-For local, copy only the stopped target's `v3/d1` subtree into the private backup directory, then export its positively identified SQLite file:
+For local, execute sequentially and stop on failure:
 
 ```bash
 cp -a "$LOCAL_PERSIST_TO/v3/d1" "$CUTOVER_DIR/local-d1"
-node scripts/export-briefings.ts "$LOCAL_D1_SQLITE" "$CUTOVER_DIR/local-briefings.sql"
-```
-
-After restoration rehearsal succeeds, execute sequentially and stop on failure:
-
-```bash
 nub exec wrangler d1 execute can-i-update-local-briefings --local \
   --config workers/briefing/wrangler.jsonc --persist-to "$LOCAL_PERSIST_TO" \
   --command 'DROP TABLE IF EXISTS package_briefings; DELETE FROM d1_migrations;'
 nub exec wrangler d1 migrations apply can-i-update-local-briefings --local \
   --config workers/briefing/wrangler.jsonc --persist-to "$LOCAL_PERSIST_TO"
-nub exec wrangler d1 execute can-i-update-local-briefings --local \
-  --config workers/briefing/wrangler.jsonc --persist-to "$LOCAL_PERSIST_TO" \
-  --file "$CUTOVER_DIR/local-briefings.sql"
 ```
 
-For preview, only after maintenance/quiescence, use the external maintainer-credential subshell in [deployment](deployment.md#redeploying-the-existing-maintainer-preview), with `CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false` and `CLOUDFLARE_INCLUDE_PROCESS_ENV=false`. Never print credentials. Obtain both full and row-only backups:
+For preview, only after maintenance/quiescence, use the external maintainer-credential subshell in [deployment](deployment.md#redeploying-the-existing-maintainer-preview), with `CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false` and `CLOUDFLARE_INCLUDE_PROCESS_ENV=false`. Never print credentials. Execute each separately and stop on failure:
 
 ```bash
 nub exec wrangler d1 info can-i-update-preview-briefings \
   --config workers/briefing/wrangler.jsonc --env preview --json
 nub exec wrangler d1 export can-i-update-preview-briefings --remote \
   --config workers/briefing/wrangler.jsonc --env preview --output "$CUTOVER_DIR/preview-full.sql"
-nub exec wrangler d1 export can-i-update-preview-briefings --remote \
-  --config workers/briefing/wrangler.jsonc --env preview --table package_briefings --no-schema \
-  --output "$CUTOVER_DIR/preview-briefings.sql"
-```
-
-Rehearse and compare restoration before executing each of these separately:
-
-```bash
 nub exec wrangler d1 execute can-i-update-preview-briefings --remote \
   --config workers/briefing/wrangler.jsonc --env preview \
   --command 'DROP TABLE IF EXISTS package_briefings; DELETE FROM d1_migrations;'
 nub exec wrangler d1 migrations apply can-i-update-preview-briefings --remote \
   --config workers/briefing/wrangler.jsonc --env preview
-nub exec wrangler d1 execute can-i-update-preview-briefings --remote \
-  --config workers/briefing/wrangler.jsonc --env preview --file "$CUTOVER_DIR/preview-briefings.sql"
 ```
 
-A verified zero-row export needs no restore execution. Check table nullability/defaults/indexes, exact applied migration filenames, no pending migrations, and all retained row strings/timestamps. Restart local with the verified checkout and `--persist-to "$LOCAL_PERSIST_TO"`; never restart an old checkout on the reset history. Deploy preview only after database verification, in evidence/briefing/frontend order, with its exact build origin and `--env preview`. Reuse a known stored result for deployed smoke; a new paid call requires separate approval.
+Check zero stored rows, table nullability/defaults/indexes, exact applied migration filenames, and no pending migrations. Restart local with the verified checkout and `--persist-to "$LOCAL_PERSIST_TO"`; never restart an old checkout on the reset history. Deploy preview only after database verification, in evidence/briefing/frontend order, with its exact build origin and `--env preview`. Verify deployed health and migration state without generating a new paid result; a new paid call requires separate approval.
 
-If any step fails, keep the launcher stopped or preview in maintenance. Restore the verified D1 backup with reviewed compatible code; do not reset DOs/Queues, replay jobs, regenerate SQL to conceal failure, or restore migration records without matching schema/data. Record source revision, operator/time, target IDs, filenames, backup access/location, restoration comparisons, checks and unexercised paths. Only then restore access. Approval and execution evidence are distinct; see the ADR rollout status.
+If any step fails, keep the launcher stopped or preview in maintenance. Restore the verified D1 backup with reviewed compatible code; do not reset DOs/Queues, replay jobs, regenerate SQL to conceal failure, or restore migration records without matching schema/data. Record source revision, operator/time, target IDs, filenames, backup access/location, checks and unexercised paths. Only then restore access. Approval and execution evidence are distinct; see the ADR rollout status.
 
 ## Diagnose before changing state
 
