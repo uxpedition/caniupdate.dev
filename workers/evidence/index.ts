@@ -5,7 +5,7 @@ import { FetchHttpClient } from 'effect/http';
 
 import { getComparisonFacts, getComparisonMeasurements } from '../../server/comparison/collect';
 import type { ComparisonEvidenceServices } from '../../server/comparison/evidence/services';
-import { buildBriefingEvidence } from '../../server/utils/packageBriefingEvidence';
+import { buildBriefingEvidence } from '../../server/comparison/briefing/evidence/build';
 import type { BriefingEvidence } from '../../shared/briefing.defs';
 import { PackageNameSchema } from '../../shared/package.defs';
 import {

@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BRIEFING_EVIDENCE_MAX_BYTES, BriefingEvidenceSchema } from '#shared/briefing.defs';
 import type { BriefingEvidence } from '#shared/briefing.defs';
 
-import { briefingEvidenceHash, generateBriefing, readBriefingConfig } from './packageBriefing';
-import type { BriefingProviderTarget } from './packageBriefingProvider';
+import { briefingEvidenceHash, generateBriefing, readBriefingConfig } from './generation';
+import type { BriefingProviderTarget } from './provider';
 
 // The packet digests were computed by the pre-extraction `createHash('sha256').update(JSON.stringify(evidence),
 // 'utf8')`, and the session digest by the same function over the package identity. The packet digests key already-paid

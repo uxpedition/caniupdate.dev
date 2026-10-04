@@ -6,7 +6,7 @@ import type * as Cloudflare from '@cloudflare/workers-types';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { Schema } from 'effect';
 
-import { briefingEvidenceHash } from '../../server/utils/packageBriefing';
+import { briefingEvidenceHash } from '../../server/comparison/briefing/generation';
 import { BriefingEvidenceSchema } from '../../shared/briefing.defs';
 import type { BriefingEvidence } from '../../shared/briefing.defs';
 import type { BriefingSubmission } from '../../shared/briefingJob.defs';

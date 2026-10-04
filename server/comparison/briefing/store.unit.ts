@@ -4,8 +4,8 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { installBriefingSchema, openBriefingD1, type BriefingD1 } from '../../test/helpers/briefingDatabase.harness';
-import { readStoredBriefing, saveBriefing } from './packageBriefingStore';
+import { installBriefingSchema, openBriefingD1, type BriefingD1 } from '../../../test/helpers/briefingDatabase.harness';
+import { readStoredBriefing, saveBriefing } from './store';
 
 const briefing = {
   status: 'available' as const,

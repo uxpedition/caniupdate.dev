@@ -5,8 +5,8 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { briefingEvidenceHash } from '../../../server/utils/packageBriefing';
-import { readStoredBriefing } from '../../../server/utils/packageBriefingStore';
+import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
+import { readStoredBriefing } from '../../../server/comparison/briefing/store';
 import { providerFixture, startProviderFixture } from '../test/provider.stub';
 import {
   CLOSE,

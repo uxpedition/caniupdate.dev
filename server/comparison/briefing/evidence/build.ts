@@ -1,8 +1,8 @@
-import type { BriefingEvidence, BriefingInput, BriefingSourceDraft } from '../../shared/briefing.defs';
-import type { AdvisoryGroup, PackageComparison } from '../../shared/comparison.defs';
-import type { PackageAdvisory } from '../../shared/osv.defs';
-import { buildMaintainerCandidates } from './packageBriefingEvidenceChangelog';
-import { packBriefingEvidence, type BriefingEvidenceCandidate } from './packageBriefingEvidencePacking';
+import type { BriefingEvidence, BriefingInput, BriefingSourceDraft } from '../../../../shared/briefing.defs';
+import type { AdvisoryGroup, PackageComparison } from '../../../../shared/comparison.defs';
+import type { PackageAdvisory } from '../../../../shared/osv.defs';
+import { buildMaintainerCandidates } from './changelog';
+import { packBriefingEvidence, type BriefingEvidenceCandidate } from './packing';
 
 const MAX_GAP_BYTES = 512;
 const textEncoder = new TextEncoder();

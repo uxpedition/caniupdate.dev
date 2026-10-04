@@ -1,6 +1,6 @@
-import type { BriefingInput } from '../../shared/briefing.defs';
-import { compareSemver, isExactSemver } from '../../shared/compareSemver';
-import type { BriefingEvidenceCandidate } from './packageBriefingEvidencePacking';
+import type { BriefingInput } from '../../../../shared/briefing.defs';
+import { compareSemver, isExactSemver } from '../../../../shared/compareSemver';
+import type { BriefingEvidenceCandidate } from './packing';
 
 const MAX_MAINTAINER_BYTES = 4 * 1024;
 const textEncoder = new TextEncoder();

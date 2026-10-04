@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import type { BriefingInput } from '../../shared/briefing.defs';
-import type { ComparisonVersion } from '../../shared/comparison.defs';
-import type { PackageReleaseNotes } from '../../shared/github.defs';
-import type { PackageAdvisory } from '../../shared/osv.defs';
-import { toPackageVersion } from '../../shared/package.defs';
-import { compareDeclarations } from '../comparison/declarations/compare';
-import { compareMeasurements } from '../comparison/measurements/compare';
-import { buildBriefingEvidence } from './packageBriefingEvidence';
+import type { BriefingInput } from '../../../../shared/briefing.defs';
+import type { ComparisonVersion } from '../../../../shared/comparison.defs';
+import type { PackageReleaseNotes } from '../../../../shared/github.defs';
+import type { PackageAdvisory } from '../../../../shared/osv.defs';
+import { toPackageVersion } from '../../../../shared/package.defs';
+import { compareDeclarations } from '../../declarations/compare';
+import { compareMeasurements } from '../../measurements/compare';
+import { buildBriefingEvidence } from './build';
 
 // Keep the fixture close to the comparison boundary: briefing packaging must consume computed facts rather than
 // inspect manifests or derive a second comparison.

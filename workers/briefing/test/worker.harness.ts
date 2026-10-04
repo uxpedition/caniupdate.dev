@@ -28,8 +28,8 @@ import {
   type BriefingSubmission,
 } from '#shared/briefingJob.defs';
 
-import { briefingEvidenceHash } from '../../../server/utils/packageBriefing';
-import { readStoredBriefing } from '../../../server/utils/packageBriefingStore';
+import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
+import { readStoredBriefing } from '../../../server/comparison/briefing/store';
 import type { BriefingJobMessage } from '../job';
 import { FIXTURE_API_KEY, MODEL, SOURCE_ID, providerFixture } from './provider.stub';
 

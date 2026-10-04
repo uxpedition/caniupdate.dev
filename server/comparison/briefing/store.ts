@@ -1,7 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { Data, Schema } from 'effect';
 
-import { AvailablePackageBriefingSchema, type AvailablePackageBriefing } from '../../shared/briefing.defs';
+import { AvailablePackageBriefingSchema, type AvailablePackageBriefing } from '../../../shared/briefing.defs';
 
 const decodeBriefing = Schema.decodeUnknownSync(AvailablePackageBriefingSchema);
 const SELECT_BRIEFING = 'SELECT response_json FROM package_briefings WHERE evidence_hash = ?';

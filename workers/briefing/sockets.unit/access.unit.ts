@@ -10,8 +10,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { AvailablePackageBriefing } from '#shared/briefing.defs';
 
-import { briefingEvidenceHash } from '../../../server/utils/packageBriefing';
-import { readStoredBriefing } from '../../../server/utils/packageBriefingStore';
+import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
+import { readStoredBriefing } from '../../../server/comparison/briefing/store';
 import { FIXTURE_API_KEY, providerFixture, startProviderFixture } from '../test/provider.stub';
 import {
   BRIEFING_ENVIRONMENTS,

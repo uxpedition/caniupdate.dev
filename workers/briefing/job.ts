@@ -13,8 +13,8 @@ import { DurableObject } from 'cloudflare:workers';
 import { Effect, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/http';
 
-import { briefingEvidenceHash, generateBriefing, readBriefingConfig } from '../../server/utils/packageBriefing';
-import { isBriefingStoreFailure, readStoredBriefing, saveBriefing } from '../../server/utils/packageBriefingStore';
+import { briefingEvidenceHash, generateBriefing, readBriefingConfig } from '../../server/comparison/briefing/generation';
+import { isBriefingStoreFailure, readStoredBriefing, saveBriefing } from '../../server/comparison/briefing/store';
 import { BriefingEvidenceSchema } from '../../shared/briefing.defs';
 import type {
   AvailablePackageBriefing,

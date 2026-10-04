@@ -4,21 +4,21 @@ import { Cause, Data, Effect, Layer, Result, Schema } from 'effect';
 import { LanguageModel, Prompt } from 'effect/ai';
 import { FetchHttpClient, HttpClient } from 'effect/http';
 
-import { BriefingBulletSchema } from '../../shared/briefing.defs';
+import { BriefingBulletSchema } from '../../../shared/briefing.defs';
 import type {
   BriefingBullet,
   BriefingEvidence,
   BriefingSource,
   BriefingUnavailableReason,
   PackageBriefing,
-} from '../../shared/briefing.defs';
-import { SYSTEM_PROMPT, USER_PROMPT_LINES } from './packageBriefingPrompt';
+} from '../../../shared/briefing.defs';
+import { SYSTEM_PROMPT, USER_PROMPT_LINES } from './prompt';
 import {
   readBoundedResponse,
   REQUEST_TIMEOUT,
   providerLayer,
   type BriefingProviderTarget,
-} from './packageBriefingProvider';
+} from './provider';
 
 const MAX_BULLET_TEXT = 600;
 const MAX_BULLETS = 5;

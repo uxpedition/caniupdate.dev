@@ -8,8 +8,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { briefingEvidenceHash } from '../../../server/utils/packageBriefing';
-import { readStoredBriefing } from '../../../server/utils/packageBriefingStore';
+import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
+import { readStoredBriefing } from '../../../server/comparison/briefing/store';
 import {
   FIXTURE_API_KEY,
   MODEL,
