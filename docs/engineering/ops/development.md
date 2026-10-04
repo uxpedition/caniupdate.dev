@@ -17,6 +17,12 @@ Open `http://localhost:5173`. A Cloudflare account, deployment token, and paid A
 
 The launcher exposes the frontend and briefing socket on all interfaces. Treat local development as reachable by other devices on connected networks, not as an authenticated private service. For a Tailscale session, use this machine's Tailscale address on port `5173`.
 
+## Zed Vue tooling
+
+`@vue/language-server`, `@vue/typescript-plugin`, and `vue-tsc` are pinned to 3.3.11. Zed's managed Vue extension currently installs 3.3.12; its TypeScript plugin reports a false `TS2322` (`… is not assignable to type 'never'`) for the generic Reka Combobox update handler in `Combobox.vue` and `Select.vue`. `.zed/settings.json` launches the project-local Vue server through Nub and directs vtsls to the project-local plugin via `/proc/self/cwd`, which resolves to the Zed remote workspace root on Linux. Restart both `vue-language-server` and `vtsls` after `nub ci` so they pick up the locked versions.
+
+Remove the temporary 3.3.11 pins and Zed override only after a later Vue language-tools release passes in Zed: no false diagnostics in both components, while a deliberately incompatible event handler still produces a diagnostic. Keep `vue-tsc` aligned with the language-tools release used by the editor workaround.
+
 ## What starts locally?
 
 [`scripts/dev.ts`](../../../scripts/dev.ts) applies local D1 migrations, starts the two backend Workers, waits for readiness, and starts the frontend. It stops the processes on Ctrl-C or a sibling failure.

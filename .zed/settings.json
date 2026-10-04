@@ -1,0 +1,27 @@
+{
+  "lsp": {
+    "vue-language-server": {
+      "binary": {
+        "path": "nub",
+        "arguments": ["run", "--node", "zed:vue-language-server"]
+      }
+    },
+    "vtsls": {
+      "settings": {
+        "vtsls": {
+          "tsserver": {
+            "globalPlugins": [
+              {
+                "name": "@vue/typescript-plugin",
+                "location": "/proc/self/cwd",
+                "enableForWorkspaceTypeScriptVersions": true,
+                "languages": ["vue.js"],
+                "configNamespace": "typescript"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -13,6 +13,7 @@
     "postinstall": "nuxt prepare",
     "commitlint": "commitlint",
     "type-check": "nuxt typecheck && tsc --project workers/evidence/tsconfig.json && tsc --project workers/briefing/tsconfig.json",
+    "zed:vue-language-server": "node node_modules/@vue/language-server/bin/vue-language-server.js --stdio",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint . --fix",
@@ -42,6 +43,8 @@
     "@effect/platform-node": "4.0.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.2",
+    "@vue/language-server": "3.3.11",
+    "@vue/typescript-plugin": "3.3.11",
     "lefthook": "^2.1.14",
     "miniflare": "5.20260921.0-alpha",
     "oxfmt": "^0.70.0",
@@ -50,7 +53,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "6.0.3",
     "vitest": "^5.0.1",
-    "vue-tsc": "^3.3.11",
+    "vue-tsc": "3.3.11",
     "wrangler": "4.140.0"
   },
   "devEngines": {
