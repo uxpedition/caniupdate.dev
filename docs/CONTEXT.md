@@ -19,7 +19,18 @@ An **ADR** is an Architecture Decision Record. The name describes the artifact, 
 - [Evidence collection and storage](engineering/evidence.md).
 - [Briefing architecture](engineering/briefing.md).
 
-The five decision records are [cache lifetimes](engineering/adrs/evidence-cache-lifetimes.md), [briefing identity](engineering/adrs/briefing-evidence-identity.md), [durable generation ownership](engineering/adrs/durable-briefing-ownership.md), [native RPC lifecycle](engineering/adrs/native-rpc-lifecycle.md), and [Firefox startup](engineering/adrs/firefox-entry-import-map.md).
+## Decision records
+
+For a decision's rationale, constraints, and verification evidence, read its ADR:
+
+- [Cache lifetimes](engineering/adrs/evidence-cache-lifetimes.md).
+- [Briefing identity](engineering/adrs/briefing-evidence-identity.md).
+- [Durable generation ownership](engineering/adrs/durable-briefing-ownership.md).
+- [Native RPC lifecycle](engineering/adrs/native-rpc-lifecycle.md).
+- [Firefox startup](engineering/adrs/firefox-entry-import-map.md).
+- [Drizzle database layer](engineering/adrs/drizzle-database-layer.md).
+
+Keep decision status and rollout evidence in the owning ADR rather than caching them in this index.
 
 ## Engineering operations
 
@@ -39,7 +50,7 @@ ADRs and RFCs preserve decision and proposal history. All other published docume
 
 Engineering proposals for durable review belong in `docs/engineering/rfcs/`. RFC statuses are draft, discussion, accepted, rejected, and withdrawn. Acceptance records agreement, not shipment. Keep rejected and withdrawn RFCs with their explicit status rather than treating them as current-system guidance.
 
-The [Drizzle database-layer proposal](engineering/rfcs/0001-drizzle-database-layer.md) is in discussion and awaits review; it is not an implemented database contract. The [server module ownership proposal](engineering/rfcs/0002-server-module-ownership.md) is accepted as the target organization; acceptance does not mean the relocation has shipped.
+Read the [Drizzle database-layer RFC](engineering/rfcs/0001-drizzle-database-layer.md) for proposal history and acceptance checks, and the [server module ownership RFC](engineering/rfcs/0002-server-module-ownership.md) for ownership rationale. Proposal status belongs in each RFC. For current database behavior, use the [database ADR](engineering/adrs/drizzle-database-layer.md) and [development procedures](engineering/ops/development.md#how-do-i-change-or-apply-the-database-schema); for current module ownership, use the [system overview](engineering/overview.md) and source.
 
 `docs/superpowers/` is ignored local working material for agent designs and execution plans. It is not part of the published documentation, and current documents must not depend on files there.
 

@@ -83,7 +83,15 @@ nub run test
 
 `prepare` generates Nuxt configuration and installs Git hooks. Type checking covers Nuxt and both standalone Workers. Unit tests use the `.unit.ts` suffix beside their implementation. Use `nub run test:watch` when iterating.
 
-`lint:check` and `format:check` are non-fixing checks. The `lint` and `format` scripts modify files; use them intentionally rather than as read-only verification.
+`lint:check` and `format:check` are non-fixing checks. The `lint` and `format` scripts modify files; use them intentionally rather than as read-only verification. Git hooks check lint, types, formatting, and commit messages, not tests; run tests separately.
+
+### Test harnesses
+
+Vitest discovery and runtime settings live in [`vitest.config.ts`](../../../vitest.config.ts). Colocate `.unit.ts` suites with their implementation; root `test/` contains shared helpers, not discovered suites. Follow the nearest suite: `.harness.ts` boots runtimes and returns teardown, while `.stub.ts` impersonates external systems.
+
+Inject Effect HTTP services and use H3 `mockEvent` for handlers. Restore stubbed globals, environment, and timers. Inject `FetchHttpClient.Fetch` per run when needed: its default fetch service can memoize a global stub. Assert boundary behavior, uncertainty, privacy, cancellation, and persistence rather than implementation details; see [verification conventions](../../../CODE_CONVENTIONS.md#evidence-driven-review).
+
+Worker `.workerd.unit.ts`, `workers/briefing/jobs.unit/`, and `sockets.unit/` suites exercise real Miniflare/workerd storage, queues, sockets, and restarts. Some await real alarms with timeouts up to 180 seconds. Keep production leases intact rather than shortening them to accelerate tests.
 
 ### Comparison interface
 
