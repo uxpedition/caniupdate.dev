@@ -1,0 +1,115 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "292360fa-f6c6-4608-9c4d-00d94367ecb1",
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
+  "ddl": [
+    {
+      "name": "evidence_chunks",
+      "entityType": "tables"
+    },
+    {
+      "name": "evidence_records",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "evidence_chunks"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "chunk_index",
+      "entityType": "columns",
+      "table": "evidence_chunks"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "payload",
+      "entityType": "columns",
+      "table": "evidence_chunks"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "evidence_records"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "evidence_records"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "chunk_count",
+      "entityType": "columns",
+      "table": "evidence_records"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "byte_length",
+      "entityType": "columns",
+      "table": "evidence_records"
+    },
+    {
+      "columns": ["key", "chunk_index"],
+      "nameExplicit": false,
+      "name": "evidence_chunks_pk",
+      "entityType": "pks",
+      "table": "evidence_chunks"
+    },
+    {
+      "columns": ["key"],
+      "nameExplicit": false,
+      "name": "evidence_records_pk",
+      "entityType": "pks",
+      "table": "evidence_records"
+    },
+    {
+      "columns": [
+        {
+          "value": "expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": "\"evidence_records\".\"expires_at\" is not null",
+      "origin": "manual",
+      "name": "evidence_expiry_index",
+      "entityType": "indexes",
+      "table": "evidence_records"
+    }
+  ],
+  "renames": []
+}

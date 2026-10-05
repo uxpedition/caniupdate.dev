@@ -1,0 +1,3 @@
+{
+  "20261005055201_evidence_initial": "CREATE TABLE IF NOT EXISTS `evidence_chunks` (\n\t`key` text NOT NULL,\n\t`chunk_index` integer NOT NULL,\n\t`payload` text NOT NULL,\n\tCONSTRAINT `evidence_chunks_pk` PRIMARY KEY(`key`, `chunk_index`)\n);\n--> statement-breakpoint\nCREATE TABLE IF NOT EXISTS `evidence_records` (\n\t`key` text PRIMARY KEY NOT NULL,\n\t`expires_at` integer,\n\t`chunk_count` integer NOT NULL,\n\t`byte_length` integer NOT NULL\n);\n--> statement-breakpoint\nCREATE INDEX IF NOT EXISTS `evidence_expiry_index` ON `evidence_records` (`expires_at`) WHERE \"evidence_records\".\"expires_at\" is not null;"
+}

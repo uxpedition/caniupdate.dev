@@ -7,6 +7,8 @@
 
 **Retention amendment (2026-10-05):** The user explicitly approved discarding the old briefing rows instead of restoring them. The local reset is executed and verified; preview remains unmodified because maintenance/quiescence prerequisites are unavailable. Actual execution evidence is recorded in the ADR.
 
+**Initialization amendment (2026-10-05):** The user approved removing handwritten DO constructor DDL. Drizzle Kit generates evidence-only SQL/snapshots, and the synchronous DO migrator applies its bundled history. Only the initial generated bootstrap gains idempotent CREATE statements to adopt existing tables without resetting evidence data. A narrowly scoped pinned ORM patch preserves underlying migration SQL causes. This supersedes the original constructor-DDL exception.
+
 ## Summary
 
 Adopt Drizzle as the typed query layer for the application's SQLite-backed data paths: Cloudflare D1 briefing storage, synchronous Durable Object (DO) evidence storage, and SQL construction in the offline briefing exporter. Keep Wrangler as the D1 migration applier. Declare table shapes in TypeScript, generate D1 migration SQL from the briefing schema, and preserve the current query, transaction, validation, and data-compatibility behavior.
@@ -18,7 +20,7 @@ Migration history will restart at the user-approved cutover: replace the current
 This is the decision's historical baseline; source links now point to the migrated implementations. Current operation and the scoped reset procedure are documented in [development](../ops/development.md#how-do-i-change-or-apply-the-database-schema) and [releases/recovery](../ops/releases-and-recovery.md#one-time-drizzle-adoption-cutover).
 
 - The [briefing store](../../../server/comparison/briefing/store.ts) previously issued raw D1 SQL using `first()` and one insert/select `batch()`. Its Drizzle replacement retains that batch and first-writer-wins contract.
-- The [evidence store](../../../workers/evidence/store.ts) previously built synchronous SQL directly through `transactionSync`. Its typed full-storage client retains synchronous transactions, constructor DDL, chunked JSON and read validation.
+- The [evidence store](../../../workers/evidence/store.ts) previously built synchronous SQL directly through `transactionSync`. Its typed full-storage client applies generated synchronous DO migrations and retains transactions, chunked JSON and read validation.
 - The [offline exporter](../../../scripts/export-briefings.ts) still executes `DatabaseSync.prepare(...).iterate()`, validates each row and streams escaped SQL preserving original JSON/timestamps; Drizzle replaces only SELECT construction.
 - The old initial history was `0001_package_briefings.sql`. The [briefing declaration](../../../shared/db/briefingSchema.ts) now generates [SQL/snapshot history](../../../drizzle/) and [flat Wrangler mirrors](../../../migrations/). Both [D1 bindings](../../../workers/briefing/wrangler.jsonc) retain `../../migrations`; subsequent applied history remains append-only.
 - The pre-adoption [manifest](../../../package.json) had Effect `4.0.0`, h3 `^2.0.1-rc.32`, and no direct Drizzle dependency. ORM and Kit are now exact-pinned to the approved `1.0.0-rc.5-ab785fc`, without upgrading Effect or the baseline dependency versions. Earlier Effect `4.0.0-rc.115` and Drizzle `1.0.0-rc.4` proposal values remain superseded, not adopted pins.
@@ -64,11 +66,11 @@ The schema modules must remain outside browser bundles. Their imports belong onl
 
 ### Runtime query clients
 
-| Surface           | Proposed use                                                                                                           | Behavior that must remain unchanged                                                                                                                                                                       |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1 briefing store | `drizzle-orm/d1`, constructed from the existing `D1Database` argument                                                  | Keep public function signatures. A read miss remains `undefined`. `saveBriefing` keeps insert-and-select in one D1 `batch()` so concurrent writers receive the same stored winner.                        |
-| Evidence DO cache | Synchronous `drizzle-orm/durable-sqlite` over `DurableObjectStorage`                                                   | Keep cache public operations synchronous where they are now. Use synchronous transactions for replacing a record/chunks and deleting expired records/chunks. Keep constructor DDL and current error tags. |
-| Offline exporter  | `drizzle-orm/node-sqlite` to build the ordered select and obtain SQL, then execute it with the existing `DatabaseSync` | Keep `DatabaseSync.iterate()` streaming; do not buffer the full table. Verify the generated query has no bindings rather than coercing unknown parameters. Preserve byte-for-byte stored JSON in output.  |
+| Surface           | Proposed use                                                                                                           | Behavior that must remain unchanged                                                                                                                                                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1 briefing store | `drizzle-orm/d1`, constructed from the existing `D1Database` argument                                                  | Keep public function signatures. A read miss remains `undefined`. `saveBriefing` keeps insert-and-select in one D1 `batch()` so concurrent writers receive the same stored winner.                                                           |
+| Evidence DO cache | Synchronous `drizzle-orm/durable-sqlite` over `DurableObjectStorage`                                                   | Keep cache public operations synchronous where they are now. Use synchronous transactions for replacing a record/chunks and deleting expired records/chunks. Apply generated DO migrations synchronously and keep current error tags/causes. |
+| Offline exporter  | `drizzle-orm/node-sqlite` to build the ordered select and obtain SQL, then execute it with the existing `DatabaseSync` | Keep `DatabaseSync.iterate()` streaming; do not buffer the full table. Verify the generated query has no bindings rather than coercing unknown parameters. Preserve byte-for-byte stored JSON in output.                                     |
 
 For evidence cleanup, the proposed query deletes expired chunks selected from expired records and then deletes those records within one transaction. Reads retain the explicit chunk-index order and continue validating metadata and payloads in application code. Writes retain the record/chunk replacement transaction. Drizzle replaces query construction; it does not replace corruption checks or business validation.
 
@@ -92,7 +94,7 @@ Rehearse the reset and fresh initialization locally before the preview operation
 
 Under this proposal, raw SQL remains acceptable for:
 
-- DO constructor DDL (`CREATE TABLE IF NOT EXISTS` and the partial expiry index), because it must initialize the DO-owned schema and is not query construction.
+- Kit-generated migration SQL applied by the appropriate migrator, including the build-time-adapted initial DO bootstrap; no handwritten production constructor DDL.
 - Tests that deliberately install/drop schema or inject corrupt rows/triggers to exercise failure handling.
 - The exporter's `DatabaseSync` execution of Drizzle-produced SQL, necessary to preserve synchronous streaming.
 
@@ -135,7 +137,7 @@ No architectural blocker was demonstrated. The unchecked behavior and actual app
 | Existing D1 history conflicts with generator bootstrap                          | Use the user-approved local/preview reset at cutover; verify target identities and fresh initialization. Do not extend this exception to future migrations or production.          |
 | Generated DDL changes primary-key nullability or defaults                       | Compare `sqlite_master`, `PRAGMA table_info`, and indexes between existing and generated schemas using the selected version.                                                       |
 | D1/DO transaction behavior differs through a new driver                         | Exercise real Miniflare D1 and workerd DO paths, including competing D1 writers, DO cleanup, and atomic chunk replacement. Keep API behavior and error-tag tests.                  |
-| Typed evidence schema can diverge from constructor DDL                          | Keep exact names/types/keys aligned and test the constructor-created schema through the existing workerd/unit coverage. The asymmetry is intentional and should be documented.     |
+| Generated DO history can drift or fail existing-table adoption                  | Generate from the evidence declaration, check the immutable runtime bundle, and prove existing-data adoption, restart and transactional failure through real-workerd coverage.     |
 | Driver imports increase bundle size or complicate worker boundaries             | Measure dry-run sizes for affected workers and the Nuxt worker before/after; verify schema modules do not enter browser bundles.                                                   |
 | Test doubles drift from the global DO storage interface                         | If `drizzle(storage)` requires the complete `DurableObjectStorage` type, provide a typed test helper without casts and keep compile-time coverage.                                 |
 | Exporter changes SQL shape or stops streaming                                   | Retain `DatabaseSync.iterate()`, verify zero query parameters, and run exporter behavior coverage against realistic legacy rows.                                                   |
@@ -154,7 +156,7 @@ The local/preview reset is now the user-approved migration strategy, not an assu
 
 ## Implementation acceptance checks
 
-The approved design keeps DO constructor DDL, the stated raw-SQL exceptions, and Effect Schema independent of Drizzle. These are decisions, not open adoption questions.
+The amended approved design generates and applies DO initialization through Drizzle, retains only the stated non-constructor raw-SQL exceptions, and keeps Effect Schema independent. Acceptance also requires populated legacy adoption without data loss, persisted reopen without migration replay, and original migration failure causes.
 
 1. Exact-pin and verify the installed ORM/Kit versions; demonstrate the three required runtime adapters and full application type compatibility without introducing casts or explicit `any`.
 2. Prove generated schema equivalence, including explicit primary-key nullability, defaults, and indexes; verify migration mirror ordering and statement splitting.

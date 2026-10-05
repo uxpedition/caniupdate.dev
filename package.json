@@ -4,8 +4,10 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/check-site-url.ts && nuxt build && wrangler deploy --dry-run --config workers/evidence/wrangler.jsonc --env= && wrangler deploy --dry-run --config workers/briefing/wrangler.jsonc --env=",
-    "db:check": "node scripts/sync-migrations.ts --check",
+    "db:check": "node scripts/sync-migrations.ts --check && node scripts/bundle-evidence-migrations.ts --check",
+    "db:check:evidence": "node scripts/bundle-evidence-migrations.ts --check",
     "db:generate": "drizzle-kit generate && node scripts/sync-migrations.ts",
+    "db:generate:evidence": "drizzle-kit generate --config drizzle.evidence.config.ts && node scripts/bundle-evidence-migrations.ts",
     "db:migrate:local": "wrangler d1 migrations apply BRIEFINGS_DB --local --config workers/briefing/wrangler.jsonc --persist-to .wrangler/state",
     "dev": "node scripts/dev.ts",
     "generate": "nuxt generate",
@@ -67,5 +69,8 @@
       "onFail": "ignore"
     }
   },
-  "packageManager": "nub@0.9.6"
+  "packageManager": "nub@0.9.6",
+  "patchedDependencies": {
+    "drizzle-orm@1.0.0-rc.5-ab785fc": "patches/drizzle-orm@1.0.0-rc.5-ab785fc.patch"
+  }
 }

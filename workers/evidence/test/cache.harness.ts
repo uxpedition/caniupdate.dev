@@ -31,6 +31,7 @@ type WorkerModules = Record<string, { type: 'esm'; contents: string }>;
 export type EvidenceCacheFixture = {
   call(command: CacheFixtureCommand): Promise<unknown>;
   exec(sql: string, ...bindings: SqlStorageValue[]): Promise<readonly Record<string, SqlStorageValue>[]>;
+  restart(): Promise<void>;
   dispose(): Promise<void>;
 };
 
@@ -89,10 +90,10 @@ export async function openEvidenceCacheFixture(
   let runtime: Miniflare | undefined;
 
   try {
-    const activeRuntime = createRuntime(stateDir, modules);
+    let activeRuntime = createRuntime(stateDir, modules);
     runtime = activeRuntime;
-    const namespace = await activeRuntime.getDurableObjectNamespace(BINDING_NAME, WORKER_NAME);
-    const adminStorage = await activeRuntime.unsafeGetDurableObjectStorage(WORKER_NAME, CLASS_NAME, {
+    let namespace = await activeRuntime.getDurableObjectNamespace(BINDING_NAME, WORKER_NAME);
+    let adminStorage = await activeRuntime.unsafeGetDurableObjectStorage(WORKER_NAME, CLASS_NAME, {
       name: objectName,
     });
     const call = async (command: CacheFixtureCommand): Promise<unknown> => {
@@ -115,6 +116,14 @@ export async function openEvidenceCacheFixture(
       call,
       async exec(sql: string, ...bindings: SqlStorageValue[]): Promise<readonly Record<string, SqlStorageValue>[]> {
         return await adminStorage.exec(sql, ...bindings);
+      },
+      async restart(): Promise<void> {
+        if (disposed) throw new Error('Cannot restart disposed cache fixture');
+        await activeRuntime.dispose();
+        activeRuntime = createRuntime(stateDir, modules);
+        runtime = activeRuntime;
+        namespace = await activeRuntime.getDurableObjectNamespace(BINDING_NAME, WORKER_NAME);
+        adminStorage = await activeRuntime.unsafeGetDurableObjectStorage(WORKER_NAME, CLASS_NAME, { name: objectName });
       },
       async dispose(): Promise<void> {
         if (disposed) return;

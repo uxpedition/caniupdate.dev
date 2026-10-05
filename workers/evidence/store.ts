@@ -3,6 +3,7 @@ import { Buffer } from 'node:buffer';
 import type { DurableObjectStorage } from '@cloudflare/workers-types';
 import { and, asc, eq, inArray, isNotNull, lte } from 'drizzle-orm';
 import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
+import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 
 import { EvidenceStorageCorruptionError, EvidenceStorageError } from '../../server/comparison/evidence/errors';
 import type {
@@ -10,6 +11,7 @@ import type {
   ComparisonEvidenceCacheOptions,
 } from '../../server/comparison/evidence/services';
 import { evidenceChunks, evidenceRecords } from '../../shared/db/evidenceSchema';
+import evidenceMigrations from './migrations.generated.json' with { type: 'json' };
 
 export { EvidenceStorageCorruptionError, EvidenceStorageError };
 
@@ -26,26 +28,9 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
 
   constructor(storage: DurableObjectStorage) {
     try {
-      storage.sql.exec(
-        `CREATE TABLE IF NOT EXISTS evidence_records (
-          key TEXT PRIMARY KEY NOT NULL,
-          expires_at INTEGER,
-          chunk_count INTEGER NOT NULL,
-          byte_length INTEGER NOT NULL
-        )`,
-      );
-      storage.sql.exec(
-        `CREATE TABLE IF NOT EXISTS evidence_chunks (
-          key TEXT NOT NULL,
-          chunk_index INTEGER NOT NULL,
-          payload TEXT NOT NULL,
-          PRIMARY KEY (key, chunk_index)
-        )`,
-      );
-      storage.sql.exec(
-        'CREATE INDEX IF NOT EXISTS evidence_expiry_index ON evidence_records(expires_at) WHERE expires_at IS NOT NULL',
-      );
-      this.db = drizzle(storage);
+      const db = drizzle(storage);
+      migrate(db, { migrations: evidenceMigrations });
+      this.db = db;
     } catch (cause) {
       throw new EvidenceStorageError({ operation: 'initialize', cause });
     }

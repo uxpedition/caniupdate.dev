@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  drizzle-orm@1.0.0-rc.5-ab785fc:
+    hash: 8f1042d342dc84620623a329e6b73d35278b220b2c11164c65c3b26026bd4581
+    path: patches/drizzle-orm@1.0.0-rc.5-ab785fc.patch
+
 importers:
 
   .:
@@ -28,7 +33,7 @@ importers:
         version: 0.4.0
       drizzle-orm:
         specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260925.1)(effect@4.0.0)
+        version: 1.0.0-rc.5-ab785fc(patch_hash=8f1042d342dc84620623a329e6b73d35278b220b2c11164c65c3b26026bd4581)(@cloudflare/workers-types@5.20260925.1)(effect@4.0.0)
       effect:
         specifier: 4.0.0
         version: 4.0.0
@@ -7935,7 +7940,7 @@ snapshots:
     transitivePeerDependencies:
       - pnpapi
 
-  drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260925.1)(effect@4.0.0):
+  drizzle-orm@1.0.0-rc.5-ab785fc(patch_hash=8f1042d342dc84620623a329e6b73d35278b220b2c11164c65c3b26026bd4581)(@cloudflare/workers-types@5.20260925.1)(effect@4.0.0):
     dependencies:
       '@cloudflare/workers-types': 5.20260925.1
       effect: 4.0.0

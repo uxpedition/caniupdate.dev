@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-// Durable Object constructor DDL owns initialization; these tables are not D1 migration input.
+// Generates synchronous Drizzle Durable Object migrations, independently of Wrangler's D1 history.
 export const evidenceRecords = sqliteTable(
   'evidence_records',
   {

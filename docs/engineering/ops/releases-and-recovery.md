@@ -97,6 +97,12 @@ There is no rule requiring a new table for every attribute. Normalize around ent
 
 [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/) are ordered SQL files tracked in the database. Local validation does not apply them remotely. Remote commands must select the explicit account, config, environment, and database. A migration that succeeds is not automatically reversed by a Worker rollback.
 
+### Evidence Durable Object schema changes
+
+Evidence table/index changes use `nub run db:generate:evidence`, with committed `drizzle-evidence/` SQL/snapshots and `workers/evidence/migrations.generated.json`. `nub run db:check` verifies both DO and D1 artifacts. Pending evidence history is applied synchronously by the public Drizzle DO migrator when an object constructs its cache; Wrangler D1 commands do not apply it. The initial bundled bootstrap alone is idempotent to adopt pre-existing tables without changing rows/chunks/expiry metadata. Subsequent history is strict and append-only.
+
+Rehearse adoption, persisted reopen, rollback and subsequent migrations in disposable actual-workerd state. Do not reset DOs or add a new class migration tag to avoid a table collision. A migration failure retains its initialize error/cause and leaves storage unavailable; do not delete data or substitute a miss. The pinned ORM package patch preserves original SQL failure causes while `transactionSync` rolls back. A Worker rollback does not reverse applied DO schema changes: choose code compatible with both histories or a reviewed forward migration, never rewrite ledger rows or applied SQL.
+
 ### One-time Drizzle adoption cutover
 
 The [accepted Drizzle ADR](../adrs/drizzle-database-layer.md) authorizes replacing the old initial D1 schema/history **once, for local and the existing maintainer preview only**. On 2026-10-05 the user explicitly amended retention: **discard old briefing rows, without restoration**. Retained jobs can reference discarded results; those old references are not preserved. Production is excluded. Do not delete/recreate databases or reset Durable Object/Queue state. Subsequent migrations remain append-only.

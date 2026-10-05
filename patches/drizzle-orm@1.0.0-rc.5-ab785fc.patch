@@ -1,0 +1,22 @@
+diff --git a/durable-sqlite/migrator.cjs b/durable-sqlite/migrator.cjs
+--- a/durable-sqlite/migrator.cjs
++++ b/durable-sqlite/migrator.cjs
+@@ -71,7 +71,6 @@
+ 			}
+ 			return;
+ 		} catch (error) {
+-			tx.rollback();
+ 			throw error;
+ 		}
+ 	});
+diff --git a/durable-sqlite/migrator.js b/durable-sqlite/migrator.js
+--- a/durable-sqlite/migrator.js
++++ b/durable-sqlite/migrator.js
+@@ -69,7 +69,6 @@
+ 			}
+ 			return;
+ 		} catch (error) {
+-			tx.rollback();
+ 			throw error;
+ 		}
+ 	});

@@ -97,7 +97,105 @@ async function withFixture(
   }
 }
 
+async function seedLegacyCache(fixture: EvidenceCacheFixture): Promise<void> {
+  await fixture.exec(`CREATE TABLE evidence_records (
+    key TEXT PRIMARY KEY NOT NULL, expires_at INTEGER,
+    chunk_count INTEGER NOT NULL, byte_length INTEGER NOT NULL)`);
+  await fixture.exec(`CREATE TABLE evidence_chunks (
+    key TEXT NOT NULL, chunk_index INTEGER NOT NULL, payload TEXT NOT NULL,
+    PRIMARY KEY (key, chunk_index))`);
+  await fixture.exec('CREATE INDEX evidence_expiry_index ON evidence_records(expires_at) WHERE expires_at IS NOT NULL');
+  await fixture.exec("INSERT INTO evidence_records VALUES ('legacy', NULL, 1, 5)");
+  await fixture.exec('INSERT INTO evidence_chunks VALUES (?, ?, ?)', 'legacy', 0, '"old"');
+}
+
 describe('evidence cache in real SQLite workerd storage', () => {
+  it('adopts populated legacy tables without regenerating or changing cached data', async () => {
+    await withFixture(
+      async (fixture) => {
+        await seedLegacyCache(fixture);
+        const result = decodeFixtureResult(
+          await fixture.call({
+            operation: 'load',
+            key: 'legacy',
+            value: 'replacement',
+            ttlMs: null,
+            cacheable: true,
+            validation: 'string',
+          }),
+        );
+        expect(result).toMatchObject({ ok: true, value: 'old', loaderCalls: 0 });
+        expect(await fixture.exec('SELECT * FROM evidence_records')).toEqual([
+          { key: 'legacy', expires_at: null, chunk_count: 1, byte_length: 5 },
+        ]);
+        expect(await fixture.exec('SELECT * FROM evidence_chunks')).toEqual([
+          { key: 'legacy', chunk_index: 0, payload: '"old"' },
+        ]);
+        expect(
+          numberField((await fixture.exec('SELECT COUNT(*) AS count FROM __drizzle_migrations'))[0], 'count'),
+        ).toBe(1);
+      },
+      { initialize: false },
+    );
+  }, 120_000);
+
+  it('preserves cached data and applies bootstrap only once across persisted restart', async () => {
+    await withFixture(async (fixture) => {
+      await fixture.call({
+        operation: 'load',
+        key: 'restart',
+        value: 'persisted',
+        ttlMs: null,
+        cacheable: true,
+        validation: 'string',
+      });
+      const records = await fixture.exec('SELECT * FROM evidence_records');
+      const chunks = await fixture.exec('SELECT * FROM evidence_chunks');
+      await fixture.restart();
+      expect(
+        decodeFixtureResult(
+          await fixture.call({
+            operation: 'load',
+            key: 'restart',
+            value: 'replacement',
+            ttlMs: null,
+            cacheable: true,
+            validation: 'string',
+          }),
+        ),
+      ).toMatchObject({ ok: true, value: 'persisted', loaderCalls: 0 });
+      expect(await fixture.exec('SELECT * FROM evidence_records')).toEqual(records);
+      expect(await fixture.exec('SELECT * FROM evidence_chunks')).toEqual(chunks);
+      expect(numberField((await fixture.exec('SELECT COUNT(*) AS count FROM __drizzle_migrations'))[0], 'count')).toBe(
+        1,
+      );
+    });
+  });
+
+  it('retains the actual migration SQL failure cause and rolls back ledger insertion', async () => {
+    await withFixture(
+      async (fixture) => {
+        await seedLegacyCache(fixture);
+        await fixture.exec(
+          'CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY, hash text NOT NULL, created_at numeric, name text, applied_at TEXT)',
+        );
+        await fixture.exec(`CREATE TRIGGER refuse_migration BEFORE INSERT ON __drizzle_migrations
+        BEGIN SELECT RAISE(ABORT, 'fixture migration refusal'); END`);
+        const result = decodeFixtureResult(await fixture.call({ operation: 'initialize' }));
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error('Refused migration unexpectedly initialized');
+        expect(result.error).toMatchObject({ _tag: 'EvidenceStorageError', operation: 'initialize' });
+        expect(result.error.causeMessage).toContain('fixture migration refusal');
+        expect(await fixture.exec('SELECT * FROM evidence_chunks')).toEqual([
+          { key: 'legacy', chunk_index: 0, payload: '"old"' },
+        ]);
+        expect(
+          numberField((await fixture.exec('SELECT COUNT(*) AS count FROM __drizzle_migrations'))[0], 'count'),
+        ).toBe(0);
+      },
+      { initialize: false },
+    );
+  });
   it('creates the declared tables, keys, columns, and partial expiry index', async () => {
     await withFixture(async (fixture) => {
       const records = await fixture.exec('PRAGMA table_info(evidence_records)');
@@ -434,11 +532,18 @@ describe('evidence cache in real SQLite workerd storage', () => {
     await withFixture(
       async (fixture) => {
         await fixture.exec('CREATE TABLE evidence_records (key TEXT PRIMARY KEY NOT NULL)');
+        await fixture.exec("INSERT INTO evidence_records VALUES ('retained')");
         const result = decodeFixtureResult(await fixture.call({ operation: 'initialize' }));
         expect(result.ok).toBe(false);
         if (result.ok) throw new Error('Incompatible schema unexpectedly initialized');
         expect(result.error).toMatchObject({ _tag: 'EvidenceStorageError', operation: 'initialize' });
         expect(typeof result.error.causeMessage).toBe('string');
+        expect(await fixture.exec('SELECT * FROM evidence_records')).toEqual([{ key: 'retained' }]);
+        expect(
+          await fixture.exec(
+            "SELECT name FROM sqlite_master WHERE name IN ('evidence_chunks', '__drizzle_migrations')",
+          ),
+        ).toEqual([]);
       },
       { initialize: false },
     );

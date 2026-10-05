@@ -125,19 +125,25 @@ Fixture success proves the exercised lifecycle, not model quality or production-
 
 ## How do I change or apply the database schema?
 
-The [briefing schema](../../../shared/db/briefingSchema.ts) is the D1 migration input in [drizzle.config.ts](../../../drizzle.config.ts). The [evidence schema](../../../shared/db/evidenceSchema.ts) describes Durable Object tables; their constructor DDL still owns initialization and is deliberately excluded from D1 generation. Effect 4 Schema remains the runtime data validator, independent of Drizzle.
+The [briefing schema](../../../shared/db/briefingSchema.ts) generates D1 history through [drizzle.config.ts](../../../drizzle.config.ts). The [evidence schema](../../../shared/db/evidenceSchema.ts) generates separate DO history through [drizzle.evidence.config.ts](../../../drizzle.evidence.config.ts). Effect 4 Schema remains the runtime data validator, independent of Drizzle.
 
 ```bash
-nub run db:generate       # Generate SQL/snapshots, then mirror new SQL for Wrangler
-nub run db:check          # Read-only history/layout/byte-drift guard
-nub run db:migrate:local  # Wrangler applies the flat committed history locally
+nub run db:generate           # D1 SQL/snapshots and flat Wrangler mirrors
+nub run db:migrate:local      # Wrangler applies D1 history locally
+nub run db:generate:evidence  # DO SQL/snapshots and bundled runtime migration map
+nub run db:check              # Read-only checks of both independent histories
+nub run db:check:evidence     # DO bundle/layout/history check only
 ```
 
-Commit both [`drizzle/`](../../../drizzle/) generator history and [`migrations/`](../../../migrations/) mirrors. Review generated SQL before applying it. The [mirror script](../../../scripts/sync-migrations.ts) accepts the pinned Kit's timestamp folders and SQLite snapshot metadata, compares all existing SQL before writing, creates missing files exclusively, and rejects stale, changed, or occupied SQL paths. It never rewrites/deletes applied files or accesses a database. Drizzle Kit generates SQL only; do not use its push/migrate commands as another D1 applier.
+For D1, commit [`drizzle/`](../../../drizzle/) and byte-identical [`migrations/`](../../../migrations/) mirrors. The [mirror script](../../../scripts/sync-migrations.ts) validates the pinned Kit layout/snapshot metadata, compares existing SQL before writing, creates missing mirrors exclusively, and rejects stale, changed or occupied paths. Wrangler remains the sole D1 applier; do not use Kit push/migrate commands against D1.
+
+For evidence, commit [`drizzle-evidence/`](../../../drizzle-evidence/) and [`migrations.generated.json`](../../../workers/evidence/migrations.generated.json). The [bundler](../../../scripts/bundle-evidence-migrations.ts) makes only the fixed initial bootstrap's generated CREATE statements idempotent, without changing its source SQL or schema expressions. Existing objects retain their tables/data while Drizzle adds migration tracking. The guard rejects changed, removed, renamed or backdated history before publishing a new bundle; later migration SQL remains strict. Worker construction applies pending history synchronously through `drizzle-orm/durable-sqlite/migrator`; there is no runtime filesystem/Kit access or handwritten constructor DDL. No DO class migration tag or state reset is required.
+
+The exact-pinned ORM carries a committed [two-line DO migrator patch](../../../patches/drizzle-orm@1.0.0-rc.5-ab785fc.patch): it removes redundant explicit rollback calls that discarded the original SQL error. `transactionSync` still rolls back on the escaping exception. Nub installs the patch from committed configuration/lock metadata. Review and remove it only during a separately verified SDK upgrade that fixes upstream behavior.
 
 Ordinary `dev`, `preview`, and `db:migrate:local` remain non-destructive. The old `0001` history is replaced only through the separately approved [one-time local/preview cutover](releases-and-recovery.md#one-time-drizzle-adoption-cutover); do not start the new launcher on the old history before that cutover, or start an old checkout on a reset target afterward.
 
-The offline exporter generates a typed Node SQLite SELECT but still streams through `DatabaseSync.iterate()` and preserves the original JSON/timestamps. Raw SQL remains for constructor DDL, migration statements, operational metadata, test fault injection, and emitted import serialization. Driver compatibility uses narrow type-only SDK aliases, not blanket Cloudflare globals.
+The offline exporter generates a typed Node SQLite SELECT but still streams through `DatabaseSync.iterate()` and preserves the original JSON/timestamps. Raw SQL remains only for generated migration statements, operational metadata, test fault injection, and emitted import serialization—not handwritten production initialization. Driver compatibility uses narrow type-only SDK aliases, not blanket Cloudflare globals.
 
 Do not treat a storage failure as a cache miss or delete persisted results to make the request succeed. Database changes and recovery follow the [migration policy](releases-and-recovery.md#database-and-stored-data-changes).
 
