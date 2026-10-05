@@ -7,7 +7,7 @@
     "db:check": "node scripts/sync-migrations.ts --check && node scripts/bundle-evidence-migrations.ts --check",
     "db:check:evidence": "node scripts/bundle-evidence-migrations.ts --check",
     "db:generate": "drizzle-kit generate && node scripts/sync-migrations.ts",
-    "db:generate:evidence": "drizzle-kit generate --config drizzle.evidence.config.ts && node scripts/bundle-evidence-migrations.ts",
+    "db:generate:evidence": "drizzle-kit generate --config workers/evidence/drizzle.config.ts && node scripts/bundle-evidence-migrations.ts",
     "db:migrate:local": "wrangler d1 migrations apply BRIEFINGS_DB --local --config workers/briefing/wrangler.jsonc --persist-to .wrangler/state",
     "dev": "node scripts/dev.ts",
     "generate": "nuxt generate",

@@ -141,7 +141,7 @@ if (import.meta.main) {
     throw new Error('Usage: node scripts/bundle-evidence-migrations.ts [--check]');
   }
   await bundleEvidenceMigrations(
-    fileURLToPath(new URL('../drizzle-evidence/', import.meta.url)),
+    fileURLToPath(new URL('../workers/evidence/drizzle/', import.meta.url)),
     fileURLToPath(new URL('../workers/evidence/migrations.generated.json', import.meta.url)),
     args[0] === '--check',
   );
