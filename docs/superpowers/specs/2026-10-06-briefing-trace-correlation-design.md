@@ -1,6 +1,6 @@
 # Briefing Trace Correlation Design
 
-**Status:** Chat design approved; written spec awaiting review  
+**Status:** Approved after user review for implementation planning  
 **Scope:** Browser comparison-page event, briefing submission HTTP request, briefing API handler, and the shared briefing generation. Console output only; no exporter or trace backend.
 
 ## Goal
