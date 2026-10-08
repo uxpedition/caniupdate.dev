@@ -37,6 +37,8 @@ export type ProviderFixture = {
   /** The absolute URL a Worker's AI endpoint setting points at. */
   readonly endpoint: string;
   readonly providerRequests: number;
+  /** Trace-propagation headers received with requests carrying this packet's evidence. */
+  traceHeadersFor(packageName: string): readonly { readonly traceparent?: string; readonly b3?: string }[];
   /** Requests carrying this packet's evidence, so one case's count cannot be polluted by another case's straggler. */
   requestsFor(packageName: string): number;
   setMode(mode: ProviderMode): void;
@@ -86,7 +88,7 @@ export function providerFixture(): ProviderFixture {
  * fixed port its `workers/briefing/.dev.vars` endpoint names.
  */
 export async function startProviderFixture(options: { readonly port?: number } = {}): Promise<ProviderFixture> {
-  const requests: string[] = [];
+  const requests: { readonly body: string; readonly traceparent?: string; readonly b3?: string }[] = [];
   const stalled: ServerResponse[] = [];
   let mode: ProviderMode = { kind: 'valid' };
 
@@ -95,7 +97,11 @@ export async function startProviderFixture(options: { readonly port?: number } =
       const chunks: Buffer[] = [];
       request.on('data', (chunk: Buffer) => chunks.push(chunk));
       await once(request, 'end');
-      requests.push(Buffer.concat(chunks).toString('utf8'));
+      requests.push({
+        body: Buffer.concat(chunks).toString('utf8'),
+        ...(typeof request.headers.traceparent === 'string' ? { traceparent: request.headers.traceparent } : {}),
+        ...(typeof request.headers.b3 === 'string' ? { b3: request.headers.b3 } : {}),
+      });
 
       if (mode.kind === 'stall') {
         stalled.push(response);
@@ -121,7 +127,15 @@ export async function startProviderFixture(options: { readonly port?: number } =
     },
     requestsFor(packageName: string): number {
       // The evidence travels inside the prompt, so its JSON is escaped: match the bare identity instead.
-      return requests.filter((body) => body.includes(packageName)).length;
+      return requests.filter(({ body }) => body.includes(packageName)).length;
+    },
+    traceHeadersFor(packageName: string): readonly { readonly traceparent?: string; readonly b3?: string }[] {
+      return requests
+        .filter(({ body }) => body.includes(packageName))
+        .map(({ traceparent, b3 }) => ({
+          ...(traceparent === undefined ? {} : { traceparent }),
+          ...(b3 === undefined ? {} : { b3 }),
+        }));
     },
     setMode(next: ProviderMode): void {
       mode = next;

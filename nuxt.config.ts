@@ -18,10 +18,13 @@ if (!parsedSiteUrl.ok && rawSiteUrl.trim() !== '') {
 export default defineNuxtConfig({
   compatibilityDate: '2026-09-16',
   runtimeConfig: {
+    otelEndpoint: '',
+    otelHeaders: {},
     public: {
       // Public by design: canonical, social, and later sitemap URLs. The deployed Worker must carry the same value
       // (`wrangler.jsonc`), because the prerendered homepage bakes the build-time value into its HTML.
       siteUrl: parsedSiteUrl.ok ? parsedSiteUrl.origin : '',
+      telemetryEnabled: false,
     },
   },
   app: {
@@ -46,6 +49,13 @@ export default defineNuxtConfig({
   nitro: {
     ignore: ['**/*.unit.ts', '**/_internals/**'],
     preset: 'cloudflare_module',
+    hooks: {
+      'rollup:before'(nitro, config) {
+        if (nitro.options.preset === 'cloudflare-module' && !nitro.options.dev) {
+          config.input = fileURLToPath(new URL('./server/telemetry/workerEntry.ts', import.meta.url));
+        }
+      },
+    },
     cloudflare: {
       deployConfig: true,
       nodeCompat: true,

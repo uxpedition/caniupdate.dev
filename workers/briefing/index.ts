@@ -9,7 +9,7 @@ import { Schema } from 'effect';
 import { briefingEvidenceHash } from '../../server/comparison/briefing/generation';
 import { BriefingEvidenceSchema } from '../../shared/briefing.defs';
 import type { BriefingEvidence } from '../../shared/briefing.defs';
-import type { BriefingSubmission } from '../../shared/briefingJob.defs';
+import type { BriefingServiceResult } from '../../shared/briefingService.defs';
 import { briefingAllowedOrigins } from './allowedOrigins';
 import { BriefingSubmissionError, type BriefingEnv, type BriefingJobMessage } from './job';
 
@@ -58,7 +58,7 @@ function isJobMessage(value: unknown): value is BriefingJobMessage {
  * application fields.
  */
 export class BriefingSubmitter extends WorkerEntrypoint<BriefingEnv> {
-  async submit(packet: BriefingEvidence): Promise<BriefingSubmission> {
+  async submit(packet: BriefingEvidence): Promise<BriefingServiceResult> {
     let evidence: BriefingEvidence;
     try {
       evidence = decodeEvidence(packet);

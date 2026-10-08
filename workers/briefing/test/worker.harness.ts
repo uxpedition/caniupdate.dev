@@ -21,12 +21,9 @@ import type { D1Database, Queue } from '@cloudflare/workers-types';
 import { Log, LogLevel, Miniflare, type DispatchFetch, type WebSocket as RuntimeWebSocket } from 'miniflare';
 
 import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/briefing.defs';
-import {
-  decodeBriefingJobEvent,
-  decodeBriefingSubmission,
-  type BriefingJobEvent,
-  type BriefingSubmission,
-} from '#shared/briefingJob.defs';
+import { decodeBriefingJobEvent, type BriefingJobEvent, type BriefingSubmission } from '#shared/briefingJob.defs';
+import { decodeBriefingServiceResult } from '#shared/briefingService.defs';
+import type { TraceContext } from '#shared/traceContext.defs';
 
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
 import { readStoredBriefing } from '../../../server/comparison/briefing/store';
@@ -194,6 +191,7 @@ export default {
 export type SubmitResult = {
   readonly httpStatus: number;
   readonly submission: BriefingSubmission | undefined;
+  readonly generationContext?: TraceContext;
   readonly error: string | undefined;
 };
 
@@ -231,6 +229,8 @@ export type RuntimeFixture = {
   eventsUrl(hash: string): string;
   /** Queue messages this runtime's own broker delivered to the consumer; see `QUEUE_DELIVERY`. */
   queueDeliveries(): number;
+  /** Structured records emitted by Worker isolates, captured through Miniflare's log callback. */
+  structuredLogs(): readonly string[];
   /** One request against the public hostname, through the real runtime, exactly as a browser sends it. */
   publicFetch: DispatchFetch;
   submit(packet: unknown): Promise<SubmitResult>;
@@ -302,6 +302,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
   const environment = ENVIRONMENTS[options.environment ?? 'local'];
   const allowedOrigin = options.allowedOrigin ?? environment.allowedOrigin;
   const log = new RecordingLog(LogLevel.INFO);
+  const structuredLogs: string[] = [];
 
   // Miniflare 5 declares every environment entry as a binding, so plain variables use the `text` variant.
   const briefingEnv: Record<string, unknown> = {
@@ -318,6 +319,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
 
   const runtime = new Miniflare({
     log,
+    handleStructuredLogs: ({ message }) => structuredLogs.push(message),
     resourcePersistencePath: options.stateDir,
     workers: [
       {
@@ -375,7 +377,13 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
 
     const readSubmitResult = (status: number, body: unknown): SubmitResult => {
       if (status !== 200) return { httpStatus: status, submission: undefined, error: rejectionReason(body) };
-      return { httpStatus: status, submission: decodeBriefingSubmission(body), error: undefined };
+      const result = decodeBriefingServiceResult(body);
+      return {
+        httpStatus: status,
+        submission: result.submission,
+        ...(result.generationContext === undefined ? {} : { generationContext: result.generationContext }),
+        error: undefined,
+      };
     };
 
     const readRawSubmission = (status: number, body: unknown): RawSubmission => {
@@ -397,6 +405,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
       allowedOrigin,
       eventsUrl: (hash: string): string => `${environment.requests}/api/briefings/${hash}/events`,
       queueDeliveries: (): number => log.lines.filter((line) => QUEUE_DELIVERY.test(line.replace(ANSI, ''))).length,
+      structuredLogs: (): readonly string[] => structuredLogs,
       publicFetch: (input, init) => runtime.dispatchFetch(input, init),
       async submit(packet: unknown): Promise<SubmitResult> {
         const { status, body } = await callHarness('/submit', packet);

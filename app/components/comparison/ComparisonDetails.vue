@@ -2,6 +2,7 @@
 import { ChevronDown, LoaderCircle, Minus, Plus } from '@lucide/vue';
 import { computed, nextTick, ref } from 'vue';
 
+import type { TraceContext } from '#shared/traceContext.defs';
 import BriefingPanel from '~/components/comparison/BriefingPanel.vue';
 import EvidencePanel from '~/components/comparison/EvidencePanel.vue';
 import RowHelp from '~/components/comparison/RowHelp.vue';
@@ -9,6 +10,8 @@ import LoadingMessage from '~/components/element/LoadingMessage.vue';
 import { useComparisonPage } from '~/composables/useComparisonPage';
 import { buildComparisonSummaries, sizeChange } from '~/pages/[packageName]/comparisonSummary';
 import { buildComparisonRows, MEASURING_VALUE } from '~/pages/[packageName]/comparisonView';
+
+const props = defineProps<{ pageTraceContext?: TraceContext | undefined }>();
 
 const {
   packageName,
@@ -24,7 +27,7 @@ const {
   briefingStatus,
   briefingError,
   sources,
-} = await useComparisonPage();
+} = await useComparisonPage(props.pageTraceContext);
 const expanded = ref(new Set<string>());
 const showBrief = ref(false);
 const showSources = ref(false);

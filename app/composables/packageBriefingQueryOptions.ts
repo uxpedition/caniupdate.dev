@@ -1,11 +1,15 @@
 import { queryOptions } from '@tanstack/vue-query';
 import type { QueryFunctionContext } from '@tanstack/vue-query';
-import { Duration, Effect } from 'effect';
+import { Duration, Effect, Tracer } from 'effect';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
 import type { PackageBriefing } from '#shared/briefing.defs';
 import { decodeBriefingJobEvent, type BriefingJobEvent, type BriefingSubmission } from '#shared/briefingJob.defs';
+import type { TelemetryRuntime } from '#shared/telemetry';
+import { comparisonTelemetryAttributes } from '#shared/telemetryComparison';
+import { formatTraceparent } from '#shared/traceContext.defs';
+import type { TraceContext } from '#shared/traceContext.defs';
 
 import { PACKAGE_COMPARISON_STALE_TIME } from './packageComparisonQueryOptions';
 
@@ -70,6 +74,47 @@ const pauseBeforeResubmission = (signal: AbortSignal): Promise<void> => {
   return promise;
 };
 
+const runBriefingSubmissionAttempt = (
+  requestFetch: NuxtRequestFetch,
+  url: string,
+  packageName: string,
+  from: string,
+  to: string,
+  signal: AbortSignal,
+  pageContext?: TraceContext,
+  telemetryRuntime?: TelemetryRuntime,
+): Promise<BriefingSubmission> => {
+  const parent = pageContext === undefined ? undefined : Tracer.externalSpan({ ...pageContext, sampled: true });
+  const attributes = comparisonTelemetryAttributes({ packageName, from, to });
+  const spanOptions =
+    parent === undefined
+      ? { kind: 'client' as const, root: true, attributes }
+      : { kind: 'client' as const, parent, attributes };
+  const operation = Effect.gen(function* () {
+    const span = yield* Effect.currentSpan;
+    const traceContext = { traceId: span.traceId, spanId: span.spanId };
+    yield* Effect.logInfo('briefing.submission.started').pipe(
+      Effect.annotateLogs({
+        ...traceContext,
+        ...(parent === undefined ? {} : { parentSpanId: parent.spanId }),
+        ...attributes,
+      }),
+    );
+    return yield* Effect.tryPromise({
+      try: () =>
+        requestFetch<BriefingSubmission>(url, {
+          method: 'POST',
+          query: { from, to },
+          retry: false,
+          signal,
+          headers: { traceparent: formatTraceparent(traceContext) },
+        }),
+      catch: (cause) => cause,
+    });
+  }).pipe(Effect.withSpan('briefing.submit', spanOptions));
+  return telemetryRuntime === undefined ? Effect.runPromise(operation) : telemetryRuntime.runPromise(operation);
+};
+
 /**
  * The POST that starts one query's submission: one attempt, plus one resubmission when the route answers its sanitized
  * 503. A rejected submission never started a generation, and submissions are hash-addressed, so the resubmission can
@@ -82,15 +127,12 @@ const submitBriefing = async (
   from: string,
   to: string,
   signal: AbortSignal,
+  pageContext?: TraceContext,
+  telemetryRuntime?: TelemetryRuntime,
 ): Promise<BriefingSubmission> => {
+  const url = `/api/package/${encodeURIComponent(packageName)}/compare/briefing`;
   const submit = () =>
-    requestFetch<BriefingSubmission>(`/api/package/${encodeURIComponent(packageName)}/compare/briefing`, {
-      method: 'POST',
-      query: { from, to },
-      retry: false,
-      signal,
-    });
-
+    runBriefingSubmissionAttempt(requestFetch, url, packageName, from, to, signal, pageContext, telemetryRuntime);
   try {
     return await submit();
   } catch (error) {
@@ -237,12 +279,35 @@ export const waitForJobEvent = async (
   });
 };
 
+const fetchBriefingResponse = async (
+  context: PackageBriefingQueryContext,
+  requestFetch: NuxtRequestFetch,
+  onStatus: ((state: BriefingStatus) => void) | undefined,
+  pageContext: TraceContext | undefined,
+  telemetryRuntime: TelemetryRuntime | undefined,
+): Promise<PackageBriefingResponse> => {
+  const { queryKey, signal } = context;
+  const [, , , packageName, from, to] = queryKey;
+  // One submission per query, and the browser names nothing but the package and the compared versions: the
+  // evidence packet, the hash, the provider call, and the subscription URL stay behind the private binding.
+  // `signal` is the query's own: Vue Query cancels the retryer when the last observer detaches — a route change, a
+  // comparison swap, an unmount — and the subscription below closes on that abort. That is why nothing here calls
+  // the socket off explicitly.
+  const response = await submitBriefing(requestFetch, packageName, from, to, signal, pageContext, telemetryRuntime);
+  if (response.status === 'available') return response;
+  onStatus?.(response.status);
+  const briefing = await waitForJobEvent(response.eventsUrl, response.revision, signal, (state) => onStatus?.(state));
+  return { packageName: response.packageName, from: response.from, to: response.to, briefing };
+};
+
 export const packageBriefingQueryOptions = (
   requestFetch: NuxtRequestFetch,
   packageName: MaybeRefOrGetter<string>,
   fromVersion: MaybeRefOrGetter<string>,
   toVersion: MaybeRefOrGetter<string>,
   onStatus?: (state: BriefingStatus) => void,
+  pageContext?: TraceContext,
+  telemetryRuntime?: TelemetryRuntime,
 ) => {
   const normalizedPackageName = computed(() => toValue(packageName).trim());
   const normalizedFromVersion = computed(() => toValue(fromVersion).trim());
@@ -255,21 +320,8 @@ export const packageBriefingQueryOptions = (
       normalizedFromVersion.value,
       normalizedToVersion.value,
     ]),
-    queryFn: async ({ queryKey, signal }: PackageBriefingQueryContext): Promise<PackageBriefingResponse> => {
-      const [, , , packageName, from, to] = queryKey;
-      // One submission per query, and the browser names nothing but the package and the compared versions: the
-      // evidence packet, the hash, the provider call, and the subscription URL stay behind the private binding.
-      // `signal` is the query's own: Vue Query cancels the retryer when the last observer detaches — a route change, a
-      // comparison swap, an unmount — and the subscription below closes on that abort. That is why nothing here calls
-      // the socket off explicitly.
-      const response = await submitBriefing(requestFetch, packageName, from, to, signal);
-      if (response.status === 'available') return response;
-      onStatus?.(response.status);
-      const briefing = await waitForJobEvent(response.eventsUrl, response.revision, signal, (state) =>
-        onStatus?.(state),
-      );
-      return { packageName: response.packageName, from: response.from, to: response.to, briefing };
-    },
+    queryFn: (context: PackageBriefingQueryContext) =>
+      fetchBriefingResponse(context, requestFetch, onStatus, pageContext, telemetryRuntime),
     // Briefing is client-only: with declarations awaited during SSR, this query would otherwise enable server-side
     // and spend a model call on every page view.
     enabled: computed(

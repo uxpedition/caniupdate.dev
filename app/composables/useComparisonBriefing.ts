@@ -2,15 +2,18 @@ import { useQuery } from '@tanstack/vue-query';
 import { computed, ref, watch } from 'vue';
 import type { MaybeRefOrGetter } from 'vue';
 
-import { useRequestFetch } from '#imports';
+import { useNuxtApp, useRequestFetch } from '#imports';
+import type { TraceContext } from '#shared/traceContext.defs';
 import { packageBriefingQueryOptions, type BriefingStatus } from '~/composables/packageBriefingQueryOptions';
 
 export const useComparisonBriefing = (
   packageName: MaybeRefOrGetter<string>,
   resolvedFrom: MaybeRefOrGetter<string>,
   resolvedTo: MaybeRefOrGetter<string>,
+  pageContext?: TraceContext,
 ) => {
   const requestFetch = useRequestFetch();
+  const telemetryRuntime = import.meta.client ? useNuxtApp().$telemetry : undefined;
   // The generation state the submitted job reports, published by the briefing query as it submits and follows its
   // socket. A comparison change is a different job, so the previous pair's state must not describe the new one.
   const briefingStatus = ref<BriefingStatus | undefined>(undefined);
@@ -20,6 +23,8 @@ export const useComparisonBriefing = (
     resolvedFrom,
     resolvedTo,
     (state) => (briefingStatus.value = state),
+    pageContext,
+    telemetryRuntime,
   );
   const briefingQuery = useQuery(briefingOptions);
   watch(briefingOptions.queryKey, () => {

@@ -10,14 +10,9 @@
 
 import type * as Cloudflare from '@cloudflare/workers-types';
 import { DurableObject } from 'cloudflare:workers';
-import { Effect, Schema } from 'effect';
-import { FetchHttpClient } from 'effect/http';
+import { Schema } from 'effect';
 
-import {
-  briefingEvidenceHash,
-  generateBriefing,
-  readBriefingConfig,
-} from '../../server/comparison/briefing/generation';
+import { briefingEvidenceHash, readBriefingConfig } from '../../server/comparison/briefing/generation';
 import { isBriefingStoreFailure, readStoredBriefing, saveBriefing } from '../../server/comparison/briefing/store';
 import { BriefingEvidenceSchema } from '../../shared/briefing.defs';
 import type {
@@ -27,6 +22,16 @@ import type {
   PackageBriefing,
 } from '../../shared/briefing.defs';
 import type { BriefingJobEvent, BriefingSubmission } from '../../shared/briefingJob.defs';
+import type { BriefingServiceResult } from '../../shared/briefingService.defs';
+import { runWithTelemetry } from '../../shared/telemetry';
+import type { TraceContext } from '../../shared/traceContext.defs';
+import {
+  briefingTelemetryOptions,
+  ensureGenerationTraceContext,
+  runTracedGeneration,
+  type GenerationTraceEvent,
+  type RunningLease,
+} from './jobTrace';
 
 // These globals belong to workerd; keep their types local instead of replacing Node's globals.
 type D1Database = Cloudflare.D1Database;
@@ -58,6 +63,8 @@ export type JobRecord = {
   readonly revision: number;
   readonly state: 'queued' | 'running' | 'available' | 'unavailable';
   readonly dispatchAttempts: number;
+  /** Optional diagnostic link for a pending generation; discarded by every terminal commit. */
+  traceContext?: TraceContext;
   /** Present only while the job is queued or running; discarded by every terminal commit. */
   packet?: BriefingEvidence;
   leaseUntil?: number;
@@ -71,6 +78,7 @@ export type BriefingEnv = {
   readonly BRIEFINGS_DB: D1Database;
   readonly BRIEFING_PUBLIC_URL: string;
   readonly BRIEFING_ALLOWED_ORIGIN: string;
+  readonly OTEL_EXPORTER_OTLP_ENDPOINT?: string;
   readonly AI_BRIEFING_ENDPOINT?: string;
   readonly AI_BRIEFING_API_KEY?: string;
   readonly AI_BRIEFING_MODEL?: string;
@@ -81,8 +89,6 @@ const LEASE_MS = 90_000;
 const DISPATCH_RECOVERY_MS = 30_000;
 const MAX_DISPATCH_ATTEMPTS = 3;
 const JOB_KEY = 'job';
-/** `#claimRunning` returns this when another owner (or no queued generation) holds the job: the caller must not run. */
-const NOT_CLAIMED = 0;
 /** The close a settled subscriber sees: a normal closure whose reason says the stream ended, not that it broke. */
 const SOCKET_COMPLETE = 1000;
 const SOCKET_COMPLETE_REASON = 'briefing complete';
@@ -147,15 +153,32 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     }
   }
 
+  #waitUntil = this.ctx.waitUntil.bind(this.ctx);
+
+  #ensureTraceContext(record: JobRecord, event: GenerationTraceEvent) {
+    return ensureGenerationTraceContext(
+      this.ctx.storage,
+      JOB_KEY,
+      record,
+      event,
+      briefingTelemetryOptions(this.env.OTEL_EXPORTER_OTLP_ENDPOINT),
+      this.#waitUntil,
+    );
+  }
+
+  #isCurrentQueuedDelivery(record: JobRecord | undefined, message: BriefingJobMessage): record is JobRecord {
+    return (
+      record !== undefined &&
+      record.hash === message.hash &&
+      record.generationId === message.generationId &&
+      record.state === 'queued'
+    );
+  }
+
   /** The Queue consumer's entry point: one delivery, one generation. */
   async run(message: BriefingJobMessage): Promise<BriefingJobEvent> {
     const record = await this.#readRecord();
-    if (
-      record === undefined ||
-      record.hash !== message.hash ||
-      record.generationId !== message.generationId ||
-      record.state !== 'queued'
-    ) {
+    if (!this.#isCurrentQueuedDelivery(record, message)) {
       // A duplicate delivery, a stale generation, or an already-settled job: the owner commits, not this message.
       return await this.reconciledSnapshot();
     }
@@ -172,12 +195,13 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     if (config.status !== 'configured') return await this.#commitUnavailable(config.status);
 
     const lease = await this.#claimRunning(message.generationId, Date.now() + LEASE_MS);
-    if (lease === NOT_CLAIMED) return await this.reconciledSnapshot();
-
-    const generated = await Effect.runPromise(
-      generateBriefing(packet, config.value).pipe(Effect.provide(FetchHttpClient.layer)),
+    if (lease === undefined) return await this.reconciledSnapshot();
+    const generated = await runWithTelemetry(
+      runTracedGeneration(packet, config.value, lease.generationContext),
+      briefingTelemetryOptions(this.env.OTEL_EXPORTER_OTLP_ENDPOINT),
+      this.#waitUntil,
     );
-    return await this.#commitIfCurrent(lease, generated);
+    return await this.#commitIfCurrent(lease.fence, generated);
   }
 
   /**
@@ -239,13 +263,13 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   }
 
   /** The private submission path. Returns the cached result, or the queued/running job's current envelope. */
-  async submit(packet: BriefingEvidence): Promise<BriefingSubmission> {
+  async submit(packet: BriefingEvidence): Promise<BriefingServiceResult> {
     const { evidence, hash } = this.#verifiedPacket(packet);
 
     // D1 is the authority for available results: a hit is returned even when the provider settings have gone away.
     const stored = await this.#lookupStored(hash);
     if (stored.outcome === 'failed') throw new BriefingSubmissionError('cache-error');
-    if (stored.outcome === 'found') return this.#availableSubmission(evidence, stored.briefing);
+    if (stored.outcome === 'found') return { submission: this.#availableSubmission(evidence, stored.briefing) };
 
     const config = readBriefingConfig(this.env);
     if (config.status !== 'configured') throw new BriefingSubmissionError(config.status);
@@ -253,7 +277,10 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     const accepted = await this.#accept(hash, evidence);
     // Only the submit that created the generation dispatches it, so a simultaneous second submit adds no message.
     if (accepted.created) await this.#dispatch();
-    return this.#pendingSubmission(accepted.record, evidence);
+    const submission = this.#pendingSubmission(accepted.record, evidence);
+    return accepted.generationContext === undefined
+      ? { submission }
+      : { submission, generationContext: accepted.generationContext };
   }
 
   /**
@@ -276,11 +303,15 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
    * The accept decision: reuse a pending generation, or store the packet and start a new one. Serialised, so two
    * simultaneous submits cannot both enqueue a message, and the packet is durable before the caller answers.
    */
-  async #accept(hash: string, evidence: BriefingEvidence): Promise<{ record: JobRecord; created: boolean }> {
+  async #accept(
+    hash: string,
+    evidence: BriefingEvidence,
+  ): Promise<{ record: JobRecord; created: boolean; generationContext?: TraceContext }> {
     return await this.#synchronized(async () => {
       const current = await this.#readRecord();
       if (current !== undefined && (current.state === 'queued' || current.state === 'running')) {
-        return { record: current, created: false };
+        const attached = await this.#ensureTraceContext(current, 'briefing.generation.trace_context.attached');
+        return { ...attached, created: false };
       }
 
       // Only a submission creates or advances a generation: a failed generation stays terminal until this runs.
@@ -292,8 +323,8 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
         dispatchAttempts: 0,
         packet: evidence,
       };
-      await this.ctx.storage.put(JOB_KEY, created);
-      return { record: created, created: true };
+      const accepted = await this.#ensureTraceContext(created, 'briefing.generation.accepted');
+      return { ...accepted, created: true };
     });
   }
 
@@ -372,26 +403,28 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   }
 
   /**
-   * Claim the running lease for this generation. Returns the fencing token, or `NOT_CLAIMED` when the job is no
-   * longer queued for that generation.
+   * Claim the running lease and resolve any legacy missing context under the same lock. A stale generation returns
+   * undefined; a claimed one also carries the durable parent for its generation span.
    */
-  async #claimRunning(generationId: number, expiresAt: number): Promise<number> {
+  async #claimRunning(generationId: number, expiresAt: number): Promise<RunningLease | undefined> {
     return await this.#synchronized(async () => {
       const record = await this.#readRecord();
-      if (record === undefined || record.state !== 'queued' || record.generationId !== generationId) {
-        return NOT_CLAIMED;
-      }
-      const fence = (record.fence ?? 0) + 1;
+      if (record === undefined || record.state !== 'queued' || record.generationId !== generationId) return undefined;
+
+      const traced = await this.#ensureTraceContext(record, 'briefing.generation.trace_context.attached');
+      const fence = (traced.record.fence ?? 0) + 1;
       await this.ctx.storage.put(JOB_KEY, {
-        ...record,
+        ...traced.record,
         state: 'running',
         fence,
         leaseUntil: expiresAt,
-        revision: record.revision + 1,
+        revision: traced.record.revision + 1,
       });
       // The lease alarm is set while claiming, so a crash mid-generation is always reconciled.
       await this.ctx.storage.setAlarm(expiresAt);
-      return fence;
+      return traced.generationContext === undefined
+        ? { fence }
+        : { fence, generationContext: traced.generationContext };
     });
   }
 

@@ -1,20 +1,39 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 
-import { definePageMeta, useRoute, useSeoMeta } from '#imports';
+import { definePageMeta, useNuxtApp, useRoute, useSeoMeta } from '#imports';
+import type { TraceContext } from '#shared/traceContext.defs';
 import ComparisonDetails from '~/components/comparison/ComparisonDetails.vue';
 import LoadingMessage from '~/components/element/LoadingMessage.vue';
+import { openComparisonPage } from '~/composables/comparisonPageTelemetry';
 import { useComparisonRoute } from '~/composables/useComparisonRoute';
 
 definePageMeta({ layout: 'site' });
 
 const route = useRoute();
+const telemetry = useNuxtApp().$telemetry;
+const pageTraceContext = ref<TraceContext>();
 
 // Route-only content can stream before declarations; the description streams with ComparisonDetails.
 const { packageName, fromVersion, toVersion } = useComparisonRoute();
 useSeoMeta({
   title: computed(() => `${packageName.value} ${fromVersion.value} -> ${toVersion.value} · Can I Update?`),
 });
+
+if (import.meta.client) {
+  watch(
+    () => route.path,
+    () => {
+      if (route.name === 'packageName-versionPair') {
+        pageTraceContext.value = openComparisonPage(telemetry, packageName.value, {
+          from: fromVersion.value,
+          to: toVersion.value,
+        });
+      }
+    },
+    { immediate: true },
+  );
+}
 </script>
 
 <template>
@@ -44,7 +63,7 @@ useSeoMeta({
       />
 
       <Suspense>
-        <ComparisonDetails />
+        <ComparisonDetails :page-trace-context="pageTraceContext" />
       </Suspense>
     </div>
   </Transition>

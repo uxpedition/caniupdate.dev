@@ -77,7 +77,7 @@ const WebSocketUrlSchema = Schema.String.check(
 
 // The 200 (available) and 202 (pending) POST envelopes. Both are decoded strictly, so an envelope-level or nested
 // packet, prompt, credential, or raw provider error can never ride along into the page.
-const BriefingSubmissionSchema: Schema.Codec<BriefingSubmission> = Schema.Union([
+export const BriefingSubmissionSchema: Schema.Codec<BriefingSubmission> = Schema.Union([
   Schema.Struct({
     status: Schema.Literal('available'),
     packageName: NonBlankStringSchema,

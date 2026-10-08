@@ -123,6 +123,40 @@ Fixture success proves the exercised lifecycle, not model quality or production-
 
 ## How do I diagnose local failures?
 
+The browser comparison page, each briefing POST attempt, the Nuxt route, and the briefing Durable Object use the shared Effect JSON console logger. `comparison.page.opened` identifies a page-root span; each `briefing.submission.started` client span sends its own `traceparent`, and the API's `briefing.submission.accepted` record carries the server parent and, for a queued/running job, `linkedGeneration`. Submitters of one pending generation share that link target; `briefing.generation.accepted` records its independent root, and `briefing.generation.started` records the later child span after a current lease is claimed. These records contain trace/span IDs and validated public package/version identity, not full URLs, hashes, evidence, prompts, raw provider errors, or credentials. Search `comparison.package.name` with `comparison.version.from` / `comparison.version.to` for a resolved pair. The page root retains the original selectors under `comparison.requested.from` / `comparison.requested.to`; failures before resolution retain safe requested identity without inventing resolved versions. The submission route logs refusals only with a sanitized error name and validated service reason on the console error stream. Console diagnostics remain available with or without OTLP export. The optional local Collector path below receives logs and completed spans; queued generations remain independent roots linked from their submitters, not long-lived request children.
+
+### Inspect local OTLP logs and traces
+
+Docker with Compose is required only for the optional Collector, not normal development:
+
+```bash
+nub run telemetry:up
+curl --fail http://127.0.0.1:13133/
+nub run dev --telemetry
+# In another terminal:
+nub run telemetry:logs
+# After stopping the application:
+nub run telemetry:down
+```
+
+`nub run preview --telemetry` enables the same path for the built Worker. `--otel-endpoint http://127.0.0.1:14318` enables export to a different Collector base URL. To use alternate host ports, run `OTEL_HTTP_PORT=14318 OTEL_HEALTH_PORT=14133 nub run telemetry:up`, then use the matching endpoint and health port. Keep the same port variables for later Compose commands.
+
+The pinned Collector listens only on host loopback: OTLP/HTTP on `4318`, health on `13133`. It batches both signals into its detailed debug exporter. Docker logs rotate at 10 MiB with two files; this is a diagnostic sink, not durable telemetry storage or a Grafana UI. No metrics, cloud export, cloud credentials, or automatic deployment are configured. The application launcher does not start or stop Docker containers.
+
+Open a comparison page and look for these resource identities in the Collector output:
+
+- `can-i-update-browser`: `comparison.page` and client `briefing.submit` spans; page-open and submission-start logs.
+- `can-i-update-nuxt`: server `briefing.submit` and submission-accepted/refused diagnostics.
+- `can-i-update-briefing`: independent acceptance root and later generation child, with their logs. A stored-result hit does not start another generation.
+
+Comparison identity is attached to log/span records, never to service resources or metric labels. Package names use the same npm-name validation as public routes (including scoped names, maximum 214 characters). Version/selector attributes are bounded to 256 characters; concrete version fields exclude tags, while requested selector fields accept bounded tag/range characters and reject URLs, control characters, and blank values. Invalid diagnostic fields are omitted without rejecting an otherwise valid operation. Browser records are untrusted diagnostic input even after same-origin validation; server identity comes from its decoded request and trusted evidence, and generation identity comes from its persisted packet. A server span can retain requested selectors even after adding resolved values.
+
+The launcher supplies private Nuxt `NUXT_OTEL_ENDPOINT` plus public `NUXT_PUBLIC_TELEMETRY_ENABLED=true`, and the briefing Worker's `OTEL_EXPORTER_OTLP_ENDPOINT`. Manual settings and private Nuxt header configuration are described in [`.env.example`](../../../.env.example). The browser resolves only the enablement flag through a bounded, no-store `/api/telemetry/config` request and sends to same-origin `/api/telemetry/v1/{logs,traces}` routes, never upstream credentials. Runtime flag resolution also covers navigation from the prerendered homepage in a built preview; changing the flag does not require baking local telemetry settings into a release build. The evidence Worker has no additional exporter.
+
+OTLP serialization allowlists reviewed instrumentation and bounded metadata, strips raw exception causes/status descriptions and unknown attributes, and retains IDs/parent IDs/span links. Browser ingress fixes its resource identity, requires exact same-origin JSON requests, caps bodies at 256 KiB and intake at three seconds, and bounds concurrent/rate admission per runtime instance. Canceled Node uploads are paused until their rejection response finishes, then closed, so cancellation does not abort the error response. These are local best-effort diagnostic limits, not an account-wide abuse-control guarantee. Worker export scopes close through bounded background lifetimes; Collector failure must not change comparison/submission/generation results. Browser unload or an interrupted export can lose telemetry.
+
+For Grafana later, change the Collector's exporters and keep backend credentials there; application instrumentation speaks OTLP rather than a Grafana-specific protocol. The checked-in Collector currently exports only to its local debug sink.
+
 | Symptom                                | Check first                                                                                                                                 |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Launcher reports state already in use  | Stop the owning `dev` or `preview` process. Use a separate persistence root only for an intentionally independent session.                  |

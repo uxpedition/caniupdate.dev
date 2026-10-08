@@ -1,0 +1,19 @@
+name: can-i-update-telemetry
+services:
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.162.0
+    command: ['--config=/etc/otelcol/collector.yaml']
+    volumes:
+      - ./telemetry/collector.yaml:/etc/otelcol/collector.yaml:ro
+    ports:
+      - '127.0.0.1:${OTEL_HTTP_PORT:-4318}:4318'
+      - '127.0.0.1:${OTEL_HEALTH_PORT:-13133}:13133'
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '2'
+    mem_limit: 256m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]

@@ -18,26 +18,13 @@ import { Deferred, Effect, PlatformError, Scope, Stream, Data } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 
 import { browserOrigins } from './browserOrigins.ts';
+import { parseOptions, UsageError, type Options } from './devOptions.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const nuxt = fileURLToPath(new URL('../node_modules/nuxt/bin/nuxt.mjs', import.meta.url));
 const wrangler = fileURLToPath(new URL('../node_modules/wrangler/bin/wrangler.js', import.meta.url));
 
-const DEFAULT_PERSIST_TO = '.wrangler/state';
-const DEFAULT_EVIDENCE_PORT = 8790;
-const DEFAULT_BRIEFING_PORT = 8791;
-const DEFAULT_FRONTEND_PORT = 5173;
-/** One inspector port per session: the three Wrangler sessions may not compete for Wrangler's default. */
-const DEFAULT_INSPECTOR_BASE = 9230;
 const STATE_LOCK_FILE = 'launcher.lock';
-
-const USAGE =
-  'Usage: node scripts/dev.ts [--preview] [--persist-to <dir>] [--evidence-port <port>] [--briefing-port <port>] ' +
-  '[--frontend-port <port>] [--inspector-base <port>]';
-
-class UsageError extends Data.TaggedError('UsageError')<{
-  readonly message: string;
-}> {}
 
 class StateInUseError extends Data.TaggedError('StateInUseError')<{
   readonly message: string;
@@ -68,75 +55,6 @@ class NuxtExitError extends Data.TaggedError('NuxtExitError')<{
   readonly exitCode: number;
   readonly message: string;
 }> {}
-
-type Options = {
-  readonly preview: boolean;
-  readonly persistTo: string;
-  readonly evidencePort: number;
-  readonly briefingPort: number;
-  readonly frontendPort: number;
-  /** The first of three consecutive inspector ports, one per session. */
-  readonly inspectorBase: number;
-};
-
-const parsePort = (flag: string, value: string | undefined): number => {
-  const port = Number(value);
-  if (value === undefined || !Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new UsageError({ message: `${flag} expects a TCP port, got ${JSON.stringify(value)}\n${USAGE}` });
-  }
-  return port;
-};
-
-/**
- * The defaults are the documented local ports and `.wrangler/state`; the overrides exist so an isolated probe (the
- * smoke scenario, a fault test) can run beside a live development session without touching its state or its ports.
- */
-const parseOptions = (argv: readonly string[]): Options => {
-  let preview = false;
-  let persistTo = DEFAULT_PERSIST_TO;
-  let evidencePort = DEFAULT_EVIDENCE_PORT;
-  let briefingPort = DEFAULT_BRIEFING_PORT;
-  let frontendPort = DEFAULT_FRONTEND_PORT;
-  let inspectorBase = DEFAULT_INSPECTOR_BASE;
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const flag = argv[index];
-    switch (flag) {
-      case '--preview':
-        preview = true;
-        break;
-      case '--persist-to': {
-        index += 1;
-        const value = argv[index];
-        if (value === undefined || value.trim() === '') {
-          throw new UsageError({ message: `--persist-to expects a directory\n${USAGE}` });
-        }
-        persistTo = value;
-        break;
-      }
-      case '--evidence-port':
-        index += 1;
-        evidencePort = parsePort('--evidence-port', argv[index]);
-        break;
-      case '--briefing-port':
-        index += 1;
-        briefingPort = parsePort('--briefing-port', argv[index]);
-        break;
-      case '--frontend-port':
-        index += 1;
-        frontendPort = parsePort('--frontend-port', argv[index]);
-        break;
-      case '--inspector-base':
-        index += 1;
-        inspectorBase = parsePort('--inspector-base', argv[index]);
-        break;
-      default:
-        throw new UsageError({ message: `Unknown argument ${JSON.stringify(flag)}\n${USAGE}` });
-    }
-  }
-
-  return { preview, persistTo, evidencePort, briefingPort, frontendPort, inspectorBase };
-};
 
 const options: Effect.Effect<Options, UsageError> = Effect.try({
   try: () => parseOptions(process.argv.slice(2)),
@@ -216,6 +134,7 @@ const briefingWorkerCommand = (launch: Options) =>
       `BRIEFING_PUBLIC_URL:ws://localhost:${launch.briefingPort}`,
       '--var',
       `BRIEFING_ALLOWED_ORIGIN:${browserOrigins(launch.frontendPort).join(',')}`,
+      ...(launch.otelEndpoint === undefined ? [] : ['--var', `OTEL_EXPORTER_OTLP_ENDPOINT:${launch.otelEndpoint}`]),
     ],
     {
       cwd: root,
@@ -226,40 +145,57 @@ const briefingWorkerCommand = (launch: Options) =>
     },
   );
 
-const frontendCommand = (launch: Options) =>
-  launch.preview
-    ? ChildProcess.make(
-        process.execPath,
-        [
-          wrangler,
-          'dev',
-          '--local',
-          '--config',
-          '.output/server/wrangler.json',
-          '--persist-to',
-          launch.persistTo,
-          '--ip',
-          '0.0.0.0',
-          '--port',
-          String(launch.frontendPort),
-          '--inspector-port',
-          String(launch.inspectorBase + 2),
-        ],
-        {
-          cwd: root,
-          stdin: 'inherit',
-          stdout: 'pipe',
-          stderr: 'inherit',
-          forceKillAfter: '5 seconds',
-        },
-      )
-    : ChildProcess.make(process.execPath, [nuxt, 'dev', '--host', '0.0.0.0', '--port', String(launch.frontendPort)], {
-        cwd: root,
-        stdin: 'inherit',
-        stdout: 'inherit',
-        stderr: 'inherit',
-        forceKillAfter: '5 seconds',
-      });
+const previewFrontendCommand = (launch: Options) =>
+  ChildProcess.make(
+    process.execPath,
+    [
+      wrangler,
+      'dev',
+      '--local',
+      '--config',
+      '.output/server/wrangler.json',
+      '--persist-to',
+      launch.persistTo,
+      '--ip',
+      '0.0.0.0',
+      '--port',
+      String(launch.frontendPort),
+      '--inspector-port',
+      String(launch.inspectorBase + 2),
+      ...(launch.otelEndpoint === undefined
+        ? []
+        : ['--var', `NUXT_OTEL_ENDPOINT:${launch.otelEndpoint}`, '--var', 'NUXT_PUBLIC_TELEMETRY_ENABLED:true']),
+    ],
+    {
+      cwd: root,
+      stdin: 'inherit',
+      stdout: 'pipe',
+      stderr: 'inherit',
+      forceKillAfter: '5 seconds',
+    },
+  );
+
+const nuxtFrontendCommand = (launch: Options) =>
+  ChildProcess.make(process.execPath, [nuxt, 'dev', '--host', '0.0.0.0', '--port', String(launch.frontendPort)], {
+    cwd: root,
+    extendEnv: true,
+    env:
+      launch.otelEndpoint === undefined
+        ? {}
+        : {
+            NUXT_OTEL_ENDPOINT: launch.otelEndpoint,
+            NUXT_PUBLIC_TELEMETRY_ENABLED: 'true',
+          },
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+    forceKillAfter: '5 seconds',
+  });
+
+const frontendCommand = (launch: Options) => {
+  if (launch.preview) return previewFrontendCommand(launch);
+  return nuxtFrontendCommand(launch);
+};
 
 const applyMigrations: (
   launch: Options,

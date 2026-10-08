@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/vue-query';
 import { computed } from 'vue';
 
 import { useRequestFetch } from '#imports';
+import type { TraceContext } from '#shared/traceContext.defs';
 import { packageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
 import type { PackageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
 import { packageMeasurementsQueryOptions } from '~/composables/packageMeasurementsQueryOptions';
@@ -21,7 +22,7 @@ const prefetchDeclarations = async (queryClient: QueryClient, declarationsOption
   }
 };
 
-export const useComparisonPage = async () => {
+export const useComparisonPage = async (pageTraceContext?: TraceContext) => {
   const { packageName, fromVersion, toVersion } = useComparisonRoute();
   const requestFetch = useRequestFetch();
 
@@ -44,6 +45,7 @@ export const useComparisonPage = async () => {
     packageName,
     resolvedFrom,
     resolvedTo,
+    pageTraceContext,
   );
 
   await prefetchDeclarations(useQueryClient(), declarationsOptions);

@@ -6,10 +6,13 @@
 
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { Schema } from 'effect';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
 import { readStoredBriefing } from '../../../server/comparison/briefing/store';
+import { decodeTraceContext } from '../../../shared/traceContext.defs';
+import type { TraceContext } from '../../../shared/traceContext.defs';
 import { installBriefingSchema } from '../../../test/helpers/briefingDatabase.harness';
 import {
   FIXTURE_API_KEY,
@@ -35,6 +38,22 @@ import {
 
 let provider: ProviderFixture;
 let main: RuntimeFixture;
+
+const WorkerEffectLogSchema = Schema.Struct({
+  message: Schema.String,
+  annotations: Schema.Record(Schema.String, Schema.Unknown),
+});
+type WorkerEffectLog = typeof WorkerEffectLogSchema.Type;
+const decodeWorkerEffectLog = Schema.decodeUnknownSync(WorkerEffectLogSchema, { errors: 'all' });
+
+const parseWorkerEffectLog = (value: unknown): WorkerEffectLog | undefined => {
+  if (typeof value !== 'string') return undefined;
+  try {
+    return decodeWorkerEffectLog(JSON.parse(value));
+  } catch {
+    return undefined;
+  }
+};
 
 beforeAll(async () => {
   provider = await startProviderFixture();
@@ -73,6 +92,102 @@ describe('briefing job Worker', () => {
     // The D1 row is the authority the object projects, not a copy kept in the object.
     const event = await waitForJobEvent(main, hash, (candidate) => candidate.status === 'available');
     expect(event).toMatchObject({ status: 'available', briefing: stored });
+  }, 60_000);
+
+  it('shares and persists one generation context for simultaneous submissions and runtime restart', async () => {
+    const stateDir = await openStateDir();
+    const packet = packetFor('trace-coalescing-fixture', '1.0.0', '1.1.0');
+    const parked = await startRuntime({ stateDir, consumer: false });
+    let generationContext: TraceContext | undefined;
+    try {
+      const [first, second] = await Promise.all([parked.submit(packet), parked.submit(packet)]);
+      expect(first.submission?.status).toBe('queued');
+      expect(second.submission?.status).toBe('queued');
+      const context = first.generationContext;
+      expect(context).toBeDefined();
+      expect(decodeTraceContext(context)).toEqual(context);
+      expect(second.generationContext).toEqual(context);
+      generationContext = context;
+    } finally {
+      await parked.dispose();
+    }
+
+    const resumed = await startRuntime({ stateDir, consumer: false, installSchema: false });
+    try {
+      const joined = await resumed.submit(packet);
+      expect(joined.generationContext).toEqual(generationContext);
+    } finally {
+      await resumed.dispose();
+    }
+  }, 60_000);
+
+  it('generates from the persisted packet after a runtime restart', async () => {
+    const stateDir = await openStateDir();
+    const packet = packetFor('trace-restart-fixture', '1.0.0', '1.1.0');
+    const parked = await startRuntime({ stateDir, consumer: false });
+    try {
+      expect((await parked.submit(packet)).submission?.status).toBe('queued');
+    } finally {
+      await parked.dispose();
+    }
+
+    const resumed = await startRuntime({ stateDir, installSchema: false });
+    try {
+      const queue = resumed.queue;
+      if (queue === undefined) throw new Error('Expected the resumed queue producer');
+      await queue.send({ hash: briefingEvidenceHash(packet), generationId: 1 });
+      const started = await waitFor(
+        async () =>
+          resumed.structuredLogs().flatMap((line) => {
+            const record = parseWorkerEffectLog(line);
+            return record?.message === 'briefing.generation.started' &&
+              record.annotations['comparison.package.name'] === packet.packageName
+              ? [record]
+              : [];
+          })[0],
+        JOB_WAIT_MS,
+        'the restarted generation start log carrying the persisted packet identity',
+      );
+      expect(started.annotations).toMatchObject({
+        'comparison.package.name': packet.packageName,
+        'comparison.version.from': packet.from,
+        'comparison.version.to': packet.to,
+      });
+      await waitForStoredBriefing(resumed.database, briefingEvidenceHash(packet));
+    } finally {
+      await resumed.dispose();
+    }
+  }, 60_000);
+
+  it('runs the provider generation as a child of the accepted trace context', async () => {
+    const packet = packetFor('trace-generation-fixture', '1.0.0', '1.1.0');
+    const submitted = await main.submit(packet);
+    const generationContext = submitted.generationContext;
+    expect(generationContext).toBeDefined();
+    if (generationContext === undefined) throw new Error('Expected accepted generation context');
+
+    const started = await waitFor(
+      async () =>
+        main.structuredLogs().flatMap((line) => {
+          const record = parseWorkerEffectLog(line);
+          return record?.message === 'briefing.generation.started' &&
+            record.annotations.traceId === generationContext.traceId
+            ? [record]
+            : [];
+        })[0],
+      JOB_WAIT_MS,
+      'the generation start log linked to the accepted context',
+    );
+    expect(started.annotations).toMatchObject({
+      traceId: generationContext.traceId,
+      parentSpanId: generationContext.spanId,
+      'comparison.package.name': packet.packageName,
+      'comparison.version.from': packet.from,
+      'comparison.version.to': packet.to,
+    });
+    expect(started.annotations.spanId).not.toBe(generationContext.spanId);
+    await waitForStoredBriefing(main.database, briefingEvidenceHash(packet));
+    expect(provider.traceHeadersFor(packet.packageName)).toEqual([{}]);
   }, 60_000);
 
   it('crosses the service binding as a native object and preserves its strict envelope', async () => {
@@ -258,6 +373,7 @@ describe('briefing job Worker', () => {
       const failed = await waitForJobEvent(main, hash, (event) => event.status === 'unavailable');
       expect(failed).toMatchObject({ status: 'unavailable', reason: 'invalid-response' });
       expect(provider.requestsFor(packet.packageName)).toBe(2);
+      expect(provider.traceHeadersFor(packet.packageName)).toEqual([{}, {}]);
       expect(await readStoredBriefing(main.database, hash)).toBeUndefined();
     } finally {
       provider.setMode({ kind: 'valid' });

@@ -1,3 +1,4 @@
+import { Effect, Tracer } from 'effect';
 import {
   createError,
   defineEventHandler,
@@ -8,14 +9,19 @@ import {
 } from 'h3';
 
 import type { BriefingEvidence } from '#shared/briefing.defs';
-import { decodeBriefingSubmission, type BriefingSubmission } from '#shared/briefingJob.defs';
+import type { BriefingSubmission } from '#shared/briefingJob.defs';
+import { decodeBriefingServiceResult, type BriefingServiceResult } from '#shared/briefingService.defs';
+import { runWithTelemetry } from '#shared/telemetry';
+import { comparisonTelemetryAttributes } from '#shared/telemetryComparison';
+import { parseTraceparent, type TraceContext } from '#shared/traceContext.defs';
 
+import { telemetryWaitUntil } from '../../../../../telemetry/h3Event';
+import { readServerTelemetryConfig } from '../../../../../telemetry/runtimeConfig';
 import { getBriefingEvidence, PackageEvidenceClientError } from '../_internals/evidenceClient';
 import { decodePackageComparisonQuery, decodePackageComparisonRouterParams } from '../_internals/request';
 import { browserBriefingSocketUrl } from './_internals/socketUrl';
 
-const briefingServiceUnavailable = () =>
-  createError({ statusCode: 503, statusMessage: 'Briefing service unavailable' });
+type SubmissionFailureStatus = 'Evidence service unavailable' | 'Briefing service unavailable';
 
 type BriefingService = { submit(packet: BriefingEvidence): Promise<unknown> };
 type DisposableRpcResult = object & { [Symbol.dispose](): void };
@@ -29,7 +35,7 @@ const isDisposableRpcResult = (value: unknown): value is DisposableRpcResult =>
 
 // Copy every own string key, including non-enumerable ones, so strict decoding still rejects undeclared application
 // data. When present, the documented disposer is excluded because the caller invokes it unconditionally.
-const copyRpcSubmissionData = (submission: unknown): Record<string, unknown> => {
+const copyRpcServiceResultData = (submission: unknown): Record<string, unknown> => {
   if (typeof submission !== 'object' || submission === null) {
     throw new TypeError('Briefing service did not return an object');
   }
@@ -52,7 +58,7 @@ const copyRpcSubmissionData = (submission: unknown): Record<string, unknown> => 
 
 // Node's Miniflare bridge omits descriptor values while keeping ordinary property reads live. This is reachable only
 // through Nuxt's compile-time development branch below; built Workers retain the descriptor-only path above.
-const copyNodeDevelopmentRpcSubmissionData = (submission: unknown): Record<string, unknown> => {
+const copyNodeDevelopmentRpcServiceResultData = (submission: unknown): Record<string, unknown> => {
   if (typeof submission !== 'object' || submission === null) {
     throw new TypeError('Briefing service did not return an object');
   }
@@ -86,35 +92,36 @@ const sanitizedFailureReason = (error: unknown): string | undefined => {
   return SANITIZED_REASON_PATTERN.test(reason) ? reason : undefined;
 };
 
-/**
- * The one server-side signal a refused submission leaves. The response stays as opaque as it is today; the log carries
- * only the error's name and, for the service's own sanitized error type, its reason. The evidence packet, the prompt,
- * credentials, and raw provider bodies never belong in a log line.
- */
-const logSubmissionFailure = (error: unknown): void => {
-  const name = error instanceof Error ? error.name : typeof error;
-  const reason = name === SUBMISSION_FAILURE_TAG ? sanitizedFailureReason(error) : undefined;
-  console.error('Briefing submission failed', reason === undefined ? { name } : { name, reason });
+class BriefingSubmissionFailure extends Error {
+  readonly _tag = 'BriefingSubmissionFailure';
+
+  constructor(
+    readonly failureName: string,
+    readonly reason?: string,
+    readonly statusMessage: SubmissionFailureStatus = 'Briefing service unavailable',
+  ) {
+    super('Briefing submission refused');
+  }
+}
+
+const submissionFailure = (error: unknown): BriefingSubmissionFailure => {
+  const failureName = error instanceof Error ? error.name : typeof error;
+  const reason = failureName === SUBMISSION_FAILURE_TAG ? sanitizedFailureReason(error) : undefined;
+  return new BriefingSubmissionFailure(failureName, reason);
 };
 
-/** Leaves the sanitized trail that makes a refused submission diagnosable, then answers the same opaque 503. */
-const refusedSubmission = (error: unknown) => {
-  logSubmissionFailure(error);
-  return briefingServiceUnavailable();
-};
-
-const receiveBriefingSubmission = async (
+const receiveBriefingServiceResult = async (
   service: BriefingService,
   evidence: BriefingEvidence,
-): Promise<BriefingSubmission> => {
+): Promise<BriefingServiceResult> => {
   try {
-    const rpcSubmission = await service.submit(evidence);
-    if (isDisposableRpcResult(rpcSubmission)) {
-      const dispose = rpcSubmission[Symbol.dispose];
+    const rpcResult = await service.submit(evidence);
+    if (isDisposableRpcResult(rpcResult)) {
+      const dispose = rpcResult[Symbol.dispose];
       try {
-        return decodeBriefingSubmission(copyRpcSubmissionData(rpcSubmission));
+        return decodeBriefingServiceResult(copyRpcServiceResultData(rpcResult));
       } finally {
-        dispose.call(rpcSubmission);
+        dispose.call(rpcResult);
       }
     }
 
@@ -122,11 +129,11 @@ const receiveBriefingSubmission = async (
     // local development usable while retaining the same strict application-field decode; this compile-time Nuxt flag
     // is false in the built Worker, which still requires and invokes Cloudflare's documented lifecycle hook.
     if (import.meta.dev) {
-      return decodeBriefingSubmission(copyNodeDevelopmentRpcSubmissionData(rpcSubmission));
+      return decodeBriefingServiceResult(copyNodeDevelopmentRpcServiceResultData(rpcResult));
     }
     throw new TypeError('Briefing service did not return a disposable object');
   } catch (error) {
-    throw refusedSubmission(error);
+    throw submissionFailure(error);
   }
 };
 
@@ -149,35 +156,138 @@ const submissionAnswer = (event: H3Event, submission: BriefingSubmission): Respo
   );
 };
 
-// The AI briefing is served separately from factual comparison data, and this route owns no generation: the private
-// evidence object builds the bounded packet and the private briefing service owns the hash, the store, the provider
-// call, and the subscription URL the browser follows. Nothing here reads a credential or a database, so a missing
-// binding or an off-protocol answer is an explicit 503 instead of a job the page could never follow.
-//
-// POST rather than GET even though it carries no body: this is a submission, not a read. A cold hash creates a job and
-// can spend provider budget, and the client issues it on every comparison page view — a GET-shaped URL is what
-// browsers prefetch, caches replay and crawlers walk, and none of them may buy a generation. The parameters live in the
-// path and query because the browser may name only the package and the compared versions; the packet is built behind
-// the binding.
-export default defineEventHandler(async (event) => {
+type BriefingSubmissionRequest = { readonly packageName: string; readonly from: string; readonly to: string };
+
+// Decode route and query before evidence I/O so diagnostics only receive validated identity.
+const readBriefingSubmissionRequest = async (event: H3Event): Promise<BriefingSubmissionRequest> => {
   const { packageName } = await getValidatedRouterParams(event, decodePackageComparisonRouterParams);
   const { from, to } = await getValidatedQuery(event, decodePackageComparisonQuery);
+  return { packageName, from, to };
+};
 
-  let evidence: BriefingEvidence;
-  try {
-    evidence = await getBriefingEvidence(event.context.cloudflare?.env?.PACKAGE_EVIDENCE, { packageName, from, to });
-  } catch (error) {
-    if (error instanceof PackageEvidenceClientError) {
-      throw createError({ statusCode: 503, statusMessage: 'Evidence service unavailable' });
+const logAcceptedSubmission = (
+  parsed: TraceContext | undefined,
+  result: BriefingServiceResult,
+  identityAttributes: Record<string, string>,
+) =>
+  Effect.gen(function* () {
+    const span = yield* Effect.currentSpan;
+    const generationContext = result.generationContext;
+    if (generationContext !== undefined) {
+      yield* Effect.sync(() =>
+        span.addLinks([
+          {
+            span: Tracer.externalSpan({ ...generationContext, sampled: true }),
+            attributes: { relationship: 'shared-generation' },
+          },
+        ]),
+      );
     }
-    throw error;
-  }
+    yield* Effect.logInfo('briefing.submission.accepted').pipe(
+      Effect.annotateLogs({
+        traceId: span.traceId,
+        spanId: span.spanId,
+        ...(parsed === undefined ? {} : { parentSpanId: parsed.spanId }),
+        ...(generationContext === undefined ? {} : { linkedGeneration: generationContext }),
+        ...identityAttributes,
+      }),
+    );
+  });
 
-  const service = event.context.cloudflare?.env?.BRIEFING_SERVICE;
-  if (service === undefined) throw briefingServiceUnavailable();
+const failBriefingSubmission = (
+  cause: BriefingSubmissionFailure,
+  parsed: TraceContext | undefined,
+  identityAttributes: Record<string, string>,
+) =>
+  Effect.gen(function* () {
+    const span = yield* Effect.currentSpan;
+    yield* Effect.logError('Briefing submission failed').pipe(
+      Effect.annotateLogs({
+        name: cause.failureName,
+        ...(cause.reason === undefined ? {} : { reason: cause.reason }),
+        traceId: span.traceId,
+        spanId: span.spanId,
+        ...(parsed === undefined ? {} : { parentSpanId: parsed.spanId }),
+        ...identityAttributes,
+      }),
+    );
+    return yield* Effect.fail(createError({ statusCode: 503, statusMessage: cause.statusMessage }));
+  });
 
-  const submission = await receiveBriefingSubmission(service, evidence);
+const readResolvedBriefingEvidence = (event: H3Event, request: BriefingSubmissionRequest) =>
+  Effect.gen(function* () {
+    const evidence = yield* Effect.tryPromise({
+      try: () =>
+        getBriefingEvidence(event.context.cloudflare?.env?.PACKAGE_EVIDENCE, {
+          packageName: request.packageName,
+          from: request.from,
+          to: request.to,
+        }),
+      catch: (cause) =>
+        cause instanceof PackageEvidenceClientError
+          ? new BriefingSubmissionFailure(cause.name, cause.reason, 'Evidence service unavailable')
+          : cause,
+    });
+    const identityAttributes = comparisonTelemetryAttributes(evidence, { from: request.from, to: request.to });
+    yield* Effect.annotateCurrentSpan(identityAttributes);
+    return { evidence, identityAttributes };
+  });
 
-  // 200 is the stored briefing the page renders; 202 is a job it follows on the service's own socket URL.
-  return submissionAnswer(event, submission);
-});
+const createBriefingSubmissionProgram = (event: H3Event, parsed: TraceContext | undefined) => {
+  let identityAttributes: Record<string, string> = {};
+  const parent =
+    parsed === undefined
+      ? undefined
+      : Tracer.externalSpan({ traceId: parsed.traceId, spanId: parsed.spanId, sampled: true });
+  const spanOptions =
+    parent === undefined ? { kind: 'server' as const, root: true } : { kind: 'server' as const, parent };
+
+  return Effect.gen(function* () {
+    const request = yield* Effect.tryPromise({
+      try: () => readBriefingSubmissionRequest(event),
+      catch: (cause) => cause,
+    });
+    identityAttributes = comparisonTelemetryAttributes(
+      { packageName: request.packageName },
+      { from: request.from, to: request.to },
+    );
+    yield* Effect.annotateCurrentSpan(identityAttributes);
+
+    const resolved = yield* readResolvedBriefingEvidence(event, request);
+    identityAttributes = resolved.identityAttributes;
+
+    const service = event.context.cloudflare?.env?.BRIEFING_SERVICE;
+    if (service === undefined) {
+      return yield* Effect.fail(new BriefingSubmissionFailure('BriefingServiceBindingUnavailable'));
+    }
+
+    const result = yield* Effect.tryPromise({
+      try: () => receiveBriefingServiceResult(service, resolved.evidence),
+      catch: (cause) => cause,
+    });
+    yield* logAcceptedSubmission(parsed, result, identityAttributes);
+    return submissionAnswer(event, result.submission);
+  }).pipe(
+    Effect.catchIf(
+      (cause): cause is BriefingSubmissionFailure => cause instanceof BriefingSubmissionFailure,
+      (cause) => failBriefingSubmission(cause, parsed, identityAttributes),
+    ),
+    Effect.withSpan('briefing.submit', spanOptions),
+  );
+};
+
+const handleBriefingSubmission = async (event: H3Event) => {
+  const parsed = parseTraceparent(getRequestHeader(event, 'traceparent'));
+  const program = createBriefingSubmissionProgram(event, parsed);
+  const telemetry = readServerTelemetryConfig(event);
+  return runWithTelemetry(
+    program,
+    {
+      serviceName: 'can-i-update-nuxt',
+      ...(telemetry.enabled ? { endpoint: telemetry.endpoint, headers: telemetry.headers } : {}),
+    },
+    telemetryWaitUntil(event.context),
+  );
+};
+
+export default defineEventHandler((event) => handleBriefingSubmission(event));

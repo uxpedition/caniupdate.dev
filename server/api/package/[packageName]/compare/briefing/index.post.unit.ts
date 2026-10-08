@@ -1,10 +1,13 @@
+import { Schema } from 'effect';
 import { mockEvent } from 'h3';
 import { Miniflare } from 'miniflare';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/briefing.defs';
 import type { BriefingSubmission } from '#shared/briefingJob.defs';
+import type { BriefingServiceResult } from '#shared/briefingService.defs';
 import type { PackageEvidenceNamespace, PackageEvidenceObject } from '#shared/packageEvidence.defs';
+import type { TraceContext } from '#shared/traceContext.defs';
 
 import handler from './index.post';
 
@@ -16,11 +19,11 @@ const idFromName = vi.fn((name: string) => ({ name }));
 const objectFetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
 const getObject = vi.fn<(id: object) => PackageEvidenceObject>(() => ({ fetch: objectFetch }));
 const namespace: PackageEvidenceNamespace = { idFromName, get: getObject };
-type DisposableBriefingSubmission = BriefingSubmission & { [Symbol.dispose](): void };
-type BriefingService = { submit(packet: BriefingEvidence): Promise<DisposableBriefingSubmission> };
+type DisposableBriefingServiceResult = BriefingServiceResult & { [Symbol.dispose](): void };
+type BriefingService = { submit(packet: BriefingEvidence): Promise<DisposableBriefingServiceResult> };
 
 // The private binding returns Cloudflare's native disposable object.
-const submit = vi.fn<(packet: BriefingEvidence) => Promise<DisposableBriefingSubmission>>();
+const submit = vi.fn<(packet: BriefingEvidence) => Promise<DisposableBriefingServiceResult>>();
 const service: BriefingService = { submit };
 
 const evidence = (): BriefingEvidence => ({
@@ -67,10 +70,14 @@ const pending = (revision = 3) =>
     revision,
   }) as const;
 
-const nativeSubmission = <T extends BriefingSubmission>(
-  submission: T,
+const nativeServiceResult = (
+  submission: BriefingSubmission,
   disposer: () => void = vi.fn(),
-): T & { [Symbol.dispose](): void } => Object.assign(submission, { [Symbol.dispose]: disposer });
+  generationContext?: TraceContext,
+): DisposableBriefingServiceResult =>
+  Object.assign(generationContext === undefined ? { submission } : { submission, generationContext }, {
+    [Symbol.dispose]: disposer,
+  });
 
 const nodeBridgeService = async (submission: BriefingSubmission) => {
   const serviceName = 'briefing-node-rpc-service';
@@ -88,8 +95,8 @@ const nodeBridgeService = async (submission: BriefingSubmission) => {
               'index.js': {
                 type: 'esm',
                 contents: `import { WorkerEntrypoint } from 'cloudflare:workers';
-const submission = ${JSON.stringify(submission)};
-export class BriefingSubmitter extends WorkerEntrypoint { submit() { return submission; } }
+const result = { submission: ${JSON.stringify(submission)} };
+export class BriefingSubmitter extends WorkerEntrypoint { submit() { return result; } }
 export default { fetch() { return new Response('ok'); } };`,
               },
             },
@@ -141,12 +148,30 @@ function eventFor(
   return event;
 }
 
+const ConsoleLogRecordSchema = Schema.Struct({ annotations: Schema.Record(Schema.String, Schema.Unknown) });
+const decodeConsoleLogRecord = Schema.decodeUnknownSync(ConsoleLogRecordSchema, { errors: 'all' });
+
+const annotationsFromLog = (value: unknown): Readonly<Record<string, unknown>> => {
+  if (typeof value !== 'string') throw new Error('Expected a JSON console record');
+  let record: unknown;
+  try {
+    record = JSON.parse(value);
+  } catch {
+    throw new Error('Expected a valid JSON console record');
+  }
+  try {
+    return decodeConsoleLogRecord(record).annotations;
+  } catch {
+    throw new Error('Expected annotations in the console record');
+  }
+};
+
 describe('briefing submission endpoint', () => {
   beforeEach(() => {
     idFromName.mockClear();
     getObject.mockClear();
     objectFetch.mockReset().mockResolvedValue(Response.json(evidence()));
-    submit.mockReset().mockResolvedValue(nativeSubmission(available()));
+    submit.mockReset().mockResolvedValue(nativeServiceResult(available()));
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -173,9 +198,91 @@ describe('briefing submission endpoint', () => {
     await expect(request.json()).resolves.toEqual({ packageName: 'minimist', from: '1.0.0', to: '2.0.0' });
   });
 
+  it('logs requested selectors separately from the resolved packet identity', async () => {
+    const log = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const resolved = { ...evidence(), from: '1.4.0', to: '3.0.0' };
+    objectFetch.mockResolvedValue(Response.json(resolved));
+    submit.mockResolvedValue(nativeServiceResult({ ...available(), from: resolved.from, to: resolved.to }));
+    try {
+      const response = await handler(eventFor('^1.0.0', 'latest'));
+
+      expect(response.status).toBe(200);
+      expect(submit).toHaveBeenCalledWith(resolved);
+      expect(annotationsFromLog(log.mock.calls[0]?.[0])).toMatchObject({
+        'comparison.package.name': 'minimist',
+        'comparison.version.from': '1.4.0',
+        'comparison.version.to': '3.0.0',
+        'comparison.requested.from': '^1.0.0',
+        'comparison.requested.to': 'latest',
+      });
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('creates a distinct server child span for each valid incoming client context and links the shared generation', async () => {
+    const log = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const generationContext: TraceContext = {
+      traceId: '9f4f7c51d7339f60cae8f53609e7b9d2',
+      spanId: '4a2bf8ebd98a0123',
+    };
+    submit.mockResolvedValue(nativeServiceResult(pending(), undefined, generationContext));
+    objectFetch.mockImplementation(async () => Response.json(evidence()));
+    try {
+      const first = await handler(
+        eventFor('1.0.0', '2.0.0', 'minimist', undefined, {
+          traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00',
+        }),
+      );
+      const second = await handler(
+        eventFor('1.0.0', '2.0.0', 'minimist', undefined, {
+          traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-00',
+        }),
+      );
+
+      expect(first.status).toBe(202);
+      expect(second.status).toBe(202);
+      await expect(first.json()).resolves.toEqual(pending());
+      await expect(second.json()).resolves.toEqual(pending());
+      expect(log).toHaveBeenCalledTimes(2);
+      const firstAnnotations = annotationsFromLog(log.mock.calls[0]?.[0]);
+      const secondAnnotations = annotationsFromLog(log.mock.calls[1]?.[0]);
+      expect(firstAnnotations).toMatchObject({
+        traceId: '4bf92f3577b34da6a3ce929d0e0e4736',
+        parentSpanId: '00f067aa0ba902b7',
+        linkedGeneration: generationContext,
+      });
+      expect(secondAnnotations).toMatchObject({
+        traceId: '0af7651916cd43dd8448eb211c80319c',
+        parentSpanId: 'b7ad6b7169203331',
+        linkedGeneration: generationContext,
+      });
+      expect(firstAnnotations.spanId).not.toBe(secondAnnotations.spanId);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('starts a fresh server trace when the incoming traceparent is malformed', async () => {
+    const log = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      const response = await handler(eventFor('1.0.0', '2.0.0', 'minimist', undefined, { traceparent: '00-invalid' }));
+
+      expect(response.status).toBe(200);
+      expect(log).toHaveBeenCalledTimes(1);
+      const annotations = annotationsFromLog(log.mock.calls[0]?.[0]);
+      expect(annotations.traceId).toMatch(/^[0-9a-f]{32}$/);
+      expect(annotations.spanId).toMatch(/^[0-9a-f]{16}$/);
+      expect(annotations.parentSpanId).toBeUndefined();
+      expect(annotations.linkedGeneration).toBeUndefined();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('accepts and disposes Cloudflare’s native submission object', async () => {
     const dispose = vi.fn();
-    submit.mockResolvedValue(nativeSubmission(available(), dispose));
+    submit.mockResolvedValue(nativeServiceResult(available(), dispose));
 
     const response = await handler(eventFor());
 
@@ -190,8 +297,8 @@ describe('briefing submission endpoint', () => {
       // Node's Miniflare proxy deliberately hides symbols and omits descriptor values; property access is still live.
       const raw = await bridge.service.submit(evidence());
       expect(raw[Symbol.dispose]).toBeUndefined();
-      expect(Object.getOwnPropertyDescriptor(raw, 'status')?.value).toBeUndefined();
-      expect(raw.status).toBe('available');
+      expect(Object.getOwnPropertyDescriptor(raw, 'submission')?.value).toBeUndefined();
+      expect(raw.submission).toEqual(available());
 
       const result = await handler(
         eventFor('1.0.0', '2.0.0', 'minimist', {
@@ -209,7 +316,7 @@ describe('briefing submission endpoint', () => {
 
   it('rejects a foreign RPC symbol while disposing the documented one', async () => {
     const dispose = vi.fn();
-    const response = nativeSubmission(available(), dispose);
+    const response = nativeServiceResult(available(), dispose);
     Object.defineProperty(response, Symbol('foreign-rpc-symbol'), { value: () => undefined });
     submit.mockResolvedValue(response);
 
@@ -222,7 +329,7 @@ describe('briefing submission endpoint', () => {
 
   it('rejects a non-enumerable application field while disposing the RPC object', async () => {
     const dispose = vi.fn();
-    const response = nativeSubmission(available(), dispose);
+    const response = nativeServiceResult(available(), dispose);
     Object.defineProperty(response, 'unexpected', { value: 'application field' });
     submit.mockResolvedValue(response);
 
@@ -234,7 +341,7 @@ describe('briefing submission endpoint', () => {
   });
 
   it('answers 202 with the pending envelope and the service subscription URL', async () => {
-    submit.mockResolvedValue(nativeSubmission(pending()));
+    submit.mockResolvedValue(nativeServiceResult(pending()));
 
     const response = await handler(eventFor());
 
@@ -245,7 +352,7 @@ describe('briefing submission endpoint', () => {
   });
 
   it('answers a remote page with the socket on that page’s own host instead of the advertised loopback', async () => {
-    submit.mockResolvedValue(nativeSubmission(pending()));
+    submit.mockResolvedValue(nativeServiceResult(pending()));
 
     const response = await handler(
       eventFor('1.0.0', '2.0.0', 'minimist', undefined, { Origin: 'http://100.122.224.20:5173' }),
@@ -257,7 +364,7 @@ describe('briefing submission endpoint', () => {
   });
 
   it('falls back to the Host header when a submission carries no Origin', async () => {
-    submit.mockResolvedValue(nativeSubmission(pending()));
+    submit.mockResolvedValue(nativeServiceResult(pending()));
 
     const response = await handler(eventFor('1.0.0', '2.0.0', 'minimist', undefined, { Host: '192.168.101.197:5173' }));
 
@@ -266,7 +373,7 @@ describe('briefing submission endpoint', () => {
   });
 
   it('keeps the event path, hash, and revision a rewrite moves the host of', async () => {
-    submit.mockResolvedValue(nativeSubmission(pending(7)));
+    submit.mockResolvedValue(nativeServiceResult(pending(7)));
 
     const response = await handler(
       eventFor('1.0.0', '2.0.0', 'minimist', undefined, { Origin: 'http://100.122.224.20:5173' }),
@@ -281,7 +388,7 @@ describe('briefing submission endpoint', () => {
 
   it('leaves the deployed service’s own hostname alone', async () => {
     const deployed = `wss://can-i-update-preview-briefing.caniupdate-dev.workers.dev/api/briefings/${HASH}/events`;
-    submit.mockResolvedValue(nativeSubmission({ ...pending(), eventsUrl: deployed }));
+    submit.mockResolvedValue(nativeServiceResult({ ...pending(), eventsUrl: deployed }));
 
     const response = await handler(
       eventFor('1.0.0', '2.0.0', 'minimist', undefined, {
@@ -321,6 +428,30 @@ describe('briefing submission endpoint', () => {
 
     expect(submit).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('logs only safe requested identity when evidence fails before a packet exists', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    objectFetch.mockResolvedValue(new Response('private evidence details', { status: 503 }));
+    try {
+      await expect(handler(eventFor('https://private.example/?token=secret', 'latest'))).rejects.toMatchObject({
+        statusCode: 503,
+        statusMessage: 'Evidence service unavailable',
+      });
+
+      expect(log).toHaveBeenCalledTimes(1);
+      const line: unknown = log.mock.calls[0]?.[0];
+      expect(annotationsFromLog(line)).toMatchObject({
+        'comparison.package.name': 'minimist',
+        'comparison.requested.to': 'latest',
+      });
+      expect(annotationsFromLog(line)).not.toHaveProperty('comparison.requested.from');
+      expect(String(line)).not.toContain('private.example');
+      expect(String(line)).not.toContain('token=secret');
+      expect(submit).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('sanitizes an evidence-service failure without submitting or spending an AI request', async () => {
@@ -378,7 +509,14 @@ describe('briefing submission endpoint', () => {
         statusMessage: 'Briefing service unavailable',
       });
       // A foreign failure contributes its name and nothing else: no message, no provider text, no credential.
-      expect(log).toHaveBeenCalledWith('Briefing submission failed', { name: 'Error' });
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(annotationsFromLog(log.mock.calls[0]?.[0])).toMatchObject({
+        name: 'Error',
+        'comparison.package.name': 'minimist',
+        'comparison.version.from': '1.0.0',
+        'comparison.version.to': '2.0.0',
+      });
+      expect(String(log.mock.calls[0]?.[0])).not.toContain('provider credential rejected');
 
       log.mockClear();
       // Across the binding's RPC boundary the service's sanitized error arrives as a plain error whose name is its tag
@@ -388,7 +526,7 @@ describe('briefing submission endpoint', () => {
         statusCode: 503,
         statusMessage: 'Briefing service unavailable',
       });
-      expect(log).toHaveBeenCalledWith('Briefing submission failed', {
+      expect(annotationsFromLog(log.mock.calls[0]?.[0])).toMatchObject({
         name: 'BriefingSubmissionError',
         reason: 'cache-error',
       });
@@ -399,7 +537,8 @@ describe('briefing submission endpoint', () => {
         Object.assign(new Error('provider body: api key sk-live-123 leaked'), { name: 'BriefingSubmissionError' }),
       );
       await expect(handler(eventFor())).rejects.toMatchObject({ statusCode: 503 });
-      expect(log).toHaveBeenCalledWith('Briefing submission failed', { name: 'BriefingSubmissionError' });
+      expect(annotationsFromLog(log.mock.calls[0]?.[0])).toMatchObject({ name: 'BriefingSubmissionError' });
+      expect(String(log.mock.calls[0]?.[0])).not.toContain('sk-live-123');
     } finally {
       log.mockRestore();
     }
@@ -407,7 +546,7 @@ describe('briefing submission endpoint', () => {
 
   it('rejects an off-protocol service envelope rather than reporting a job the page cannot follow', async () => {
     // A hash the protocol does not define cannot name a job, so the route must refuse it instead of answering 202.
-    submit.mockResolvedValue(nativeSubmission({ ...pending(), hash: 'job-hash' }));
+    submit.mockResolvedValue(nativeServiceResult({ ...pending(), hash: 'job-hash' }));
 
     await expect(handler(eventFor())).rejects.toMatchObject({
       statusCode: 503,

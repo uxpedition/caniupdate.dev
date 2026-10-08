@@ -10,6 +10,7 @@ export default defineConfig({
       '~': fileURLToPath(new URL('./app', import.meta.url)),
       '@': fileURLToPath(new URL('./app', import.meta.url)),
       '#shared': fileURLToPath(new URL('./shared', import.meta.url)),
+      'nitropack/runtime': fileURLToPath(new URL('./test/helpers/nitroRuntime.ts', import.meta.url)),
     },
   },
   test: {

@@ -5,11 +5,17 @@ import { ref, toValue } from 'vue';
 
 import type { AvailablePackageBriefing } from '#shared/briefing.defs';
 import type { BriefingJobEvent, BriefingSubmission } from '#shared/briefingJob.defs';
+import { createTelemetryRuntime } from '#shared/telemetry';
+import type { TelemetryRuntime } from '#shared/telemetry';
+import { decodeTelemetryPayload } from '#shared/telemetry.defs';
+import { parseTraceparent } from '#shared/traceContext.defs';
+import type { TraceContext } from '#shared/traceContext.defs';
 
 import { packageBriefingQueryOptions } from './packageBriefingQueryOptions';
 
 const HASH = 'b637f83283a13491f7fee3cd9a108ab6ea20994d00a95a6646ba7a1bd48818b4';
 const EVENTS_URL = `ws://localhost:8791/api/briefings/${HASH}/events`;
+const PAGE_CONTEXT = { traceId: '4bf92f3577b34da6a3ce929d0e0e4736', spanId: '00f067aa0ba902b7' } satisfies TraceContext;
 
 const briefing = (): AvailablePackageBriefing => ({
   status: 'available',
@@ -107,6 +113,30 @@ class FakeSocket {
 const requestFetch = vi.fn();
 const queryClient = new QueryClient();
 
+const installTelemetryCollector = () => {
+  const requests: Array<{ url: string; body: string }> = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push({ url: request.url, body: await request.text() });
+      return new Response(null, { status: 200 });
+    }),
+  );
+  return {
+    requests,
+    telemetry: createTelemetryRuntime({ endpoint: 'http://collector.test:4318', serviceName: 'can-i-update-browser' }),
+  };
+};
+
+const traceparentAt = (index: number): string | undefined => {
+  const options: unknown = requestFetch.mock.calls[index]?.[1];
+  if (typeof options !== 'object' || options === null || !('headers' in options)) return undefined;
+  const headers = options.headers;
+  if (typeof headers !== 'object' || headers === null || !('traceparent' in headers)) return undefined;
+  return typeof headers.traceparent === 'string' ? headers.traceparent : undefined;
+};
+
 // What `$fetch` rejects with when the submission route answers its sanitized 503: ofetch's FetchError exposes the
 // response status under both names.
 const submissionFailure = () =>
@@ -115,13 +145,27 @@ const submissionFailure = () =>
     statusCode: 503,
   });
 
-const runQuery = (statuses: string[], signal: AbortSignal) => {
+type RunQueryOptions = {
+  readonly telemetryRuntime?: TelemetryRuntime;
+  readonly packageName?: string;
+  readonly from?: string;
+  readonly to?: string;
+};
+
+const runQuery = (
+  statuses: string[],
+  signal: AbortSignal,
+  pageContext?: TraceContext,
+  options: RunQueryOptions = {},
+) => {
   const { queryFn, queryKey } = packageBriefingQueryOptions(
     requestFetch,
-    ref('minimist'),
-    ref('1.0.0'),
-    ref('2.0.0'),
+    ref(options.packageName ?? 'minimist'),
+    ref(options.from ?? '1.0.0'),
+    ref(options.to ?? '2.0.0'),
     (status) => statuses.push(status),
+    pageContext,
+    options.telemetryRuntime,
   );
   if (typeof queryFn !== 'function') throw new Error('Expected a briefing queryFn');
   return queryFn({ client: queryClient, queryKey: toValue(queryKey), signal, meta: undefined });
@@ -175,11 +219,65 @@ describe('packageBriefingQueryOptions', () => {
     expect(statuses).toEqual([]);
   });
 
+  it('sends a client traceparent directly beneath the route context', async () => {
+    requestFetch.mockResolvedValue(available());
+
+    await runQuery([], new AbortController().signal, PAGE_CONTEXT);
+
+    const clientContext = parseTraceparent(traceparentAt(0));
+    expect(clientContext).toMatchObject({ traceId: PAGE_CONTEXT.traceId });
+    expect(clientContext?.spanId).not.toBe(PAGE_CONTEXT.spanId);
+  });
+
+  it('records resolved query identity on a failed submit span and its start log', async () => {
+    const { requests, telemetry } = installTelemetryCollector();
+    await telemetry.context();
+    const failure = new Error('[POST] "/api/package/%40scope%2Fpackage/compare/briefing": 500 private-provider-detail');
+    requestFetch.mockRejectedValueOnce(failure);
+    const options = { telemetryRuntime: telemetry, packageName: '@scope/package', from: '1.2.3', to: '2.0.0-beta.1' };
+
+    await expect(runQuery([], new AbortController().signal, PAGE_CONTEXT, options)).rejects.toBe(failure);
+    expect(requestFetch).toHaveBeenCalledTimes(1);
+    expect(requestFetch).toHaveBeenCalledWith(
+      '/api/package/%40scope%2Fpackage/compare/briefing',
+      expect.objectContaining({ query: { from: '1.2.3', to: '2.0.0-beta.1' } }),
+    );
+    await telemetry.dispose();
+
+    const logsRequest = requests.find(({ url }) => url.endsWith('/v1/logs'));
+    const tracesRequest = requests.find(({ url }) => url.endsWith('/v1/traces'));
+    if (logsRequest === undefined || tracesRequest === undefined)
+      throw new Error('Expected OTLP log and trace exports');
+    const logs = decodeTelemetryPayload('logs', JSON.parse(logsRequest.body));
+    const traces = decodeTelemetryPayload('traces', JSON.parse(tracesRequest.body));
+    const log = logs.resourceLogs.flatMap(({ scopeLogs }) => scopeLogs.flatMap(({ logRecords }) => logRecords))[0];
+    const span = traces.resourceSpans.flatMap(({ scopeSpans }) => scopeSpans.flatMap(({ spans }) => spans))[0];
+    const expectedAttributes = [
+      { key: 'comparison.package.name', value: { stringValue: '@scope/package' } },
+      { key: 'comparison.version.from', value: { stringValue: '1.2.3' } },
+      { key: 'comparison.version.to', value: { stringValue: '2.0.0-beta.1' } },
+    ];
+
+    expect(log).toMatchObject({ body: { stringValue: 'briefing.submission.started' }, spanId: span?.spanId });
+    expect(log?.attributes).toEqual(expect.arrayContaining(expectedAttributes));
+    expect(span).toMatchObject({
+      name: 'briefing.submit',
+      traceId: PAGE_CONTEXT.traceId,
+      parentSpanId: PAGE_CONTEXT.spanId,
+      status: { code: 2 },
+    });
+    expect(span?.attributes).toEqual(expect.arrayContaining(expectedAttributes));
+    expect(span?.attributes.map(({ key }) => key)).not.toContain('comparison.requested.to');
+    const exported = requests.map(({ body }) => body).join('\n');
+    expect(exported).not.toContain('/api/package/');
+    expect(exported).not.toContain('private-provider-detail');
+  });
+
   it('resubmits once after a sanitized 503 and resolves the retried submission', async () => {
     vi.useFakeTimers();
     const statuses: string[] = [];
     requestFetch.mockRejectedValueOnce(submissionFailure()).mockResolvedValueOnce(pending());
-    const promise = runQuery(statuses, new AbortController().signal);
+    const promise = runQuery(statuses, new AbortController().signal, PAGE_CONTEXT);
 
     expect(requestFetch).toHaveBeenCalledTimes(1);
     // The resubmission waits, so nothing is retried yet and no socket exists.
@@ -199,6 +297,11 @@ describe('packageBriefingQueryOptions', () => {
       '/api/package/minimist/compare/briefing',
       expect.objectContaining(post),
     );
+    const firstContext = parseTraceparent(traceparentAt(0));
+    const secondContext = parseTraceparent(traceparentAt(1));
+    expect(firstContext).toMatchObject({ traceId: PAGE_CONTEXT.traceId });
+    expect(secondContext).toMatchObject({ traceId: PAGE_CONTEXT.traceId });
+    expect(firstContext?.spanId).not.toBe(secondContext?.spanId);
 
     const socket = await waitForSocket(0);
     expect(socket.url).toBe(EVENTS_URL);

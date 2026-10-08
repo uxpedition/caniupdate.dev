@@ -11,7 +11,7 @@ useSeoMeta({ title: 'Privacy · Can I Update?' });
   >
     <header>
       <h1 class="font-mono text-3xl font-semibold uppercase tracking-tight">Privacy</h1>
-      <p class="text-muted-foreground">Last updated: 3 October 2026</p>
+      <p class="text-muted-foreground">Last updated: 8 October 2026</p>
       <p>This page explains what data we use and how to contact us about it.</p>
     </header>
 
@@ -24,7 +24,10 @@ useSeoMeta({ title: 'Privacy · Can I Update?' });
     <h2>Hosting and logs</h2>
     <p>
       We use Cloudflare to host the site. Cloudflare processes your IP address to serve requests and protect its
-      network. Default request logs are disabled. We use application logs to diagnose errors.
+      network. Default request logs are disabled. We use application logs to diagnose errors. Diagnostic logs and, when
+      enabled, traces include the public npm package name and requested or resolved versions being compared, along with
+      operation timing and correlation IDs. We exclude credentials, AI prompts, evidence packets and raw provider error
+      text from these diagnostic records.
     </p>
 
     <h2>Package data and AI</h2>
