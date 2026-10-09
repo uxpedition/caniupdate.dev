@@ -13,7 +13,7 @@ export type Options = {
 
 const USAGE =
   'Usage: node scripts/dev.ts [--preview] [--persist-to <dir>] [--evidence-port <port>] [--briefing-port <port>] ' +
-  '[--frontend-port <port>] [--inspector-base <port>] [--telemetry] [--otel-endpoint <url>]';
+  '[--frontend-port <port>] [--inspector-base <port>] [--otel-endpoint <url>]';
 
 export class UsageError extends Data.TaggedError('UsageError')<{
   readonly message: string;
@@ -92,16 +92,13 @@ export const parseOptions = (argv: readonly string[]): Options => {
     frontendPort: 5173,
     inspectorBase: 9230,
   };
-  let telemetry = false;
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === '--preview') options.preview = true;
-    else if (flag === '--telemetry') telemetry = true;
     else {
       index += 1;
       applyValueOption(options, flag, argv[index]);
     }
   }
-  if (telemetry && options.otelEndpoint === undefined) options.otelEndpoint = 'http://127.0.0.1:4318';
   return options;
 };
