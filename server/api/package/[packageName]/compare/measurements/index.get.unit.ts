@@ -1,8 +1,8 @@
 import { mockEvent } from 'h3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { MeasuredPackageVersion, PackageMeasurementsResponse } from '#shared/comparison.defs';
-import type { PackageEvidenceNamespace, PackageEvidenceObject } from '#shared/packageEvidence.defs';
+import type { MeasuredPackageVersion, PackageMeasurementsResponse } from '#shared/comparison/comparison.defs';
+import type { PackageEvidenceNamespace, PackageEvidenceObject } from '#shared/comparison/evidence/packageEvidence.defs';
 
 import handler from './index.get';
 

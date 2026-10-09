@@ -1,6 +1,6 @@
 import { Schema } from 'effect';
 
-import { PackageNameSchema } from './package.defs';
+import { PackageNameSchema } from '../comparison/package/package.defs';
 
 export const TelemetryComparisonPackageSchema = PackageNameSchema;
 export const TelemetryComparisonVersionSchema = Schema.String.check(

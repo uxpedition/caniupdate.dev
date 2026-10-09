@@ -4,12 +4,16 @@ import { Duration, Effect, Tracer } from 'effect';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
-import type { PackageBriefing } from '#shared/briefing.defs';
-import { decodeBriefingJobEvent, type BriefingJobEvent, type BriefingSubmission } from '#shared/briefingJob.defs';
-import type { TelemetryRuntime } from '#shared/telemetry';
-import { comparisonTelemetryAttributes } from '#shared/telemetryComparison';
-import { formatTraceparent } from '#shared/traceContext.defs';
-import type { TraceContext } from '#shared/traceContext.defs';
+import type { PackageBriefing } from '#shared/comparison/briefing/briefing.defs';
+import {
+  decodeBriefingJobEvent,
+  type BriefingJobEvent,
+  type BriefingSubmission,
+} from '#shared/comparison/briefing/briefingJob.defs';
+import type { TelemetryRuntime } from '#shared/telemetry/telemetry';
+import { comparisonTelemetryAttributes } from '#shared/telemetry/telemetryComparison';
+import { formatTraceparent } from '#shared/telemetry/traceContext.defs';
+import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
 import { PACKAGE_COMPARISON_STALE_TIME } from './packageComparisonQueryOptions';
 

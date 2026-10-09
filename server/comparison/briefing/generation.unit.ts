@@ -2,8 +2,8 @@ import { Effect, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BRIEFING_EVIDENCE_MAX_BYTES, BriefingEvidenceSchema } from '#shared/briefing.defs';
-import type { BriefingEvidence } from '#shared/briefing.defs';
+import { BRIEFING_EVIDENCE_MAX_BYTES, BriefingEvidenceSchema } from '#shared/comparison/briefing/briefing.defs';
+import type { BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
 
 import { briefingEvidenceHash, generateBriefing, readBriefingConfig } from './generation';
 import type { BriefingProviderTarget } from './provider';

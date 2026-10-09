@@ -8,13 +8,16 @@ import {
   type H3Event,
 } from 'h3';
 
-import type { BriefingEvidence } from '#shared/briefing.defs';
-import type { BriefingSubmission } from '#shared/briefingJob.defs';
-import { decodeBriefingServiceResult, type BriefingServiceResult } from '#shared/briefingService.defs';
-import { runWithTelemetry } from '#shared/telemetry';
-import { comparisonTelemetryAttributes } from '#shared/telemetryComparison';
-import { telemetryWaitUntil } from '#shared/telemetryContext';
-import { parseTraceparent, type TraceContext } from '#shared/traceContext.defs';
+import type { BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
+import type { BriefingSubmission } from '#shared/comparison/briefing/briefingJob.defs';
+import {
+  decodeBriefingServiceResult,
+  type BriefingServiceResult,
+} from '#shared/comparison/briefing/briefingService.defs';
+import { runWithTelemetry } from '#shared/telemetry/telemetry';
+import { comparisonTelemetryAttributes } from '#shared/telemetry/telemetryComparison';
+import { telemetryWaitUntil } from '#shared/telemetry/telemetryContext';
+import { parseTraceparent, type TraceContext } from '#shared/telemetry/traceContext.defs';
 
 import { readServerTelemetryConfig } from '../../../../../telemetry/runtimeConfig';
 import { getBriefingEvidence, PackageEvidenceClientError } from '../_internals/evidenceClient';

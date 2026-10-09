@@ -1,8 +1,8 @@
 import { Effect, Result, Schema } from 'effect';
 
-import { compareSemver, isExactSemver } from '../../../shared/compareSemver';
-import type { PackageRelease, PackageReleaseNotes } from '../../../shared/github.defs';
-import type { RegistryVersionManifest } from '../../../shared/package.defs';
+import type { PackageRelease, PackageReleaseNotes } from '../../../shared/comparison/evidence/github.defs';
+import { compareSemver, isExactSemver } from '../../../shared/comparison/package/compareSemver';
+import type { RegistryVersionManifest } from '../../../shared/comparison/package/package.defs';
 import {
   getGithubFile,
   listGithubDirectory,

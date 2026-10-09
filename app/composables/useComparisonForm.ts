@@ -1,8 +1,8 @@
 import { computed, watch, type ComputedRef, type Ref } from 'vue';
 
 import { useRouter, useState } from '#imports';
-import { createSemverAtLeastPredicate } from '#shared/compareSemver';
-import type { ParsedPackageMetadata } from '#shared/package.defs';
+import { createSemverAtLeastPredicate } from '#shared/comparison/package/compareSemver';
+import type { ParsedPackageMetadata } from '#shared/comparison/package/package.defs';
 import type { ComboboxOption } from '~/components/form/Combobox.vue';
 import type { SelectOption, SelectSearch } from '~/components/form/select.defs';
 import { usePackageMetadataQuery } from '~/composables/usePackageMetadataQuery';

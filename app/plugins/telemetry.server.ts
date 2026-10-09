@@ -1,11 +1,11 @@
 import type { NuxtApp } from '#app';
 import { defineNuxtPlugin, useRuntimeConfig } from '#imports';
-import { decodeTelemetryHeaders } from '#shared/telemetryConfig.defs';
+import { decodeTelemetryHeaders } from '#shared/telemetry/telemetryConfig.defs';
 import {
   createServerDiagnosticSend,
   reportServerDiagnostic,
   type ServerTelemetryBaseConfig,
-} from '#shared/telemetryDiagnostics';
+} from '#shared/telemetry/telemetryDiagnostics';
 
 /** The SSR app owns its runtime config; no Nitro bundle import is required to reach it. */
 const telemetryFromRuntime = (runtime: unknown): ServerTelemetryBaseConfig => {

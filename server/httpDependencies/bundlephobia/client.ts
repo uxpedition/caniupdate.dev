@@ -1,7 +1,7 @@
 import { Effect } from 'effect';
 import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
 
-import { BundlephobiaBuildSchema } from '../../../shared/bundlephobia.defs';
+import { BundlephobiaBuildSchema } from '../../../shared/comparison/evidence/bundlephobia.defs';
 
 export const bundlephobiaSizeUrl = (packageName: string, version: string) =>
   `https://bundlephobia.com/api/size?package=${encodeURIComponent(`${packageName}@${version}`)}`;

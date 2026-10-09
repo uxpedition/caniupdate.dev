@@ -7,8 +7,8 @@ import type {
   MeasurementComparison,
   PackageDeclarationsResponse,
   PackageMeasurementsResponse,
-} from '#shared/comparison.defs';
-import type { ParsedPackageVersion } from '#shared/package.defs';
+} from '#shared/comparison/comparison.defs';
+import type { ParsedPackageVersion } from '#shared/comparison/package/package.defs';
 
 import { buildComparisonSummaries } from './comparisonSummary';
 import { buildComparisonRows } from './comparisonView';

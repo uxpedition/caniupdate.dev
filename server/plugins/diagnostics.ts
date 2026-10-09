@@ -1,6 +1,6 @@
 import { defineNitroPlugin } from 'nitropack/runtime';
 
-import { createServerDiagnosticSend, reportServerDiagnostic } from '#shared/telemetryDiagnostics';
+import { createServerDiagnosticSend, reportServerDiagnostic } from '#shared/telemetry/telemetryDiagnostics';
 
 import { readServerTelemetryConfig } from '../telemetry/runtimeConfig';
 

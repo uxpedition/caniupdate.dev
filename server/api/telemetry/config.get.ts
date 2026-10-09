@@ -1,6 +1,6 @@
 import { defineEventHandler } from 'h3';
 
-import { decodeTelemetryRuntimeConfig } from '#shared/telemetryConfig.defs';
+import { decodeTelemetryRuntimeConfig } from '#shared/telemetry/telemetryConfig.defs';
 
 import { readServerTelemetryConfig } from '../../telemetry/runtimeConfig';
 

@@ -4,9 +4,9 @@ import { PassThrough } from 'node:stream';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { decodeTelemetryPayload } from '#shared/telemetry.defs';
-import { decodeTelemetryHeaders } from '#shared/telemetryConfig.defs';
-import { telemetryWaitUntil } from '#shared/telemetryContext';
+import { decodeTelemetryPayload } from '#shared/telemetry/telemetry.defs';
+import { decodeTelemetryHeaders } from '#shared/telemetry/telemetryConfig.defs';
+import { telemetryWaitUntil } from '#shared/telemetry/telemetryContext';
 
 import { telemetryClientAddress, toTelemetryRequest } from '../../../telemetry/h3Event';
 import {

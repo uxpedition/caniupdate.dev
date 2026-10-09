@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import type { BriefingUnavailableReason, PackageBriefing } from '#shared/briefing.defs';
+import type { BriefingUnavailableReason, PackageBriefing } from '#shared/comparison/briefing/briefing.defs';
 import type { BriefingStatus } from '~/composables/packageBriefingQueryOptions';
 import { citationAnchorId } from '~/pages/[packageName]/comparisonCitations';
 

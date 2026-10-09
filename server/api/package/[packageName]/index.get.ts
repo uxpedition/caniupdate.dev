@@ -2,7 +2,7 @@ import { Effect, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/http';
 import { createError, defineEventHandler, getRouterParam } from 'h3';
 
-import { RegistryPackageMetadataSchema, toPackageMetadata } from '#shared/package.defs';
+import { RegistryPackageMetadataSchema, toPackageMetadata } from '#shared/comparison/package/package.defs';
 
 import { RegistryRequestError } from '../../../httpDependencies/npm/errors';
 import { getRegistryJson } from '../../../httpDependencies/npm/registry';

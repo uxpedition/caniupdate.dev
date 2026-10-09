@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 
 import { definePageMeta, useNuxtApp, useRoute, useSeoMeta } from '#imports';
-import type { TraceContext } from '#shared/traceContext.defs';
+import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import ComparisonDetails from '~/components/comparison/ComparisonDetails.vue';
 import LoadingMessage from '~/components/element/LoadingMessage.vue';
 import { openComparisonPage } from '~/composables/comparisonPageTelemetry';

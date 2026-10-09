@@ -1,7 +1,7 @@
 import { Schema } from 'effect';
 
-import type { ComparisonVersion, PackageComparison } from './comparison.defs';
-import type { PackageReleaseNotes } from './github.defs';
+import type { ComparisonVersion, PackageComparison } from '../comparison.defs';
+import type { PackageReleaseNotes } from '../evidence/github.defs';
 
 export type BriefingInput = {
   packageName: string;

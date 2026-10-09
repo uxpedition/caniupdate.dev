@@ -5,7 +5,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { BriefingJobEvent } from '#shared/briefingJob.defs';
+import type { BriefingJobEvent } from '#shared/comparison/briefing/briefingJob.defs';
 
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
 import { readStoredBriefing } from '../../../server/comparison/briefing/store';

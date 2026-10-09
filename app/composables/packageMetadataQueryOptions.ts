@@ -3,7 +3,7 @@ import type { QueryFunctionContext } from '@tanstack/vue-query';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
-import type { ParsedPackageMetadata } from '#shared/package.defs';
+import type { ParsedPackageMetadata } from '#shared/comparison/package/package.defs';
 
 export const PACKAGE_METADATA_QUERY_KEY_PREFIX = ['npm', 'packages', 'metadata'] as const;
 export const PACKAGE_METADATA_STALE_TIME = 60_000;

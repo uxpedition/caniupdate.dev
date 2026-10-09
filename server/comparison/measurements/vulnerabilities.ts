@@ -5,7 +5,7 @@ import type {
   OsvVulnerability,
   PackageAdvisory,
   PackageVulnerabilities,
-} from '../../../shared/osv.defs';
+} from '../../../shared/comparison/evidence/osv.defs';
 import { getVulnerability, queryBatch } from '../../httpDependencies/osv/client';
 
 const unavailable: PackageVulnerabilities = { status: 'unavailable', count: null, advisories: [] };

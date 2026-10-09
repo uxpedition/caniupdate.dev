@@ -1,7 +1,7 @@
 import { Schema } from 'effect';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { BriefingEvidence } from '../../shared/briefing.defs';
+import type { BriefingEvidence } from '../../shared/comparison/briefing/briefing.defs';
 import { briefingTelemetryOptions, ensureGenerationTraceContext } from './jobTrace';
 
 const TraceContextSchema = Schema.Struct({ traceId: Schema.String, spanId: Schema.String });

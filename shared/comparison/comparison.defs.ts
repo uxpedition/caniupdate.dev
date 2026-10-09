@@ -1,7 +1,7 @@
-import type { PackageBundleSize } from './bundlephobia.defs';
-import type { PackageAdvisory, PackageVulnerabilities } from './osv.defs';
-import type { ParsedPackageVersion } from './package.defs';
-import type { PackageTarball } from './tarball.defs';
+import type { PackageBundleSize } from './evidence/bundlephobia.defs';
+import type { PackageAdvisory, PackageVulnerabilities } from './evidence/osv.defs';
+import type { PackageTarball } from './evidence/tarball.defs';
+import type { ParsedPackageVersion } from './package/package.defs';
 
 export type ComparisonVersion = ParsedPackageVersion & {
   vulnerabilities: PackageVulnerabilities;

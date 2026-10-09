@@ -1,9 +1,9 @@
 import { Effect } from 'effect';
 import type { H3Event } from 'h3';
 
-import { runWithTelemetry } from '#shared/telemetry';
-import { telemetryWaitUntil } from '#shared/telemetryContext';
-import { sanitizedErrorAttributes } from '#shared/telemetryError';
+import { runWithTelemetry } from '#shared/telemetry/telemetry';
+import { telemetryWaitUntil } from '#shared/telemetry/telemetryContext';
+import { sanitizedErrorAttributes } from '#shared/telemetry/telemetryError';
 
 export type ServerTelemetryBaseConfig = {
   readonly enabled: boolean;

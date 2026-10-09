@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ComparisonVersion } from '#shared/comparison.defs';
-import { toPackageVersion } from '#shared/package.defs';
+import type { ComparisonVersion } from '#shared/comparison/comparison.defs';
+import { toPackageVersion } from '#shared/comparison/package/package.defs';
 
 import { compareDeclarations } from './compare';
 

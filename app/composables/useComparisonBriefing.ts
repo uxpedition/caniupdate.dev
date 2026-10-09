@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import type { MaybeRefOrGetter } from 'vue';
 
 import { useNuxtApp, useRequestFetch } from '#imports';
-import type { TraceContext } from '#shared/traceContext.defs';
+import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import { packageBriefingQueryOptions, type BriefingStatus } from '~/composables/packageBriefingQueryOptions';
 
 export const useComparisonBriefing = (

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { BriefingInput } from '../../../../shared/briefing.defs';
-import type { ComparisonVersion } from '../../../../shared/comparison.defs';
-import type { PackageReleaseNotes } from '../../../../shared/github.defs';
-import type { PackageAdvisory } from '../../../../shared/osv.defs';
-import { toPackageVersion } from '../../../../shared/package.defs';
+import type { BriefingInput } from '../../../../shared/comparison/briefing/briefing.defs';
+import type { ComparisonVersion } from '../../../../shared/comparison/comparison.defs';
+import type { PackageReleaseNotes } from '../../../../shared/comparison/evidence/github.defs';
+import type { PackageAdvisory } from '../../../../shared/comparison/evidence/osv.defs';
+import { toPackageVersion } from '../../../../shared/comparison/package/package.defs';
 import { compareDeclarations } from '../../declarations/compare';
 import { compareMeasurements } from '../../measurements/compare';
 import { buildBriefingEvidence } from './build';

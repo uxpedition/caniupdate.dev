@@ -1,5 +1,5 @@
-import { decodeTelemetryPayload } from '#shared/telemetry.defs';
-import type { SanitizedTelemetryPayload, TelemetryResource, TelemetrySignal } from '#shared/telemetry.defs';
+import { decodeTelemetryPayload } from '#shared/telemetry/telemetry.defs';
+import type { SanitizedTelemetryPayload, TelemetryResource, TelemetrySignal } from '#shared/telemetry/telemetry.defs';
 
 /** Web and Cloudflare requests share this streaming surface, not their full platform-specific Request types. */
 export interface TelemetryRequest {

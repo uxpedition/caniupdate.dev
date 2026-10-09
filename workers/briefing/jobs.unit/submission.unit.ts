@@ -11,8 +11,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
 import { readStoredBriefing } from '../../../server/comparison/briefing/store';
-import { decodeTraceContext } from '../../../shared/traceContext.defs';
-import type { TraceContext } from '../../../shared/traceContext.defs';
+import { decodeTraceContext } from '../../../shared/telemetry/traceContext.defs';
+import type { TraceContext } from '../../../shared/telemetry/traceContext.defs';
 import { installBriefingSchema } from '../../../test/helpers/briefingDatabase.harness';
 import {
   FIXTURE_API_KEY,

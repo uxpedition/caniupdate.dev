@@ -3,13 +3,13 @@ import type { NitroFetchRequest } from 'nitropack/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref, toValue } from 'vue';
 
-import type { AvailablePackageBriefing } from '#shared/briefing.defs';
-import type { BriefingJobEvent, BriefingSubmission } from '#shared/briefingJob.defs';
-import { createTelemetryRuntime } from '#shared/telemetry';
-import type { TelemetryRuntime } from '#shared/telemetry';
-import { decodeTelemetryPayload } from '#shared/telemetry.defs';
-import { parseTraceparent } from '#shared/traceContext.defs';
-import type { TraceContext } from '#shared/traceContext.defs';
+import type { AvailablePackageBriefing } from '#shared/comparison/briefing/briefing.defs';
+import type { BriefingJobEvent, BriefingSubmission } from '#shared/comparison/briefing/briefingJob.defs';
+import { createTelemetryRuntime } from '#shared/telemetry/telemetry';
+import type { TelemetryRuntime } from '#shared/telemetry/telemetry';
+import { decodeTelemetryPayload } from '#shared/telemetry/telemetry.defs';
+import { parseTraceparent } from '#shared/telemetry/traceContext.defs';
+import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
 import { packageBriefingQueryOptions } from './packageBriefingQueryOptions';
 

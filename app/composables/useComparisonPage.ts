@@ -3,7 +3,7 @@ import type { QueryClient } from '@tanstack/vue-query';
 import { computed } from 'vue';
 
 import { useRequestFetch } from '#imports';
-import type { TraceContext } from '#shared/traceContext.defs';
+import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import { packageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
 import type { PackageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
 import { packageMeasurementsQueryOptions } from '~/composables/packageMeasurementsQueryOptions';

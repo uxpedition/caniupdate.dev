@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createTelemetryRuntime } from '#shared/telemetry';
-import { decodeTelemetryPayload } from '#shared/telemetry.defs';
+import { createTelemetryRuntime } from '#shared/telemetry/telemetry';
+import { decodeTelemetryPayload } from '#shared/telemetry/telemetry.defs';
 
 import { initializeFaroErrors } from './faroErrors';
 

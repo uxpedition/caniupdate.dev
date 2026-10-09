@@ -5,7 +5,7 @@ import { Effect } from 'effect';
 import { pack, type Header } from 'tar-stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { RegistryVersionManifest } from '../../../shared/package.defs';
+import type { RegistryVersionManifest } from '../../../shared/comparison/package/package.defs';
 import { getPackageTarball } from './tarball';
 
 async function archive(

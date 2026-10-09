@@ -3,9 +3,9 @@ import type {
   BriefingInput,
   BriefingSource,
   BriefingSourceDraft,
-} from '../../../../shared/briefing.defs';
-import type { ComparisonVersion, PackageComparison } from '../../../../shared/comparison.defs';
-import type { PackageReleaseNotes } from '../../../../shared/github.defs';
+} from '../../../../shared/comparison/briefing/briefing.defs';
+import type { ComparisonVersion, PackageComparison } from '../../../../shared/comparison/comparison.defs';
+import type { PackageReleaseNotes } from '../../../../shared/comparison/evidence/github.defs';
 
 const MAX_PACKET_BYTES = 48 * 1024;
 const MAX_SOURCES = 64;

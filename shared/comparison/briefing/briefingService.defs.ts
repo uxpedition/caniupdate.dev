@@ -1,9 +1,9 @@
 import { Schema } from 'effect';
 
+import { decodeTraceContext } from '../../telemetry/traceContext.defs';
+import type { TraceContext } from '../../telemetry/traceContext.defs';
 import { decodeBriefingSubmission } from './briefingJob.defs';
 import type { BriefingSubmission } from './briefingJob.defs';
-import { decodeTraceContext } from './traceContext.defs';
-import type { TraceContext } from './traceContext.defs';
 
 export type BriefingServiceResult = {
   readonly submission: BriefingSubmission;

@@ -3,7 +3,7 @@ import type { QueryFunctionContext } from '@tanstack/vue-query';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
-import type { PackageDeclarationsResponse } from '#shared/comparison.defs';
+import type { PackageDeclarationsResponse } from '#shared/comparison/comparison.defs';
 
 export const PACKAGE_COMPARISON_QUERY_KEY_PREFIX = ['npm', 'packages', 'comparison'] as const;
 export const PACKAGE_COMPARISON_STALE_TIME = 60_000;

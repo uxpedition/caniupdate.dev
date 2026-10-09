@@ -2,7 +2,7 @@
 import { ChevronDown, LoaderCircle, Minus, Plus } from '@lucide/vue';
 import { computed, nextTick, ref } from 'vue';
 
-import type { TraceContext } from '#shared/traceContext.defs';
+import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import BriefingPanel from '~/components/comparison/BriefingPanel.vue';
 import EvidencePanel from '~/components/comparison/EvidencePanel.vue';
 import RowHelp from '~/components/comparison/RowHelp.vue';

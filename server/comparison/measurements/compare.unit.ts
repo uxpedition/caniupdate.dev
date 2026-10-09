@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ComparisonVersion } from '#shared/comparison.defs';
-import type { PackageAdvisory, PackageVulnerabilities } from '#shared/osv.defs';
-import { toPackageVersion } from '#shared/package.defs';
+import type { ComparisonVersion } from '#shared/comparison/comparison.defs';
+import type { PackageAdvisory, PackageVulnerabilities } from '#shared/comparison/evidence/osv.defs';
+import { toPackageVersion } from '#shared/comparison/package/package.defs';
 
 import { compareMeasurements } from './compare';
 

@@ -4,7 +4,7 @@ import type {
   DeclarationComparison,
   DependencyRequirement,
   ValueComparison,
-} from '#shared/comparison.defs';
+} from '#shared/comparison/comparison.defs';
 
 // Keep object order for conditional exports and typesVersions: first matching conditions win.
 const equal = (from: unknown, to: unknown): boolean => JSON.stringify(from) === JSON.stringify(to);

@@ -7,24 +7,24 @@ import { createHash } from 'node:crypto';
 import { Effect, Schema } from 'effect';
 import { HttpClient } from 'effect/http';
 
-import type { BriefingInput } from '../../shared/briefing.defs';
-import { PackageBundleSizeSchema } from '../../shared/bundlephobia.defs';
-import { isExactSemver } from '../../shared/compareSemver';
+import type { BriefingInput } from '../../shared/comparison/briefing/briefing.defs';
 import type {
   ComparisonVersion,
   MeasuredPackageVersion,
   PackageDeclarationsResponse,
   PackageMeasurementsResponse,
   TarballSummary,
-} from '../../shared/comparison.defs';
-import { PackageReleaseNotesSchema } from '../../shared/github.defs';
-import { PackageVulnerabilitiesSchema } from '../../shared/osv.defs';
+} from '../../shared/comparison/comparison.defs';
+import { PackageBundleSizeSchema } from '../../shared/comparison/evidence/bundlephobia.defs';
+import { PackageReleaseNotesSchema } from '../../shared/comparison/evidence/github.defs';
+import { PackageVulnerabilitiesSchema } from '../../shared/comparison/evidence/osv.defs';
+import { PackageTarballSchema, type PackageTarball } from '../../shared/comparison/evidence/tarball.defs';
+import { isExactSemver } from '../../shared/comparison/package/compareSemver';
 import {
   RegistryVersionManifestSchema,
   toPackageVersion,
   type RegistryVersionManifest,
-} from '../../shared/package.defs';
-import { PackageTarballSchema, type PackageTarball } from '../../shared/tarball.defs';
+} from '../../shared/comparison/package/package.defs';
 import { RegistryRequestError } from '../httpDependencies/npm/errors';
 import { getRegistryJson } from '../httpDependencies/npm/registry';
 import { getPackageTarball } from '../httpDependencies/npm/tarball';

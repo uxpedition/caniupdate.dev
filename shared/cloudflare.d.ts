@@ -1,6 +1,6 @@
-import type { BriefingEvidence } from './briefing.defs';
-import type { BriefingServiceResult } from './briefingService.defs';
-import type { PackageEvidenceNamespace } from './packageEvidence.defs';
+import type { BriefingEvidence } from './comparison/briefing/briefing.defs';
+import type { BriefingServiceResult } from './comparison/briefing/briefingService.defs';
+import type { PackageEvidenceNamespace } from './comparison/evidence/packageEvidence.defs';
 
 type DisposableBriefingServiceResult = BriefingServiceResult & { [Symbol.dispose](): void };
 

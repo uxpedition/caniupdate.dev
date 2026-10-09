@@ -4,7 +4,7 @@
 
 ## Navigation
 
-- **Architecture or cross-runtime changes:** read [the system overview](docs/engineering/overview.md). `app/` owns presentation and reactive queries; `server/api/` owns public handlers; `server/comparison/` owns domain workflows; `server/httpDependencies/` owns provider I/O; `shared/*.defs.ts` owns cross-runtime contracts. Route-local helpers belong in `_internals/` directories excluded from Nitro routing.
+- **Architecture or cross-runtime changes:** read [the system overview](docs/engineering/overview.md). `app/` owns presentation and reactive queries; `server/api/` owns public handlers; `server/comparison/` owns domain workflows; `server/httpDependencies/` owns provider I/O; `shared/**/*.defs.ts` owns cross-runtime contracts. Route-local helpers belong in `_internals/` directories excluded from Nitro routing.
 - **Implementation design or code review:** read [CODE_CONVENTIONS.md](CODE_CONVENTIONS.md) for module boundaries, contracts, state ownership, and evidence-driven review. Mechanical policy lives in the TypeScript, Oxlint, and Oxfmt configuration, not a second prose rule set.
 - **Collection, archives, advisories, or evidence caching:** read [evidence architecture](docs/engineering/evidence.md); `workers/evidence/` owns per-package Durable Object SQLite storage.
 - **Generation, queues, sockets, or stored briefings:** read [briefing architecture](docs/engineering/briefing.md); `workers/briefing/` owns durable jobs and D1 results.

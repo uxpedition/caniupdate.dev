@@ -2,12 +2,16 @@ import { Effect, Tracer } from 'effect';
 import { FetchHttpClient, HttpClient } from 'effect/http';
 
 import { generateBriefing } from '../../server/comparison/briefing/generation';
-import type { BriefingEvidence } from '../../shared/briefing.defs';
-import { runWithTelemetry, type TelemetryRuntimeOptions, type TelemetryWaitUntil } from '../../shared/telemetry';
-import { comparisonTelemetryAttributes } from '../../shared/telemetryComparison';
-import { decodeTelemetryHeaders } from '../../shared/telemetryConfig.defs';
-import { decodeTraceContext } from '../../shared/traceContext.defs';
-import type { TraceContext } from '../../shared/traceContext.defs';
+import type { BriefingEvidence } from '../../shared/comparison/briefing/briefing.defs';
+import {
+  runWithTelemetry,
+  type TelemetryRuntimeOptions,
+  type TelemetryWaitUntil,
+} from '../../shared/telemetry/telemetry';
+import { comparisonTelemetryAttributes } from '../../shared/telemetry/telemetryComparison';
+import { decodeTelemetryHeaders } from '../../shared/telemetry/telemetryConfig.defs';
+import { decodeTraceContext } from '../../shared/telemetry/traceContext.defs';
+import type { TraceContext } from '../../shared/telemetry/traceContext.defs';
 
 export interface GenerationTraceStorage {
   put<T>(key: string, value: T): Promise<void>;

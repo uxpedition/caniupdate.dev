@@ -1,6 +1,6 @@
 import { createError, defineEventHandler, getRouterParam, type H3Event } from 'h3';
 
-import { telemetryWaitUntil } from '#shared/telemetryContext';
+import { telemetryWaitUntil } from '#shared/telemetry/telemetryContext';
 
 import { telemetryClientAddress, toTelemetryRequest } from '../../../telemetry/h3Event';
 import { readServerTelemetryConfig } from '../../../telemetry/runtimeConfig';

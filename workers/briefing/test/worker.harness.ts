@@ -20,10 +20,14 @@ import { promisify } from 'node:util';
 import type { D1Database, Queue } from '@cloudflare/workers-types';
 import { Log, LogLevel, Miniflare, type DispatchFetch, type WebSocket as RuntimeWebSocket } from 'miniflare';
 
-import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/briefing.defs';
-import { decodeBriefingJobEvent, type BriefingJobEvent, type BriefingSubmission } from '#shared/briefingJob.defs';
-import { decodeBriefingServiceResult } from '#shared/briefingService.defs';
-import type { TraceContext } from '#shared/traceContext.defs';
+import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
+import {
+  decodeBriefingJobEvent,
+  type BriefingJobEvent,
+  type BriefingSubmission,
+} from '#shared/comparison/briefing/briefingJob.defs';
+import { decodeBriefingServiceResult } from '#shared/comparison/briefing/briefingService.defs';
+import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
 import { readStoredBriefing } from '../../../server/comparison/briefing/store';

@@ -3,7 +3,7 @@ import type { QueryFunctionContext } from '@tanstack/vue-query';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
-import type { ParsedPackagesSearchResult } from '#shared/search.defs';
+import type { ParsedPackagesSearchResult } from '#shared/comparison/package/search.defs';
 
 export const PACKAGE_SEARCH_QUERY_KEY_PREFIX = ['npm', 'packages', 'search'] as const;
 export const PACKAGE_SEARCH_DEBOUNCE_MS = 200;

@@ -1,8 +1,8 @@
 import { Effect } from 'effect';
 
-import type { TelemetryRuntime } from '#shared/telemetry';
-import { comparisonTelemetryAttributes } from '#shared/telemetryComparison';
-import type { TraceContext } from '#shared/traceContext.defs';
+import type { TelemetryRuntime } from '#shared/telemetry/telemetry';
+import { comparisonTelemetryAttributes } from '#shared/telemetry/telemetryComparison';
+import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
 type RequestedSelectors = { readonly from: string; readonly to: string };
 

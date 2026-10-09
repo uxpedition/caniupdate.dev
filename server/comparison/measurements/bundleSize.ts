@@ -1,6 +1,6 @@
 import { Effect, Result } from 'effect';
 
-import type { PackageBundleSize } from '../../../shared/bundlephobia.defs';
+import type { PackageBundleSize } from '../../../shared/comparison/evidence/bundlephobia.defs';
 import { bundlephobiaSizeUrl, getBundlephobiaSize } from '../../httpDependencies/bundlephobia/client';
 
 export const getVersionBundleSize = Effect.fn('Bundlephobia.getVersionBundleSize')(function* (

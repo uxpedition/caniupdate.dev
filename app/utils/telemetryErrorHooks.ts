@@ -1,4 +1,4 @@
-import { sanitizedErrorAttributes } from '#shared/telemetryError';
+import { sanitizedErrorAttributes } from '#shared/telemetry/telemetryError';
 
 export type TelemetryErrorBody = 'runtime.error' | 'runtime.warning';
 export type TelemetryErrorAttributes = Record<string, string>;

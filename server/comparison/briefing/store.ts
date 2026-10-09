@@ -3,7 +3,10 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { Data, Schema } from 'effect';
 
-import { AvailablePackageBriefingSchema, type AvailablePackageBriefing } from '../../../shared/briefing.defs';
+import {
+  AvailablePackageBriefingSchema,
+  type AvailablePackageBriefing,
+} from '../../../shared/comparison/briefing/briefing.defs';
 import { packageBriefings } from '../../../shared/db/briefingSchema';
 import type {} from '../../../shared/db/d1.types';
 

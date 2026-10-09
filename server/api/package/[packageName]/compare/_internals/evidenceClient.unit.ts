@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { BriefingEvidence } from '#shared/briefing.defs';
-import type { PackageEvidenceNamespace, PackageEvidenceResponse } from '#shared/packageEvidence.defs';
+import type { BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
+import type {
+  PackageEvidenceNamespace,
+  PackageEvidenceResponse,
+} from '#shared/comparison/evidence/packageEvidence.defs';
 
 import { getBriefingEvidence, getPackageMeasurements } from './evidenceClient';
 

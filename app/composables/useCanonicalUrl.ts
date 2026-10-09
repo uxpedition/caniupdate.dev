@@ -1,5 +1,5 @@
 import { computed, useRoute, useRuntimeConfig } from '#imports';
-import { absoluteUrl } from '#shared/siteUrl';
+import { absoluteUrl } from '#shared/site/siteUrl';
 
 /**
  * The absolute address of the current route under the configured public origin, or `undefined` when this session has

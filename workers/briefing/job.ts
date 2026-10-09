@@ -14,17 +14,17 @@ import { Schema } from 'effect';
 
 import { briefingEvidenceHash, readBriefingConfig } from '../../server/comparison/briefing/generation';
 import { isBriefingStoreFailure, readStoredBriefing, saveBriefing } from '../../server/comparison/briefing/store';
-import { BriefingEvidenceSchema } from '../../shared/briefing.defs';
+import { BriefingEvidenceSchema } from '../../shared/comparison/briefing/briefing.defs';
 import type {
   AvailablePackageBriefing,
   BriefingEvidence,
   BriefingUnavailableReason,
   PackageBriefing,
-} from '../../shared/briefing.defs';
-import type { BriefingJobEvent, BriefingSubmission } from '../../shared/briefingJob.defs';
-import type { BriefingServiceResult } from '../../shared/briefingService.defs';
-import { runWithTelemetry } from '../../shared/telemetry';
-import type { TraceContext } from '../../shared/traceContext.defs';
+} from '../../shared/comparison/briefing/briefing.defs';
+import type { BriefingJobEvent, BriefingSubmission } from '../../shared/comparison/briefing/briefingJob.defs';
+import type { BriefingServiceResult } from '../../shared/comparison/briefing/briefingService.defs';
+import { runWithTelemetry } from '../../shared/telemetry/telemetry';
+import type { TraceContext } from '../../shared/telemetry/traceContext.defs';
 import {
   briefingTelemetryOptions,
   ensureGenerationTraceContext,

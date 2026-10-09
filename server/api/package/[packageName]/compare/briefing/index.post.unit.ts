@@ -3,11 +3,11 @@ import { mockEvent } from 'h3';
 import { Miniflare } from 'miniflare';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/briefing.defs';
-import type { BriefingSubmission } from '#shared/briefingJob.defs';
-import type { BriefingServiceResult } from '#shared/briefingService.defs';
-import type { PackageEvidenceNamespace, PackageEvidenceObject } from '#shared/packageEvidence.defs';
-import type { TraceContext } from '#shared/traceContext.defs';
+import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
+import type { BriefingSubmission } from '#shared/comparison/briefing/briefingJob.defs';
+import type { BriefingServiceResult } from '#shared/comparison/briefing/briefingService.defs';
+import type { PackageEvidenceNamespace, PackageEvidenceObject } from '#shared/comparison/evidence/packageEvidence.defs';
+import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
 import handler from './index.post';
 

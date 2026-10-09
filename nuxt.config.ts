@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import { defineNuxtConfig } from 'nuxt/config';
 
-import { parseSiteOrigin } from './shared/siteUrl';
+import { parseSiteOrigin } from './shared/site/siteUrl';
 
 // The origin every absolute URL is built from. A configured value is validated here so a typo fails the run instead of
 // shipping a wrong canonical address; `scripts/check-site-url/check-site-url.ts` additionally requires one to exist for a build. An

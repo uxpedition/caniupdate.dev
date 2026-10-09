@@ -5,7 +5,7 @@ import type {
   PackageDeclarationsResponse,
   PackageMeasurementsResponse,
   SizeComparison,
-} from '#shared/comparison.defs';
+} from '#shared/comparison/comparison.defs';
 
 import { citationAnchorId } from './comparisonCitations';
 

@@ -1,16 +1,20 @@
 import { Schema } from 'effect';
 
-import { BRIEFING_EVIDENCE_MAX_BYTES, BriefingEvidenceSchema, type BriefingEvidence } from '#shared/briefing.defs';
-import { isExactSemver } from '#shared/compareSemver';
-import type { PackageMeasurementsResponse } from '#shared/comparison.defs';
-import { PackageNameSchema } from '#shared/package.defs';
+import {
+  BRIEFING_EVIDENCE_MAX_BYTES,
+  BriefingEvidenceSchema,
+  type BriefingEvidence,
+} from '#shared/comparison/briefing/briefing.defs';
+import type { PackageMeasurementsResponse } from '#shared/comparison/comparison.defs';
 import type {
   PackageEvidenceBodyReadResult,
   PackageEvidenceBodyReader,
   PackageEvidenceNamespace,
   PackageEvidenceResponse,
   PackageEvidenceResponseBody,
-} from '#shared/packageEvidence.defs';
+} from '#shared/comparison/evidence/packageEvidence.defs';
+import { isExactSemver } from '#shared/comparison/package/compareSemver';
+import { PackageNameSchema } from '#shared/comparison/package/package.defs';
 
 const VERSION_MAX_LENGTH = 256;
 const VersionSchema = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(VERSION_MAX_LENGTH));

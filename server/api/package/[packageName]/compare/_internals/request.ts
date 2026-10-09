@@ -1,6 +1,6 @@
 import { Schema } from 'effect';
 
-import { PackageNameSchema } from '#shared/package.defs';
+import { PackageNameSchema } from '#shared/comparison/package/package.defs';
 
 const VERSION_MAX_LENGTH = 256;
 const VersionQueryParamSchema = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(VERSION_MAX_LENGTH));

@@ -1,4 +1,4 @@
-import { decodeTelemetryHeaders } from '#shared/telemetryConfig.defs';
+import { decodeTelemetryHeaders } from '#shared/telemetry/telemetryConfig.defs';
 
 import {
   createTelemetryAdmission,

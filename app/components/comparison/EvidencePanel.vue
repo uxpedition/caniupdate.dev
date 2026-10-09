@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ChevronDown } from '@lucide/vue';
 
-import type { BriefingSource } from '#shared/briefing.defs';
+import type { BriefingSource } from '#shared/comparison/briefing/briefing.defs';
 import { citationAnchorId } from '~/pages/[packageName]/comparisonCitations';
 
 // The response reports packed sources in packet order, so the numbers the briefing cites ascend down this list.

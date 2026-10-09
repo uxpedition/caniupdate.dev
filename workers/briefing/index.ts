@@ -7,9 +7,9 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { Schema } from 'effect';
 
 import { briefingEvidenceHash } from '../../server/comparison/briefing/generation';
-import { BriefingEvidenceSchema } from '../../shared/briefing.defs';
-import type { BriefingEvidence } from '../../shared/briefing.defs';
-import type { BriefingServiceResult } from '../../shared/briefingService.defs';
+import { BriefingEvidenceSchema } from '../../shared/comparison/briefing/briefing.defs';
+import type { BriefingEvidence } from '../../shared/comparison/briefing/briefing.defs';
+import type { BriefingServiceResult } from '../../shared/comparison/briefing/briefingService.defs';
 import { briefingAllowedOrigins } from './allowedOrigins';
 import { BriefingSubmissionError, type BriefingEnv, type BriefingJobMessage } from './job';
 

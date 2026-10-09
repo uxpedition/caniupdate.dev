@@ -2,9 +2,9 @@ import { Effect } from 'effect';
 
 import type { NuxtApp } from '#app';
 import { defineNuxtPlugin } from '#imports';
-import { createTelemetryRuntime } from '#shared/telemetry';
-import type { TelemetryRuntime } from '#shared/telemetry';
-import { decodeTelemetryRuntimeConfig } from '#shared/telemetryConfig.defs';
+import { createTelemetryRuntime } from '#shared/telemetry/telemetry';
+import type { TelemetryRuntime } from '#shared/telemetry/telemetry';
+import { decodeTelemetryRuntimeConfig } from '#shared/telemetry/telemetryConfig.defs';
 
 import { initializeFaroErrors } from '../utils/faroErrors';
 import type { FaroErrorsAdapter } from '../utils/faroErrors';

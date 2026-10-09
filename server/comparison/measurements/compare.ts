@@ -5,8 +5,8 @@ import type {
   MeasurementComparison,
   PackageComparison,
   SizeComparison,
-} from '#shared/comparison.defs';
-import type { PackageAdvisory, PackageVulnerabilities } from '#shared/osv.defs';
+} from '#shared/comparison/comparison.defs';
+import type { PackageAdvisory, PackageVulnerabilities } from '#shared/comparison/evidence/osv.defs';
 
 function unpackedSize(version: ComparisonVersion): { value: number | null; source: 'registry' | 'tarball' | null } {
   const declared = version.dist.unpackedSize;

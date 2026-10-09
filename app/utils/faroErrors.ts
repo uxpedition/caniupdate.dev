@@ -15,8 +15,8 @@ import type {
 } from '@grafana/faro-web-sdk';
 import { Effect } from 'effect';
 
-import type { TelemetryRuntime } from '#shared/telemetry';
-import { isErrorAttributeKey, sanitizeErrorAttribute, sanitizeErrorFrame } from '#shared/telemetryError';
+import type { TelemetryRuntime } from '#shared/telemetry/telemetry';
+import { isErrorAttributeKey, sanitizeErrorAttribute, sanitizeErrorFrame } from '#shared/telemetry/telemetryError';
 
 export type FaroErrorOptions = { readonly source?: string; readonly fatal?: boolean };
 type SafeErrorLog = { readonly attributes: Readonly<Record<string, string>> };

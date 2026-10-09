@@ -5,7 +5,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { AvailablePackageBriefing } from '#shared/briefing.defs';
+import type { AvailablePackageBriefing } from '#shared/comparison/briefing/briefing.defs';
 
 import { readStoredBriefing, saveBriefing } from '../../../server/comparison/briefing/store';
 import { startProviderFixture, type ProviderFixture } from '../test/provider.stub';

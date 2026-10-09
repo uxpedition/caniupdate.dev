@@ -4,7 +4,7 @@ import type {
   PackageDeclarationsResponse,
   PackageMeasurementsResponse,
   SizeComparison,
-} from '#shared/comparison.defs';
+} from '#shared/comparison/comparison.defs';
 import type { ComparisonRow } from '~/pages/[packageName]/comparisonView';
 
 import { MEASUREMENT_SOURCE_IDS, MEASUREMENTS_UNAVAILABLE_VALUE, MEASURING_VALUE } from './comparisonView';

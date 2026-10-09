@@ -2,7 +2,7 @@ import { Effect, Schema, SchemaTransformation } from 'effect';
 import { FetchHttpClient } from 'effect/http';
 import { defineEventHandler, getValidatedQuery } from 'h3';
 
-import { RegistryPackagesSearchResponseSchema, toSearchResults } from '#shared/search.defs';
+import { RegistryPackagesSearchResponseSchema, toSearchResults } from '#shared/comparison/package/search.defs';
 
 import { RegistryRequestError } from '../../httpDependencies/npm/errors';
 import { getRegistryJson } from '../../httpDependencies/npm/registry';
