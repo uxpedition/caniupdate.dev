@@ -12,7 +12,7 @@ export type Options = {
 };
 
 const USAGE =
-  'Usage: node scripts/dev.ts [--preview] [--persist-to <dir>] [--evidence-port <port>] [--briefing-port <port>] ' +
+  'Usage: node scripts/dev/dev.ts [--preview] [--persist-to <dir>] [--evidence-port <port>] [--briefing-port <port>] ' +
   '[--frontend-port <port>] [--inspector-base <port>] [--otel-endpoint <url>]';
 
 export class UsageError extends Data.TaggedError('UsageError')<{

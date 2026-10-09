@@ -81,15 +81,99 @@ const closeDetails = (payload: Buffer): { code: number; reason: string } => ({
   reason: payload.length > 2 ? payload.subarray(2).toString('utf8') : '',
 });
 
+/** The bytes after the handshake terminator, or `false` while the handshake is incomplete; a non-101 status throws. */
+const readHandshake = (buffer: Buffer): { handled: true; rest: Buffer } | { handled: false } => {
+  const end = buffer.indexOf('\r\n\r\n');
+  if (end === -1) return { handled: false };
+  const statusLine = buffer.subarray(0, end).toString('utf8').split('\r\n')[0] ?? '';
+  if (!statusLine.includes('101')) throw new SocketFailure(`The socket upgrade was refused: ${statusLine}`);
+  return { handled: true, rest: buffer.subarray(end + 4) };
+};
+
+/** Validates one text frame against this protocol and records the revision event it carried. */
+const readText = (payload: Buffer, frames: BriefingJobEvent[]): void => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload.toString('utf8'));
+  } catch {
+    throw new SocketFailure(`The subscription sent a frame that is not JSON: ${payload.toString('utf8')}`);
+  }
+  if (!isJobEvent(parsed))
+    throw new SocketFailure(`The subscription sent a frame this protocol does not define: ${payload.toString('utf8')}`);
+  frames.push(parsed);
+};
+
+/** One masked client frame — the pong answer a ping earns — written straight to the wire. */
+const sendControlFrame = (socket: Socket, opcode: number, payload: Buffer): void => {
+  const mask = randomBytes(4);
+  const masked = Buffer.from(payload);
+  for (let index = 0; index < masked.length; index += 1) {
+    masked[index] = (masked[index] ?? 0) ^ (mask[index % 4] ?? 0);
+  }
+  socket.write(Buffer.concat([Buffer.from([0x80 | opcode, 0x80 | payload.length]), mask, masked]));
+};
+
+/** What one frame means: a close settles the subscription, text is recorded, and pings are answered with pongs. */
+const dispatch = (
+  frames: BriefingJobEvent[],
+  socket: Socket,
+  frame: Frame,
+  finish: (subscription: Subscription) => void,
+): void => {
+  switch (frame.opcode) {
+    case OPCODE_CLOSE:
+      finish({ frames, close: closeDetails(frame.payload) });
+      return;
+    case OPCODE_TEXT:
+      if (!frame.final) throw new SocketFailure('The subscription sent a fragmented message');
+      readText(frame.payload, frames);
+      return;
+    case OPCODE_PING:
+      sendControlFrame(socket, OPCODE_PONG, frame.payload);
+      return;
+    default:
+      // A pong needs no reply, and this client never asks for an extension another opcode could use.
+      return;
+  }
+};
+
+/** One subscription's mutable read position: the socket, the frames observed, and the buffer between handshakes. */
+type Intake = {
+  readonly socket: Socket;
+  readonly frames: BriefingJobEvent[];
+  buffer: Buffer;
+  handshakeComplete: boolean;
+};
+
+/** Buffers one chunk, completes the handshake once, then dispatches every complete frame in order. */
+const intakeBytes = (intake: Intake, chunk: Buffer, finish: (subscription: Subscription) => void): void => {
+  intake.buffer = Buffer.concat([intake.buffer, chunk]);
+  if (!intake.handshakeComplete) {
+    const handshake = readHandshake(intake.buffer);
+    if (!handshake.handled) return;
+    intake.buffer = handshake.rest;
+    intake.handshakeComplete = true;
+  }
+  let next = readFrame(intake.buffer);
+  while (next !== undefined) {
+    intake.buffer = next.rest;
+    dispatch(intake.frames, intake.socket, next.frame, finish);
+    next = readFrame(intake.buffer);
+  }
+};
+
 /**
  * One subscription: resolves with the frames observed and the close the service sent, rejects on a timeout, a refused
  * upgrade, an unreadable frame, or a transport error.
  */
 const subscribe = (socket: Socket, path: string, timeoutMs: number): Promise<Subscription> => {
   const { promise, resolve, reject } = Promise.withResolvers<Subscription>();
-  const frames: BriefingJobEvent[] = [];
-  let buffer: Buffer = Buffer.alloc(0);
-  let handshakeComplete = false;
+  const intake: Intake = {
+    socket,
+    frames: [],
+    buffer: Buffer.alloc(0),
+    handshakeComplete: false,
+  };
 
   const timer = setTimeout(() => {
     socket.destroy();
@@ -108,67 +192,9 @@ const subscribe = (socket: Socket, path: string, timeoutMs: number): Promise<Sub
     reject(error instanceof Error ? error : new SocketFailure(String(error)));
   };
 
-  const sendControlFrame = (opcode: number, payload: Buffer) => {
-    const mask = randomBytes(4);
-    const masked = Buffer.from(payload);
-    for (let index = 0; index < masked.length; index += 1) {
-      masked[index] = (masked[index] ?? 0) ^ (mask[index % 4] ?? 0);
-    }
-    socket.write(Buffer.concat([Buffer.from([0x80 | opcode, 0x80 | payload.length]), mask, masked]));
-  };
-
-  const readText = (payload: Buffer) => {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(payload.toString('utf8'));
-    } catch {
-      throw new SocketFailure(`The subscription sent a frame that is not JSON: ${payload.toString('utf8')}`);
-    }
-    if (!isJobEvent(parsed))
-      throw new SocketFailure(
-        `The subscription sent a frame this protocol does not define: ${payload.toString('utf8')}`,
-      );
-    frames.push(parsed);
-  };
-
-  const dispatch = (frame: Frame) => {
-    switch (frame.opcode) {
-      case OPCODE_CLOSE:
-        finish({ frames, close: closeDetails(frame.payload) });
-        return;
-      case OPCODE_TEXT:
-        if (!frame.final) throw new SocketFailure('The subscription sent a fragmented message');
-        readText(frame.payload);
-        return;
-      case OPCODE_PING:
-        sendControlFrame(OPCODE_PONG, frame.payload);
-        return;
-      default:
-        // A pong needs no reply, and this client never asks for an extension another opcode could use.
-        return;
-    }
-  };
-
-  const readHandshake = (): boolean => {
-    const end = buffer.indexOf('\r\n\r\n');
-    if (end === -1) return false;
-    const statusLine = buffer.subarray(0, end).toString('utf8').split('\r\n')[0] ?? '';
-    buffer = buffer.subarray(end + 4);
-    if (!statusLine.includes('101')) throw new SocketFailure(`The socket upgrade was refused: ${statusLine}`);
-    handshakeComplete = true;
-    return true;
-  };
-
   socket.on('data', (chunk: Buffer) => {
     try {
-      buffer = Buffer.concat([buffer, chunk]);
-      if (!handshakeComplete && !readHandshake()) return;
-      let next = readFrame(buffer);
-      while (next !== undefined) {
-        buffer = next.rest;
-        dispatch(next.frame);
-        next = readFrame(buffer);
-      }
+      intakeBytes(intake, chunk, finish);
     } catch (error) {
       fail(error);
     }

@@ -95,11 +95,11 @@ export async function syncMigrations(
 if (import.meta.main) {
   const args = process.argv.slice(2);
   if (args.length > 1 || (args.length === 1 && args[0] !== '--check')) {
-    throw new Error('Usage: node scripts/sync-migrations.ts [--check]');
+    throw new Error('Usage: node scripts/sync-migrations/sync-migrations.ts [--check]');
   }
   await syncMigrations(
-    fileURLToPath(new URL('../drizzle/', import.meta.url)),
-    fileURLToPath(new URL('../migrations/', import.meta.url)),
+    fileURLToPath(new URL('../../drizzle/', import.meta.url)),
+    fileURLToPath(new URL('../../migrations/', import.meta.url)),
     args[0] === '--check',
   );
 }

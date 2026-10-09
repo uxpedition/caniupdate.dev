@@ -25,7 +25,7 @@ Remove the temporary 3.3.11 pins and Zed override only after a later Vue languag
 
 ## What starts locally?
 
-[`scripts/dev.ts`](../../../scripts/dev.ts) applies local D1 migrations, starts the two backend Workers, waits for readiness, and starts the frontend. It stops the processes on Ctrl-C or a sibling failure.
+[`scripts/dev/dev.ts`](../../../scripts/dev/dev.ts) applies local D1 migrations, starts the two backend Workers, waits for readiness, and starts the frontend. It stops the processes on Ctrl-C or a sibling failure.
 
 | Runtime         | Default port | Responsibility                                                    |
 | --------------- | ------------ | ----------------------------------------------------------------- |
@@ -112,14 +112,14 @@ AI_BRIEFING_MODEL="local-fixture-model"
 Then run:
 
 ```bash
-node scripts/smoke.ts
+node scripts/smoke/smoke.ts
 NUXT_PUBLIC_SITE_URL=http://localhost:5273 nub run build
-node scripts/smoke.ts --preview
+node scripts/smoke/smoke.ts --preview
 ```
 
 The scenario uses temporary persistence and offset ports. It exercises submission, socket completion, a device-shaped Origin, restart, D1 reuse, and reconnect. Its fixture must be loopback; do not substitute a real provider. It starts no remote deployment and does not touch the normal `.wrangler/state` root. Evidence collection can still use public package providers, so this is not an offline test.
 
-Fixture success proves the exercised lifecycle, not model quality or production-provider integration. `--measure` adds local process-tree CPU sampling, not Cloudflare per-invocation CPU accounting. See [`scripts/smoke.ts`](../../../scripts/smoke.ts) for the scenario and measurement implementation.
+Fixture success proves the exercised lifecycle, not model quality or production-provider integration. `--measure` adds local process-tree CPU sampling, not Cloudflare per-invocation CPU accounting. See [`scripts/smoke/smoke.ts`](../../../scripts/smoke/smoke.ts) for the scenario and measurement implementation.
 
 ## How do I diagnose local failures?
 
@@ -167,15 +167,15 @@ nub run db:check              # Read-only checks of both independent histories
 nub run db:check:evidence     # DO bundle/layout/history check only
 ```
 
-For D1, commit [`drizzle/`](../../../drizzle/) and byte-identical [`migrations/`](../../../migrations/) mirrors. The [mirror script](../../../scripts/sync-migrations.ts) validates the pinned Kit layout/snapshot metadata, compares existing SQL before writing, creates missing mirrors exclusively, and rejects stale, changed or occupied paths. Wrangler remains the sole D1 applier; do not use Kit push/migrate commands against D1.
+For D1, commit [`drizzle/`](../../../drizzle/) and byte-identical [`migrations/`](../../../migrations/) mirrors. The [mirror script](../../../scripts/sync-migrations/sync-migrations.ts) validates the pinned Kit layout/snapshot metadata, compares existing SQL before writing, creates missing mirrors exclusively, and rejects stale, changed or occupied paths. Wrangler remains the sole D1 applier; do not use Kit push/migrate commands against D1.
 
-For evidence, commit [`workers/evidence/drizzle/`](../../../workers/evidence/drizzle/) and [`migrations.generated.json`](../../../workers/evidence/migrations.generated.json). The [bundler](../../../scripts/bundle-evidence-migrations.ts) makes only the fixed initial bootstrap's generated CREATE statements idempotent, without changing its source SQL or schema expressions. Existing objects retain their tables/data while Drizzle adds migration tracking. The guard rejects changed, removed, renamed or backdated history before publishing a new bundle; later migration SQL remains strict. Worker construction applies pending history synchronously through `drizzle-orm/durable-sqlite/migrator`; there is no runtime filesystem/Kit access or handwritten constructor DDL. No DO class migration tag or state reset is required.
+For evidence, commit [`workers/evidence/drizzle/`](../../../workers/evidence/drizzle/) and [`migrations.generated.json`](../../../workers/evidence/migrations.generated.json). The [bundler](../../../scripts/bundle-evidence-migrations/bundle-evidence-migrations.ts) makes only the fixed initial bootstrap's generated CREATE statements idempotent, without changing its source SQL or schema expressions. Existing objects retain their tables/data while Drizzle adds migration tracking. The guard rejects changed, removed, renamed or backdated history before publishing a new bundle; later migration SQL remains strict. Worker construction applies pending history synchronously through `drizzle-orm/durable-sqlite/migrator`; there is no runtime filesystem/Kit access or handwritten constructor DDL. No DO class migration tag or state reset is required.
 
 The exact-pinned ORM carries a committed [two-line DO migrator patch](../../../patches/drizzle-orm@1.0.0-rc.5-ab785fc.patch): it removes redundant explicit rollback calls that discarded the original SQL error. `transactionSync` still rolls back on the escaping exception. Nub installs the patch from committed configuration/lock metadata. Review and remove it only during a separately verified SDK upgrade that fixes upstream behavior.
 
 Ordinary `dev`, `preview`, and `db:migrate:local` remain non-destructive. The old `0001` history is replaced only through the separately approved [one-time local/preview cutover](releases-and-recovery.md#one-time-drizzle-adoption-cutover); do not start the new launcher on the old history before that cutover, or start an old checkout on a reset target afterward.
 
-The offline exporter generates a typed Node SQLite SELECT but still streams through `DatabaseSync.iterate()` and preserves the original JSON/timestamps. Raw SQL remains only for generated migration statements, operational metadata, test fault injection, and emitted import serialization—not handwritten production initialization. Driver compatibility uses narrow type-only SDK aliases, not blanket Cloudflare globals.
+Raw SQL remains only for generated migration statements, operational metadata, and test fault injection—not handwritten production initialization. Driver compatibility uses narrow type-only SDK aliases, not blanket Cloudflare globals.
 
 Do not treat a storage failure as a cache miss or delete persisted results to make the request succeed. Database changes and recovery follow the [migration policy](releases-and-recovery.md#database-and-stored-data-changes).
 

@@ -178,25 +178,6 @@ D1 restoration, Durable Object state changes, Queue handling, and external billi
 
 Do not delete databases, object namespaces, or briefing rows as routine troubleshooting. Do not replay jobs indiscriminately; later accepted generations can spend again.
 
-### Legacy snapshot import
-
-This procedure imports pre-D1 briefing snapshots into this checkout's **local** D1 database. It is not a backup or restore procedure for the current full deployment. Stop the application that owns the source SQLite file, preserve a backup of that file, and stop any local `dev` or `preview` process using the target `.wrangler/state` before continuing.
-
-The default source is `.data/briefings.db`. If an older setup used a custom `AI_BRIEFING_CACHE_PATH`, pass that SQLite file as the source argument; the path is no longer a runtime setting. The [`scripts/export-briefings.ts` exporter](../../../scripts/export-briefings.ts) is an offline operational script that opens the source read-only, leaves it in place, and is not part of the application server or Worker graph. Run it with plain Node 26 from [`.node-version`](../../../.node-version), which provides the `node:sqlite` API:
-
-```bash
-cp .data/briefings.db .data/briefings.db.bak
-node scripts/export-briefings.ts .data/briefings.db .data/briefings-export.sql
-nub run db:migrate:local
-nub exec -- wrangler d1 execute BRIEFINGS_DB --local --config workers/briefing/wrangler.jsonc --persist-to .wrangler/state --file .data/briefings-export.sql
-```
-
-For a custom source, first make its backup, then use its path as the export command's source argument. The exporter requires a new output path and refuses to overwrite an existing file; choose an unused SQL output path before running it. It validates every source row before producing importable output. A malformed row, a key other than a 64-character lowercase SHA-256 hash, or a stored response that fails the current briefing schema stops export without a partial SQL file. Legacy snapshots whose sources were numbered by packet position fail that schema check and cannot be imported by this exporter.
-
-The generated SQL preserves each `response_json` string and `created_at` value verbatim, escaping SQL literals without decoding and re-encoding the JSON. Inserts use `ON CONFLICT (evidence_hash) DO NOTHING`, so an existing local D1 row with the same hash is preserved. The final `wrangler d1 execute` command targets only local `BRIEFINGS_DB`; this procedure does not apply the import remotely.
-
-This import does not restore Durable Object job state, Queue state, provider configuration, or access policies. Do not describe it as whole-system recovery.
-
 ## Preview lifetime and teardown
 
 Keep one persistent official integration preview initially. Maintain a record of the revision currently deployed. Separate official per-PR environments are not promised by this document.

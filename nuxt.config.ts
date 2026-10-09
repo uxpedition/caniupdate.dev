@@ -6,7 +6,7 @@ import { defineNuxtConfig } from 'nuxt/config';
 import { parseSiteOrigin } from './shared/siteUrl';
 
 // The origin every absolute URL is built from. A configured value is validated here so a typo fails the run instead of
-// shipping a wrong canonical address; `scripts/check-site-url.ts` additionally requires one to exist for a build. An
+// shipping a wrong canonical address; `scripts/check-site-url/check-site-url.ts` additionally requires one to exist for a build. An
 // unset value is allowed here: local development then emits no canonical link rather than a guessed origin.
 const rawSiteUrl = process.env['NUXT_PUBLIC_SITE_URL'] ?? '';
 const parsedSiteUrl = parseSiteOrigin(rawSiteUrl);

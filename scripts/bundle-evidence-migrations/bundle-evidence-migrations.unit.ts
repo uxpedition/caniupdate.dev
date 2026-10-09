@@ -11,7 +11,7 @@ import { bundleEvidenceMigrations } from './bundle-evidence-migrations';
 const first = '20261005000000_evidence_initial';
 const second = '20261005000001_next';
 const initial = await readFile(
-  new URL('../workers/evidence/drizzle/20261005055201_evidence_initial/migration.sql', import.meta.url),
+  new URL('../../workers/evidence/drizzle/20261005055201_evidence_initial/migration.sql', import.meta.url),
   'utf8',
 );
 let directory: string;

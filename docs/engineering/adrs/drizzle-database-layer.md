@@ -4,6 +4,8 @@
 
 **Status:** Accepted; implementation and local cutover verified, preview cutover blocked on maintenance/quiescence. Approval is not reset or rollout evidence.
 
+**Exporter retirement (2026-10-09):** The offline briefing exporter and its legacy-import procedure were removed because that transfer workflow is no longer needed. Exporter decisions and verification below describe the historical implementation, not a currently available tool.
+
 **Amendment (2026-10-05):** The user approved Drizzle ownership of evidence-table/index initialization too, superseding the handwritten constructor-DDL exception. Evidence-only Kit history is bundled separately and applied synchronously by the public DO migrator; the initial generated bootstrap is idempotent for existing objects, and subsequent history is strict. A version-specific two-line ORM patch preserves migration SQL causes without changing dependency versions. DO/Queue state is not reset.
 
 ## Why
@@ -55,4 +57,4 @@ Raw verification/review artifacts are retained privately in the isolated maintai
 
 - [RFC 0001: proposal, feasibility findings, and implementation acceptance checks](../rfcs/0001-drizzle-database-layer.md).
 - [Database and stored-data release policy](../ops/releases-and-recovery.md#database-and-stored-data-changes); the user-approved local/preview reset is a scoped exception.
-- Current implementations: [D1 briefing store](../../../server/comparison/briefing/store.ts), [DO evidence store](../../../workers/evidence/store.ts), and [offline exporter](../../../scripts/export-briefings.ts).
+- Current implementations: [D1 briefing store](../../../server/comparison/briefing/store.ts), [DO evidence store](../../../workers/evidence/store.ts).

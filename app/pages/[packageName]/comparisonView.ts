@@ -271,20 +271,27 @@ const measurementDetail = (
   read: (value: PackageMeasurementsResponse) => string,
 ): string => (measurementsUnavailable || measurements === undefined ? '' : read(measurements));
 
-const measurementSizeRows = (
+const sizesUnpackedRow = (
   measurements: PackageMeasurementsResponse | undefined,
-  sizes: PackageMeasurementsResponse['comparison']['sizes'] | undefined,
   measurementsUnavailable: boolean,
-): readonly ComparisonRow[] => [
-  row(
+): ComparisonRow => {
+  const sizes = measurements?.comparison.sizes;
+  return row(
     'comparison.sizes-unpacked',
     'Unpacked package size',
     measured(measurements, measurementsUnavailable, (value) => formatBytes(value.comparison.sizes.unpacked.from)),
     measured(measurements, measurementsUnavailable, (value) => formatBytes(value.comparison.sizes.unpacked.to)),
     measurementChanged(measurementsUnavailable, sizes !== undefined && sizes.unpacked.delta !== 0),
     measurementDetail(measurements, measurementsUnavailable, (value) => formatDelta(value.comparison.sizes.unpacked)),
-  ),
-  row(
+  );
+};
+
+const sizesMinifiedRow = (
+  measurements: PackageMeasurementsResponse | undefined,
+  measurementsUnavailable: boolean,
+): ComparisonRow => {
+  const sizes = measurements?.comparison.sizes;
+  return row(
     'comparison.sizes-minified',
     'Estimated minified bundle',
     measured(measurements, measurementsUnavailable, (value) =>
@@ -299,8 +306,15 @@ const measurementSizeRows = (
       measurementsUnavailable,
       (value) => `${formatDelta(value.comparison.sizes.bundle.minified)} · provider estimate`,
     ),
-  ),
-  row(
+  );
+};
+
+const sizesGzipRow = (
+  measurements: PackageMeasurementsResponse | undefined,
+  measurementsUnavailable: boolean,
+): ComparisonRow => {
+  const sizes = measurements?.comparison.sizes;
+  return row(
     'comparison.sizes-gzip',
     'Estimated gzip bundle',
     measured(measurements, measurementsUnavailable, (value) =>
@@ -315,7 +329,16 @@ const measurementSizeRows = (
       measurementsUnavailable,
       (value) => `${formatDelta(value.comparison.sizes.bundle.gzip)} · provider estimate`,
     ),
-  ),
+  );
+};
+
+const measurementSizeRows = (
+  measurements: PackageMeasurementsResponse | undefined,
+  measurementsUnavailable: boolean,
+): readonly ComparisonRow[] => [
+  sizesUnpackedRow(measurements, measurementsUnavailable),
+  sizesMinifiedRow(measurements, measurementsUnavailable),
+  sizesGzipRow(measurements, measurementsUnavailable),
 ];
 
 const measurementAdvisoryRow = (
@@ -360,7 +383,7 @@ const measurementRows = (
   measurements: PackageMeasurementsResponse | undefined,
   measurementsUnavailable: boolean,
 ): readonly ComparisonRow[] => [
-  ...measurementSizeRows(measurements, measurements?.comparison.sizes, measurementsUnavailable),
+  ...measurementSizeRows(measurements, measurementsUnavailable),
   measurementAdvisoryRow(measurements, measurementsUnavailable),
   measurementTarballRow(measurements, measurementsUnavailable),
 ];

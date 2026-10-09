@@ -138,11 +138,11 @@ export async function bundleEvidenceMigrations(
 if (import.meta.main) {
   const args = process.argv.slice(2);
   if (args.length > 1 || (args.length === 1 && args[0] !== '--check')) {
-    throw new Error('Usage: node scripts/bundle-evidence-migrations.ts [--check]');
+    throw new Error('Usage: node scripts/bundle-evidence-migrations/bundle-evidence-migrations.ts [--check]');
   }
   await bundleEvidenceMigrations(
-    fileURLToPath(new URL('../workers/evidence/drizzle/', import.meta.url)),
-    fileURLToPath(new URL('../workers/evidence/migrations.generated.json', import.meta.url)),
+    fileURLToPath(new URL('../../workers/evidence/drizzle/', import.meta.url)),
+    fileURLToPath(new URL('../../workers/evidence/migrations.generated.json', import.meta.url)),
     args[0] === '--check',
   );
 }

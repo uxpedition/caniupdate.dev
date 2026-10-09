@@ -17,12 +17,12 @@ import { NodeRuntime, NodeServices } from '@effect/platform-node';
 import { Deferred, Effect, PlatformError, Scope, Stream, Data } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 
-import { browserOrigins } from './browserOrigins.ts';
-import { parseOptions, UsageError, type Options } from './devOptions.ts';
+import { browserOrigins } from './_internals/browserOrigins.ts';
+import { parseOptions, UsageError, type Options } from './_internals/devOptions.ts';
 
-const root = fileURLToPath(new URL('..', import.meta.url));
-const nuxt = fileURLToPath(new URL('../node_modules/nuxt/bin/nuxt.mjs', import.meta.url));
-const wrangler = fileURLToPath(new URL('../node_modules/wrangler/bin/wrangler.js', import.meta.url));
+const root = fileURLToPath(new URL('../..', import.meta.url));
+const nuxt = fileURLToPath(new URL('../../node_modules/nuxt/bin/nuxt.mjs', import.meta.url));
+const wrangler = fileURLToPath(new URL('../../node_modules/wrangler/bin/wrangler.js', import.meta.url));
 
 const STATE_LOCK_FILE = 'launcher.lock';
 

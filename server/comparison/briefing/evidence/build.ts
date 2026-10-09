@@ -80,61 +80,38 @@ function structuredSource(
   return { source, priority };
 }
 
+/**
+ * One candidate in the declaration-comparison family: every member shares the Node-versions URL set, the same
+ * `Computed … declaration comparison` label pattern, and the same priority, so the id and label derive from one key.
+ */
+const declarationCandidate = (
+  id: string,
+  label: string,
+  versions: readonly string[],
+  value: unknown,
+): BriefingEvidenceCandidate =>
+  structuredSource(`comparison.${id}`, `Computed ${label} declaration comparison`, value, versions, 1);
+
 function compatibilityCandidates(input: BriefingInput, versions: readonly string[]): BriefingEvidenceCandidate[] {
+  const comparison = input.comparison;
   return [
     structuredSource(
       'comparison.advisories',
       'Computed advisory comparison',
-      advisoryEvidence(input.comparison),
-      advisoryUrls(input.comparison),
+      advisoryEvidence(comparison),
+      advisoryUrls(comparison),
       0,
     ),
-    structuredSource(
-      'comparison.node',
-      'Computed Node engine declaration comparison',
-      input.comparison.node,
-      versions,
-      1,
-    ),
-    structuredSource(
-      'comparison.moduleFormat',
-      'Computed module-format declaration comparison',
-      input.comparison.moduleFormat,
-      versions,
-      1,
-    ),
-    structuredSource(
-      'comparison.exports',
-      'Computed export-map declaration comparison',
-      input.comparison.exports,
-      versions,
-      1,
-    ),
-    structuredSource(
-      'comparison.types',
-      'Computed type-entry declaration comparison',
-      input.comparison.types,
-      versions,
-      1,
-    ),
-    structuredSource(
-      'comparison.peers',
-      'Computed peer-dependency declaration comparison',
-      input.comparison.peers,
-      versions,
-      1,
-    ),
-    structuredSource(
-      'comparison.installScripts',
-      'Computed lifecycle-script declaration comparison',
-      input.comparison.installScripts,
-      versions,
-      1,
-    ),
+    declarationCandidate('node', 'Node engine', versions, comparison.node),
+    declarationCandidate('moduleFormat', 'module-format', versions, comparison.moduleFormat),
+    declarationCandidate('exports', 'export-map', versions, comparison.exports),
+    declarationCandidate('types', 'type-entry', versions, comparison.types),
+    declarationCandidate('peers', 'peer-dependency', versions, comparison.peers),
+    declarationCandidate('installScripts', 'lifecycle-script', versions, comparison.installScripts),
     structuredSource(
       'comparison.licenses',
       'Computed license declaration comparison',
-      input.comparison.licenses,
+      comparison.licenses,
       versions,
       2,
     ),

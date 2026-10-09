@@ -35,7 +35,13 @@ const processCpuNs = async (pid: number): Promise<{ parentPid: number; ns: numbe
   return { parentPid: Number(tail[1]), ns };
 };
 
-const processTreeCpuMs = async (rootPid: number, readTasks: { count: number }): Promise<number> => {
+type ProcessTable = {
+  readonly children: Map<number, number[]>;
+  readonly cpuNs: Map<number, number>;
+};
+
+/** One table read: the schedstat nanoseconds of every readable pid and the parent index keyed by each pid. */
+const sampleTable = async (readTasks: { count: number }): Promise<ProcessTable> => {
   const children = new Map<number, number[]>();
   const cpuNs = new Map<number, number>();
   for (const entry of await readdir('/proc')) {
@@ -47,13 +53,18 @@ const processTreeCpuMs = async (rootPid: number, readTasks: { count: number }): 
     cpuNs.set(pid, ns);
     readTasks.count += 1;
   }
+  return { children, cpuNs };
+};
+
+/** One tree's CPU in milliseconds: the pending walk gathers the root's descendants from the parent index. */
+const treeCpuMs = (rootPid: number, table: ProcessTable): number => {
   let totalNs = 0;
   const pending = [rootPid];
   while (pending.length > 0) {
     const pid = pending.pop();
     if (pid === undefined) break;
-    totalNs += cpuNs.get(pid) ?? 0;
-    pending.push(...(children.get(pid) ?? []));
+    totalNs += table.cpuNs.get(pid) ?? 0;
+    pending.push(...(table.children.get(pid) ?? []));
   }
   return totalNs / 1e6;
 };
@@ -61,10 +72,11 @@ const processTreeCpuMs = async (rootPid: number, readTasks: { count: number }): 
 /** CPU milliseconds for each runtime's tree at this instant. */
 export const readTrees = async (pids: RuntimePids): Promise<RuntimeCpuMs> => {
   const readTasks = { count: 0 };
+  const table = await sampleTable(readTasks);
   const trees: RuntimeCpuMs = {
-    frontend: pids.frontend === undefined ? 0 : await processTreeCpuMs(pids.frontend, readTasks),
-    briefing: pids.briefing === undefined ? 0 : await processTreeCpuMs(pids.briefing, readTasks),
-    evidence: pids.evidence === undefined ? 0 : await processTreeCpuMs(pids.evidence, readTasks),
+    frontend: pids.frontend === undefined ? 0 : treeCpuMs(pids.frontend, table),
+    briefing: pids.briefing === undefined ? 0 : treeCpuMs(pids.briefing, table),
+    evidence: pids.evidence === undefined ? 0 : treeCpuMs(pids.evidence, table),
   };
   if (readTasks.count === 0) {
     throw new CpuSamplingFailure('No /proc/<pid>/task/<tid>/schedstat this kernel exposes, so CPU cannot be sampled');
