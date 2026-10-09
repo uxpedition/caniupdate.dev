@@ -79,6 +79,7 @@ export type BriefingEnv = {
   readonly BRIEFING_PUBLIC_URL: string;
   readonly BRIEFING_ALLOWED_ORIGIN: string;
   readonly OTEL_EXPORTER_OTLP_ENDPOINT?: string;
+  readonly OTEL_EXPORTER_OTLP_HEADERS?: string;
   readonly AI_BRIEFING_ENDPOINT?: string;
   readonly AI_BRIEFING_API_KEY?: string;
   readonly AI_BRIEFING_MODEL?: string;
@@ -161,7 +162,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
       JOB_KEY,
       record,
       event,
-      briefingTelemetryOptions(this.env.OTEL_EXPORTER_OTLP_ENDPOINT),
+      briefingTelemetryOptions(this.env.OTEL_EXPORTER_OTLP_ENDPOINT, this.env.OTEL_EXPORTER_OTLP_HEADERS),
       this.#waitUntil,
     );
   }
@@ -198,7 +199,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     if (lease === undefined) return await this.reconciledSnapshot();
     const generated = await runWithTelemetry(
       runTracedGeneration(packet, config.value, lease.generationContext),
-      briefingTelemetryOptions(this.env.OTEL_EXPORTER_OTLP_ENDPOINT),
+      briefingTelemetryOptions(this.env.OTEL_EXPORTER_OTLP_ENDPOINT, this.env.OTEL_EXPORTER_OTLP_HEADERS),
       this.#waitUntil,
     );
     return await this.#commitIfCurrent(lease.fence, generated);

@@ -1,0 +1,37 @@
+extensions:
+  basicauth/grafana:
+    client_auth:
+      username: ${env:GRAFANA_OTLP_USERNAME}
+      password: ${env:GRAFANA_OTLP_PASSWORD}
+
+exporters:
+  otlphttp/grafana:
+    endpoint: ${env:GRAFANA_OTLP_ENDPOINT}
+    auth:
+      authenticator: basicauth/grafana
+    sending_queue:
+      enabled: true
+      num_consumers: 1
+      queue_size: 512
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 10m
+
+service:
+  # Strictly sanitized export: no post-privacy debug exporter may run in production.
+  extensions: [health_check, basicauth/grafana]
+  pipelines:
+    logs:
+      processors: [memory_limiter, transform/application, redaction/application, batch]
+      exporters: [otlphttp/grafana]
+    traces:
+      processors: [memory_limiter, transform/application, redaction/application, batch]
+      exporters: [otlphttp/grafana]
+    logs/native:
+      processors: [memory_limiter, filter/native, transform/native, redaction/native, batch]
+      exporters: [otlphttp/grafana]
+    traces/native:
+      processors: [memory_limiter, filter/native, transform/native, redaction/native, batch]
+      exporters: [otlphttp/grafana]

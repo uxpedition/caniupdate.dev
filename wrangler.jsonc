@@ -32,10 +32,18 @@
       // The origin this deployment publishes. The value baked into the prerendered homepage at build time must match;
       // production will carry its own environment with https://caniupdate.dev. Local sessions set neither, so the
       // built Worker keeps the value the build was given.
-      "vars": { "NUXT_PUBLIC_SITE_URL": "https://can-i-update-preview.caniupdate-dev.workers.dev" },
+      "vars": {
+        "NUXT_PUBLIC_SITE_URL": "https://can-i-update-preview.caniupdate-dev.workers.dev",
+        "NUXT_PUBLIC_TELEMETRY_ENABLED": "true",
+        "NUXT_OTEL_ENDPOINT": "https://otlp-gateway-prod-eu-central-0.grafana.net/otlp",
+      },
+      // Uncaught exceptions and console error records stay queryable; per-request invocation records are
+      // disabled because their request metadata includes client IPs. Request URLs lose query strings too.
       "observability": {
         "enabled": true,
         "head_sampling_rate": 1,
+        "redact_query_string": true,
+        "logs": { "invocation_logs": false },
       },
       "durable_objects": {
         "bindings": [

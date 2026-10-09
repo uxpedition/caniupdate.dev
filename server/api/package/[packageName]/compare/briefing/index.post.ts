@@ -13,9 +13,9 @@ import type { BriefingSubmission } from '#shared/briefingJob.defs';
 import { decodeBriefingServiceResult, type BriefingServiceResult } from '#shared/briefingService.defs';
 import { runWithTelemetry } from '#shared/telemetry';
 import { comparisonTelemetryAttributes } from '#shared/telemetryComparison';
+import { telemetryWaitUntil } from '#shared/telemetryContext';
 import { parseTraceparent, type TraceContext } from '#shared/traceContext.defs';
 
-import { telemetryWaitUntil } from '../../../../../telemetry/h3Event';
 import { readServerTelemetryConfig } from '../../../../../telemetry/runtimeConfig';
 import { getBriefingEvidence, PackageEvidenceClientError } from '../_internals/evidenceClient';
 import { decodePackageComparisonQuery, decodePackageComparisonRouterParams } from '../_internals/request';

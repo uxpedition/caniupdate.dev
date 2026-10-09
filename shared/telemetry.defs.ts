@@ -38,6 +38,7 @@ import type {
   TelemetryResource,
   TelemetryResourceAttribute,
 } from './telemetry.schema';
+import { isErrorAttributeKey, sanitizeErrorAttribute } from './telemetryError';
 
 export type TelemetrySignal = 'logs' | 'traces';
 export type {
@@ -232,6 +233,11 @@ const sanitizeComparisonAttribute = (attribute: OtlpAttribute): TelemetryAttribu
 };
 
 const sanitizeAttribute = (attribute: OtlpAttribute): TelemetryAttribute | undefined => {
+  if (isErrorAttributeKey(attribute.key)) {
+    const raw = readStringValue(attribute.value);
+    const value = raw === undefined ? undefined : sanitizeErrorAttribute(attribute.key, raw);
+    return value === undefined ? undefined : { key: attribute.key, value: { stringValue: value } };
+  }
   switch (attribute.key) {
     case 'traceId':
       return sanitizeKnownAttribute(attribute, 'traceId', decodeTraceIdAttribute);

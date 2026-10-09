@@ -2,7 +2,7 @@ import { Schema } from 'effect';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BriefingEvidence } from '../../shared/briefing.defs';
-import { ensureGenerationTraceContext } from './jobTrace';
+import { briefingTelemetryOptions, ensureGenerationTraceContext } from './jobTrace';
 
 const TraceContextSchema = Schema.Struct({ traceId: Schema.String, spanId: Schema.String });
 const LegacyRecordSchema = Schema.Struct({
@@ -119,5 +119,32 @@ describe('generation trace persistence', () => {
     await expect(ensureGenerationTraceContext(storage, 'job', legacy, 'briefing.generation.accepted')).rejects.toThrow(
       'storage writes unavailable',
     );
+  });
+});
+
+describe('briefing telemetry options', () => {
+  it('passes configured OTLP auth headers for a hosted gateway endpoint', () => {
+    expect(
+      briefingTelemetryOptions(
+        'https://otlp-gateway-prod-us-east-0.grafana.net/otlp',
+        '{"authorization":"Basic 123:token"}',
+      ),
+    ).toEqual({
+      endpoint: 'https://otlp-gateway-prod-us-east-0.grafana.net/otlp',
+      serviceName: 'can-i-update-briefing',
+      headers: { authorization: 'Basic 123:token' },
+    });
+  });
+
+  it('omits malformed, empty and absent header configuration', () => {
+    expect(briefingTelemetryOptions()).toEqual({ serviceName: 'can-i-update-briefing' });
+    expect(briefingTelemetryOptions('https://otlp.example/otlp', 'not json')).toEqual({
+      endpoint: 'https://otlp.example/otlp',
+      serviceName: 'can-i-update-briefing',
+    });
+    expect(briefingTelemetryOptions('https://otlp.example/otlp', '{}')).toEqual({
+      endpoint: 'https://otlp.example/otlp',
+      serviceName: 'can-i-update-briefing',
+    });
   });
 });

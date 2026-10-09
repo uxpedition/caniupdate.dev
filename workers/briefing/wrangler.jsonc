@@ -63,10 +63,15 @@
       "vars": {
         "BRIEFING_PUBLIC_URL": "wss://can-i-update-preview-briefing.caniupdate-dev.workers.dev",
         "BRIEFING_ALLOWED_ORIGIN": "https://can-i-update-preview.caniupdate-dev.workers.dev",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "https://otlp-gateway-prod-eu-central-0.grafana.net/otlp",
       },
+      // Uncaught exceptions and console error records stay queryable; per-request invocation records are
+      // disabled because their request metadata includes client IPs. Request URLs lose query strings too.
       "observability": {
         "enabled": true,
         "head_sampling_rate": 1,
+        "redact_query_string": true,
+        "logs": { "invocation_logs": false },
       },
     },
   },

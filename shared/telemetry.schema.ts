@@ -126,6 +126,8 @@ export const TelemetryServiceNameSchema = Schema.Literals([
   'can-i-update-briefing',
 ]);
 export const TelemetryLogMessageSchema = Schema.Literals([
+  'runtime.error',
+  'runtime.warning',
   'comparison.page.opened',
   'briefing.submission.started',
   'briefing.submission.accepted',
@@ -176,6 +178,10 @@ export const TelemetryFailureNameSchema = Schema.Literals([
 ]);
 
 const TelemetryAttributeKeySchema = Schema.Literals([
+  'exception.type',
+  'exception.message',
+  'exception.stacktrace',
+  'error.source',
   'comparison.package.name',
   'comparison.version.from',
   'comparison.version.to',

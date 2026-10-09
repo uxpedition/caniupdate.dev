@@ -1,0 +1,98 @@
+receivers:
+  otlp/native:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4319
+        max_request_body_size: 262144
+
+processors:
+  filter/native:
+    error_mode: propagate
+    log_conditions:
+      - scope.name != "can-i-update-browser" and scope.name != "can-i-update-nuxt" and scope.name != "can-i-update-briefing"
+      - log.body != "runtime.error" and log.body != "runtime.warning" and log.body != "comparison.page.opened" and log.body != "briefing.submission.started" and log.body != "briefing.submission.accepted" and log.body != "Briefing submission failed" and log.body != "briefing.generation.accepted" and log.body != "briefing.generation.trace_context.attached" and log.body != "briefing.generation.started"
+      - log.severity_number < 1 or log.severity_number > 24
+      - log.severity_text != "Trace" and log.severity_text != "Debug" and log.severity_text != "Info" and log.severity_text != "Warn" and log.severity_text != "Error" and log.severity_text != "Fatal"
+      - log.trace_id.string != "00000000000000000000000000000000" and not IsMatch(log.trace_id.string, "^[0-9a-f]{32}$")
+      - log.span_id.string != "0000000000000000" and not IsMatch(log.span_id.string, "^[0-9a-f]{16}$")
+    trace_conditions:
+      - scope.name != "can-i-update-browser" and scope.name != "can-i-update-nuxt" and scope.name != "can-i-update-briefing"
+      - span.name != "Bundlephobia.getVersionBundleSize" and span.name != "Bundlephobia.getSize" and span.name != "Github.fetchChangelog" and span.name != "Github.verifyPackageTag" and span.name != "Github.fallbackChangelog" and span.name != "Github.getPackageReleaseNotes" and span.name != "Github.listGithubReleases" and span.name != "Github.listGithubDirectory" and span.name != "Github.getGithubFile" and span.name != "Osv.getPackageVulnerabilities" and span.name != "Osv.queryBatch" and span.name != "Osv.getVulnerability" and span.name != "Registry.getJson" and span.name != "comparison.page" and span.name != "briefing.submit" and span.name != "briefing.generation.accepted" and span.name != "briefing.generation.trace_context.attached" and span.name != "briefing.generation"
+      - resource.attributes["service.name"] != nil and resource.attributes["service.name"] != "can-i-update-browser" and resource.attributes["service.name"] != "can-i-update-nuxt" and resource.attributes["service.name"] != "can-i-update-briefing"
+      - span.trace_id.string == "00000000000000000000000000000000" or not IsMatch(span.trace_id.string, "^[0-9a-f]{32}$")
+      - span.span_id.string == "0000000000000000" or not IsMatch(span.span_id.string, "^[0-9a-f]{16}$")
+      - span.parent_span_id.string != "0000000000000000" and not IsMatch(span.parent_span_id.string, "^[0-9a-f]{16}$")
+      - span.kind < 0 or span.kind > 5
+      - span.status.code < 0 or span.status.code > 2
+
+  transform/native:
+    error_mode: propagate
+    trace_statements:
+      - keep_keys(resource.attributes, ["service.name", "service.version", "deployment.environment.name"])
+      - delete_key(resource.attributes, "service.name") where resource.attributes["service.name"] != nil and not IsMatch(resource.attributes["service.name"], "^can-i-update-(browser|nuxt|briefing)$")
+      - delete_key(resource.attributes, "service.version") where resource.attributes["service.version"] != nil and not IsMatch(resource.attributes["service.version"], "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:[-+][0-9A-Za-z.-]+)?$")
+      - delete_key(resource.attributes, "deployment.environment.name") where resource.attributes["deployment.environment.name"] != nil and not IsMatch(resource.attributes["deployment.environment.name"], "^(local|development|test|preview|production)$")
+      - keep_keys(scope.attributes, [])
+      - set(scope.version, "")
+      - set(span.status.message, "")
+      - set(span.trace_state, "")
+      - set(span.events, nil)
+      - set(span.links, nil)
+      - keep_keys(span.attributes, ["exception.type", "exception.message", "exception.stacktrace", "error.source", "comparison.package.name", "comparison.version.from", "comparison.version.to", "comparison.requested.from", "comparison.requested.to", "service.name", "service.version", "deployment.environment.name", "traceId", "spanId", "parentSpanId", "reason", "name", "relationship"])
+    log_statements:
+      - keep_keys(resource.attributes, ["service.name", "service.version", "deployment.environment.name"])
+      - delete_key(resource.attributes, "service.name") where resource.attributes["service.name"] != nil and not IsMatch(resource.attributes["service.name"], "^can-i-update-(browser|nuxt|briefing)$")
+      - delete_key(resource.attributes, "service.version") where resource.attributes["service.version"] != nil and not IsMatch(resource.attributes["service.version"], "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:[-+][0-9A-Za-z.-]+)?$")
+      - delete_key(resource.attributes, "deployment.environment.name") where resource.attributes["deployment.environment.name"] != nil and not IsMatch(resource.attributes["deployment.environment.name"], "^(local|development|test|preview|production)$")
+      - keep_keys(scope.attributes, [])
+      - set(scope.version, "")
+      - set(log.event_name, "")
+      - keep_keys(log.attributes, ["exception.type", "exception.message", "exception.stacktrace", "error.source", "comparison.package.name", "comparison.version.from", "comparison.version.to", "comparison.requested.from", "comparison.requested.to", "service.name", "service.version", "deployment.environment.name", "traceId", "spanId", "parentSpanId", "reason", "name", "relationship"])
+      - replace_pattern(log.body, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[REDACTED]") where IsString(log.body)
+      - replace_pattern(log.body, "(?:https?|file)://[^\\s)\\\"<>]+", "[REDACTED]") where IsString(log.body)
+      - replace_pattern(log.body, "(?i)\\b(?:Bearer|Basic)\\s+[A-Za-z0-9._~+/=-]+", "[REDACTED]") where IsString(log.body)
+      - replace_pattern(log.body, "(?i)\\b(?:authorization|cookie|set-cookie|password|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)\\W*[:=]\\W*[^\\s;,}]+", "[REDACTED]") where IsString(log.body)
+      - replace_pattern(log.body, "\\b(?:npm_[A-Za-z0-9]+|gh[pousr]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)\\b", "[REDACTED]") where IsString(log.body)
+      - replace_pattern(log.body, "\\b[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\b", "[REDACTED]") where IsString(log.body)
+
+  redaction/native:
+    allow_all_keys: false
+    allowed_keys:
+      - exception.type
+      - exception.message
+      - exception.stacktrace
+      - error.source
+      - comparison.package.name
+      - comparison.version.from
+      - comparison.version.to
+      - comparison.requested.from
+      - comparison.requested.to
+      - service.name
+      - service.version
+      - deployment.environment.name
+      - traceId
+      - spanId
+      - parentSpanId
+      - reason
+      - name
+      - relationship
+    redact_all_types: true
+    summary: silent
+    blocked_values:
+      - '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+      - '(?:https?|file)://[^\s)"<>]+'
+      - '(?i)\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+'
+      - '(?i)\b(?:authorization|cookie|set-cookie|password|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)\W*[:=]\W*[^\s;,}]+'
+      - '\b(?:npm_[A-Za-z0-9]+|gh[pousr]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)\b'
+      - '\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b'
+
+service:
+  pipelines:
+    logs/native:
+      receivers: [otlp/native]
+      processors: [memory_limiter, filter/native, transform/native, redaction/native, batch]
+      exporters: [debug]
+    traces/native:
+      receivers: [otlp/native]
+      processors: [memory_limiter, filter/native, transform/native, redaction/native, batch]
+      exporters: [debug]

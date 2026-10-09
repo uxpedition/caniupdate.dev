@@ -5,9 +5,10 @@ import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { decodeTelemetryPayload } from '#shared/telemetry.defs';
+import { decodeTelemetryHeaders } from '#shared/telemetryConfig.defs';
+import { telemetryWaitUntil } from '#shared/telemetryContext';
 
-import { telemetryClientAddress, telemetryWaitUntil, toTelemetryRequest } from '../../../telemetry/h3Event';
-import { decodeTelemetryHeaders } from './config';
+import { telemetryClientAddress, toTelemetryRequest } from '../../../telemetry/h3Event';
 import {
   TELEMETRY_BODY_READ_TIMEOUT_MS,
   TELEMETRY_MAX_BODY_BYTES,
@@ -69,7 +70,12 @@ const tracePayload = () => ({
               kind: 1,
               startTimeUnixNano: '1',
               endTimeUnixNano: '2',
-              attributes: [{ key: 'exception.message', value: { stringValue: 'private exception text' } }],
+              attributes: [
+                {
+                  key: 'exception.message',
+                  value: { stringValue: 'Cannot read properties of undefined for alice@example.com' },
+                },
+              ],
               droppedAttributesCount: 0,
               events: [],
               droppedEventsCount: 0,
@@ -111,7 +117,7 @@ const expectTraceExport = (forwarded: readonly ForwardedRequest[]): void => {
   const forwardedText = String(init.body);
   expect(forwardedText).not.toContain('browser-secret');
   expect(forwardedText).not.toContain('browser-secret.example');
-  expect(forwardedText).not.toContain('private exception text');
+  expect(forwardedText).toContain('Cannot read properties of undefined for [REDACTED]');
   expect(forwardedText).not.toContain('private status text');
   expect(forwardedText).not.toContain('private top-level data');
 

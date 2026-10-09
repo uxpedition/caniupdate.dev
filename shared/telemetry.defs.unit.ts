@@ -109,6 +109,30 @@ const tracePayload = () => ({
 });
 
 describe('decodeTelemetryPayload', () => {
+  it('revalidates automatic error details without leaking client-supplied metadata', () => {
+    const payload = logPayload();
+    const record = first(first(first(payload.resourceLogs).scopeLogs).logRecords);
+    record.body = { stringValue: 'runtime.error' };
+    record.attributes = [
+      { key: 'exception.type', value: { stringValue: 'TypeError' } },
+      {
+        key: 'exception.message',
+        value: { stringValue: 'Render failed for alice@example.com; Bearer fixture-secret' },
+      },
+      { key: 'exception.stacktrace', value: { stringValue: 'comparison.js:42:7\nalice@example.com' } },
+      { key: 'error.source', value: { stringValue: 'vue' } },
+      { key: 'user.email', value: { stringValue: 'alice@example.com' } },
+    ];
+    const decoded = decodeTelemetryPayload('logs', payload);
+    const safe = first(first(first(decoded.resourceLogs).scopeLogs).logRecords);
+    expect(safe.attributes).toContainEqual({
+      key: 'exception.stacktrace',
+      value: { stringValue: 'comparison.js:42:7' },
+    });
+    expect(safe.attributes).toContainEqual({ key: 'exception.type', value: { stringValue: 'TypeError' } });
+    expect(safe.attributes).toContainEqual({ key: 'error.source', value: { stringValue: 'vue' } });
+    expect(JSON.stringify(decoded)).not.toMatch(/alice|fixture-secret|collector-secret/);
+  });
   it('retains approved log identities and linked context while stripping unknown fields and annotations', () => {
     const decoded = decodeTelemetryPayload('logs', logPayload());
     const serialized = JSON.stringify(decoded);

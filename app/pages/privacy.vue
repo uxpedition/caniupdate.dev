@@ -29,6 +29,14 @@ useSeoMeta({ title: 'Privacy · Can I Update?' });
       operation timing and correlation IDs. We exclude credentials, AI prompts, evidence packets and raw provider error
       text from these diagnostic records.
     </p>
+    <p>
+      When you enable diagnostics in your browser session, failures are reported automatically: rendering errors, page
+      load failures and promise rejections are recorded with a scrubbed message and, where available, a code filename
+      and location. Reported messages are filtered for email addresses, authorization headers, tokens and other
+      credential-shaped values; URLs, query strings, function names and machine-local paths are not recorded. Server
+      render and handler failures are reported the same way. These records never include package file contents, provider
+      responses, or your IP address.
+    </p>
 
     <h2>Package data and AI</h2>
     <p>

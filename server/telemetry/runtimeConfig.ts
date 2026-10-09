@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3';
 import { useRuntimeConfig } from 'nitropack/runtime';
 
-import { decodeTelemetryHeaders } from '../api/telemetry/_internals/config';
+import { decodeTelemetryHeaders } from '#shared/telemetryConfig.defs';
 
 export interface ServerTelemetryConfig {
   readonly enabled: boolean;

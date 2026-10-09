@@ -5,6 +5,7 @@ import { generateBriefing } from '../../server/comparison/briefing/generation';
 import type { BriefingEvidence } from '../../shared/briefing.defs';
 import { runWithTelemetry, type TelemetryRuntimeOptions, type TelemetryWaitUntil } from '../../shared/telemetry';
 import { comparisonTelemetryAttributes } from '../../shared/telemetryComparison';
+import { decodeTelemetryHeaders } from '../../shared/telemetryConfig.defs';
 import { decodeTraceContext } from '../../shared/traceContext.defs';
 import type { TraceContext } from '../../shared/traceContext.defs';
 
@@ -17,10 +18,19 @@ type TraceableRecord = { traceContext?: TraceContext; packet?: BriefingEvidence 
 export type GenerationTraceEvent = 'briefing.generation.accepted' | 'briefing.generation.trace_context.attached';
 export type RunningLease = { readonly fence: number; readonly generationContext?: TraceContext };
 
-export const briefingTelemetryOptions = (endpoint?: string): TelemetryRuntimeOptions => ({
-  ...(endpoint === undefined ? {} : { endpoint }),
-  serviceName: 'can-i-update-briefing',
-});
+const telemetryHeadersFrom = (input?: string): Record<string, string> | undefined => {
+  const decoded = decodeTelemetryHeaders(input);
+  return Object.keys(decoded).length === 0 ? undefined : decoded;
+};
+
+export const briefingTelemetryOptions = (endpoint?: string, headers?: string): TelemetryRuntimeOptions => {
+  const decodedHeaders = telemetryHeadersFrom(headers);
+  return {
+    ...(endpoint === undefined ? {} : { endpoint }),
+    ...(decodedHeaders === undefined ? {} : { headers: decodedHeaders }),
+    serviceName: 'can-i-update-briefing',
+  };
+};
 
 /** Called under the Durable Object lock so submitters and a Queue run adopt one persisted root context. */
 export const ensureGenerationTraceContext = async <T extends TraceableRecord>(

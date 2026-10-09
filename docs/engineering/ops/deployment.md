@@ -157,6 +157,7 @@ Cloudflare branch Previews are not a drop-in isolated three-Worker deployment: s
 
 - Portable account-local configuration and an exercised self-hosting workflow.
 - Production environment and domain/socket routing.
+- Production telemetry configuration and hosted verification. The maintainer preview now selects direct application-sanitized OTLP export to Grafana Cloud, with frontend/briefing authentication provisioned separately as Worker secrets; no hosted Collector is required. Gateway acceptance and browser intake do not establish Loki/Tempo query visibility or platform-crash export coverage. Gateway authentication belongs to frontend/briefing Worker secret configuration and is never browser-visible or public. The [platform's Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/) capture stays enabled as the independent net for escaped exceptions, with per-request invocation logs disabled because their request metadata includes client IPs; only exception and console records remain, and no outstanding platform setting may reintroduce request-level IP records.
 - General public request limiting before expensive evidence work.
 - A stricter allowance before new generation acceptance, excluding D1 hits and pending-job joins. Explicit retries starting a new generation count again.
 - Distinct rate-limit responses and verified browser behavior under rejection.

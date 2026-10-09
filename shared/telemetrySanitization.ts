@@ -19,6 +19,8 @@ import {
   TelemetryServiceNameSchema,
   TelemetrySpanNameSchema,
 } from './telemetry.schema';
+import { isErrorAttributeKey, sanitizeErrorAttribute } from './telemetryError';
+import type { ErrorAttributeKey } from './telemetryError';
 
 // Native Effect records may carry private or over-budget fields; project them before shared strict decoding.
 type NativeResource = OtlpTracer.TraceData['resourceSpans'][number]['resource'];
@@ -87,18 +89,44 @@ const readStringValue = (value: unknown): string | undefined => {
   return typeof candidate === 'string' ? candidate : undefined;
 };
 
+const validatedProjectFieldValue = (
+  validate: ((value: string) => boolean) | undefined,
+  seen: Set<string>,
+  key: string,
+  value: string | undefined,
+): ProjectedAttribute | undefined => {
+  if (validate === undefined || seen.has(key) || value === undefined || !validate(value)) return undefined;
+  seen.add(key);
+  return { key, value: { stringValue: value } };
+};
+
+const validatedErrorAttributeValue = (
+  key: ErrorAttributeKey,
+  raw: string | undefined,
+  seen: Set<string>,
+): ProjectedAttribute | undefined => {
+  if (raw === undefined || seen.has(key)) return undefined;
+  const value = sanitizeErrorAttribute(key, raw);
+  if (value === undefined) return undefined;
+  seen.add(key);
+  return { key, value: { stringValue: value } };
+};
+
 const projectAttributes = (attributes: ReadonlyArray<{ readonly key: string; readonly value: unknown }>) => {
   const projected: Array<ProjectedAttribute> = [];
   const seen = new Set<string>();
   for (const attribute of attributes) {
-    const validate = Object.hasOwn(ATTRIBUTE_VALUE_VALIDATORS, attribute.key)
-      ? ATTRIBUTE_VALUE_VALIDATORS[attribute.key]
-      : undefined;
-    if (validate === undefined || seen.has(attribute.key)) continue;
-    const value = readStringValue(attribute.value);
-    if (value === undefined || !validate(value)) continue;
-    seen.add(attribute.key);
-    projected.push({ key: attribute.key, value: { stringValue: value } });
+    const projectedAttribute = isErrorAttributeKey(attribute.key)
+      ? validatedErrorAttributeValue(attribute.key, readStringValue(attribute.value), seen)
+      : validatedProjectFieldValue(
+          Object.hasOwn(ATTRIBUTE_VALUE_VALIDATORS, attribute.key)
+            ? ATTRIBUTE_VALUE_VALIDATORS[attribute.key]
+            : undefined,
+          seen,
+          attribute.key,
+          readStringValue(attribute.value),
+        );
+    if (projectedAttribute !== undefined) projected.push(projectedAttribute);
   }
   return projected;
 };

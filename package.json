@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@effect/ai-openai-compat": "4.0.0",
+    "@grafana/faro-web-sdk": "2.12.1",
     "@lucide/vue": "^1.47.0",
     "@nuxt/fonts": "^0.14.0",
     "@tanstack/vue-query": "^5.102.8",

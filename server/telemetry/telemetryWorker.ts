@@ -1,4 +1,5 @@
-import { decodeTelemetryHeaders } from '../api/telemetry/_internals/config';
+import { decodeTelemetryHeaders } from '#shared/telemetryConfig.defs';
+
 import {
   createTelemetryAdmission,
   handleTelemetryIngress,
