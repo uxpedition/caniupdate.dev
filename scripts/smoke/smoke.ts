@@ -124,7 +124,6 @@ const assertBuiltPreview = async (preview: boolean): Promise<void> => {
 };
 
 /** Reports whatever the scenario threw: classified throwables render fully, the rest serialize as diagnostic JSON. */
-// oxlint-disable-next-line rules/no-unknown-parameters -- Captured scenario failures are runtime-owned; classification below decides the rendering contract.
 const describeFailure = (cause: unknown): string => {
   if (cause instanceof Error) return cause.stack ?? cause.message;
 
