@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Schema } from 'effect';
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { RouteLocationNormalized } from 'vue-router';
 
@@ -217,13 +218,11 @@ const startPendingRelocation = () => {
   }
 };
 
-const isComparisonRoute = (route: RouteLocationNormalized) =>
-  // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating vue-router's declared string | string[] param union, not unparsed input.
-  typeof route.params.packageName === 'string' && typeof route.params.versionPair === 'string';
+const isComparisonParams = Schema.is(Schema.Struct({ packageName: Schema.String, versionPair: Schema.String }));
 
 const shouldCaptureFormRelocation = (to: RouteLocationNormalized, from: RouteLocationNormalized) => {
   if (props.variant === 'home') {
-    return from.path === '/' && isComparisonRoute(to) && relocation.value?.targetPath !== to.path;
+    return from.path === '/' && isComparisonParams(to.params) && relocation.value?.targetPath !== to.path;
   }
 
   return to.path === '/' && from.path !== '/';
