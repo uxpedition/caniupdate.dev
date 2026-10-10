@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
 import { describe, expect, it } from 'vitest';
 
@@ -61,8 +61,7 @@ const release = (index: number) => ({
 const fullReleasePage = (offset: number) =>
   Array.from({ length: RELEASES_PER_PAGE }, (_, index) => release(offset + index));
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Transport stub returning arbitrary GitHub JSON; the client decodes every response.
-const releasesResponse = (body: unknown, headers?: Record<string, string>) =>
+const releasesResponse = (body: Schema.Json, headers?: Record<string, string>) =>
   Response.json(body, { status: 200, headers });
 
 const errorResponse = (status: number) => Response.json({ message: 'failure' }, { status });

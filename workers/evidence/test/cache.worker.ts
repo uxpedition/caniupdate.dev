@@ -79,26 +79,44 @@ const isScalarString = Schema.is(Schema.String);
 
 const isSelfContainer = Schema.is(Schema.Struct({ self: Schema.Unknown }));
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Fixture command results are runtime-owned; the capture parent inspects raw shapes.
-function jsonResponse(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), {
+// Self-referential probe: JSON.stringify throws on it, exercising the serialization-failure path.
+type SelfReferentialProbe = { self?: unknown };
+
+type CoalesceResult = { first: CacheOutcome; second: CacheOutcome };
+
+// `undefined` is the unserializable-value probe; every other member is a fixture operation's result.
+type FixtureResult =
+  | { initialized: true }
+  | { cleaned: true }
+  | string
+  | undefined
+  | CoalesceResult
+  | SelfReferentialProbe;
+
+type FixtureEnvelope =
+  | { ok: true; value: FixtureResult; loaderCalls: number }
+  | { ok: false; error: SanitizedError; loaderCalls: number };
+
+type FixtureResponseBody = FixtureEnvelope | { error: SanitizedError };
+
+function jsonResponse(body: FixtureResponseBody, status = 200): Response {
+  return new Response(JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8' },
   });
 }
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Failure cause chains are runtime-owned; the container walk below validates each level.
-function stringProperty(value: unknown, key: string): string | undefined {
-  if (!isContainerObject(value) || !(key in value)) return undefined;
-  const property: unknown = Reflect.get(value, key);
+function stringProperty(cause: unknown, key: string): string | undefined {
+  if (!isContainerObject(cause) || !(key in cause)) return undefined;
+  const property: unknown = Reflect.get(cause, key);
 
   return isScalarString(property) ? property : undefined;
 }
 
-// oxlint-disable-next-line rules/no-unknown-parameters rules/no-unknown-returns -- Failure cause chains are runtime-owned; the container walk below validates each level it reads.
-function innermostCause(value: unknown): unknown {
-  if (!isContainerObject(value)) return undefined;
-  let current: unknown = Reflect.get(value, 'cause');
+// oxlint-disable-next-line rules/no-unknown-returns -- Failure cause chains are runtime-owned; the container walk below validates each level it reads.
+function innermostCause(cause: unknown): unknown {
+  if (!isContainerObject(cause)) return undefined;
+  let current: unknown = Reflect.get(cause, 'cause');
 
   if (current === undefined) return undefined;
   const seen = new Set<object>();
@@ -188,8 +206,7 @@ export class EvidenceCacheFixture extends DurableObject {
     return this.cache;
   }
 
-  // oxlint-disable-next-line rules/no-unknown-returns -- Fixture command results are runtime-owned; the capture parent inspects raw shapes.
-  private async execute(command: CacheFixtureCommand): Promise<unknown> {
+  private async execute(command: CacheFixtureCommand): Promise<FixtureResult> {
     switch (command.operation) {
       case 'initialize':
         void this.cacheClient;
@@ -243,8 +260,7 @@ export class EvidenceCacheFixture extends DurableObject {
     }
   }
 
-  // oxlint-disable-next-line rules/no-unknown-returns -- Fixture command results are runtime-owned; the capture parent inspects raw shapes.
-  private async coalesce(command: Extract<CacheFixtureCommand, { operation: 'coalesce' }>): Promise<unknown> {
+  private async coalesce(command: Extract<CacheFixtureCommand, { operation: 'coalesce' }>): Promise<CoalesceResult> {
     let releaseLoader: ((value: string) => void) | undefined;
 
     const deferred = new Promise<string>((resolve) => {
@@ -292,8 +308,9 @@ export class EvidenceCacheFixture extends DurableObject {
     };
   }
 
-  // oxlint-disable-next-line rules/no-unknown-returns -- Fixture command results are runtime-owned; the capture parent inspects raw shapes.
-  private async serialize(command: Extract<CacheFixtureCommand, { operation: 'serialization' }>): Promise<unknown> {
+  private async serialize(
+    command: Extract<CacheFixtureCommand, { operation: 'serialization' }>,
+  ): Promise<FixtureResult> {
     if (command.kind === 'undefined') {
       const options: ComparisonEvidenceCacheOptions<undefined> = {
         ttlMs: null,
@@ -312,13 +329,13 @@ export class EvidenceCacheFixture extends DurableObject {
       );
     }
 
-    const value: { self?: unknown } = {};
+    const value: SelfReferentialProbe = {};
     value.self = value;
 
-    const options: ComparisonEvidenceCacheOptions<{ self?: unknown }> = {
+    const options: ComparisonEvidenceCacheOptions<SelfReferentialProbe> = {
       ttlMs: null,
       cacheable: () => true,
-      isValid: (candidate: unknown): candidate is { self?: unknown } =>
+      isValid: (candidate: unknown): candidate is SelfReferentialProbe =>
         isSelfContainer(candidate) && 'self' in candidate,
     };
 

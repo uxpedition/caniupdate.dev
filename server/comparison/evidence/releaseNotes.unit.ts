@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 import { HttpClient, HttpClientResponse } from 'effect/http';
 import { describe, expect, it } from 'vitest';
 
@@ -59,8 +59,7 @@ function run(from: TestManifest, to: TestManifest, responses: (request: Request)
   };
 }
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Test release page stub returning a decoded JSON list; the release decoders validate its members.
-function releaseAndChangelogResponses(releases: unknown, changelog: string | Response = '# Changelog\n') {
+function releaseAndChangelogResponses(releases: Schema.Json, changelog: string | Response = '# Changelog\n') {
   return (request: Request) => {
     const url = new URL(request.url);
 

@@ -35,7 +35,7 @@ const UnavailableReasonSchema: Schema.Codec<BriefingUnavailableReason> = Schema.
   'invalid-response',
 ]);
 
-const BriefingJobEventSchema = Schema.Union([
+const BriefingJobEventSchema: Schema.Codec<BriefingJobEvent> = Schema.Union([
   Schema.Struct({ status: Schema.Literals(['queued', 'running']), revision: Schema.Natural }),
   Schema.Struct({
     status: Schema.Literal('available'),
@@ -47,9 +47,10 @@ const BriefingJobEventSchema = Schema.Union([
 
 // Revisions are non-negative integers, and a smuggled packet, prompt, credential, or provider body is an error rather
 // than an ignored key: the browser only ever renders what the envelope declares.
-// oxlint-disable-next-line rules/no-unknown-parameters -- Exported worker protocol decode boundary; the union schema above runs on every call.
-export const decodeBriefingJobEvent = (value: unknown): BriefingJobEvent =>
-  Schema.decodeUnknownSync(BriefingJobEventSchema, { errors: 'all', onExcessProperty: 'error' })(value);
+export const decodeBriefingJobEvent = Schema.decodeUnknownSync(BriefingJobEventSchema, {
+  errors: 'all',
+  onExcessProperty: 'error',
+});
 
 const NonBlankStringSchema = Schema.String.check(
   Schema.isMinLength(1),
@@ -97,6 +98,7 @@ export const BriefingSubmissionSchema: Schema.Codec<BriefingSubmission> = Schema
   }),
 ]);
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Exported POST envelope decode boundary; the strict union schema above runs on every call.
-export const decodeBriefingSubmission = (value: unknown): BriefingSubmission =>
-  Schema.decodeUnknownSync(BriefingSubmissionSchema, { errors: 'all', onExcessProperty: 'error' })(value);
+export const decodeBriefingSubmission = Schema.decodeUnknownSync(BriefingSubmissionSchema, {
+  errors: 'all',
+  onExcessProperty: 'error',
+});

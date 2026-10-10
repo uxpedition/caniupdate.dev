@@ -174,23 +174,21 @@ type CompletedBriefing = { readonly _tag: 'completed'; readonly briefing: Packag
 type SocketOutcome = { readonly _tag: 'disconnected'; readonly revision: number } | CompletedBriefing;
 
 type SocketMessage =
-  | { readonly _tag: 'invalid' }
   | { readonly _tag: 'ignored' }
   | { readonly _tag: 'status'; readonly status: BriefingStatus; readonly revision: number }
   | CompletedBriefing;
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Raw socket frames are runtime-owned until the string check and strict protocol decode below.
-const decodeJobEventMessage = (data: unknown, highest: number): SocketMessage => {
-  let frame: BriefingJobEvent | undefined;
-
-  if (isScalarString(data)) {
-    try {
-      frame = decodeBriefingJobEvent(JSON.parse(data));
-    } catch {}
+/** Parses one text frame against the worker's protocol; malformed JSON or a protocol violation yields undefined. */
+const decodeJobEventFrame = (data: string): BriefingJobEvent | undefined => {
+  try {
+    return decodeBriefingJobEvent(JSON.parse(data));
+  } catch {
+    return undefined;
   }
+};
 
-  if (frame === undefined) return { _tag: 'invalid' };
-
+/** Classifies one decoded frame against the highest revision this subscription has already applied. */
+const messageFromJobEvent = (frame: BriefingJobEvent, highest: number): SocketMessage => {
   if (frame.revision <= highest) return { _tag: 'ignored' };
 
   if (frame.status === 'available') return { _tag: 'completed', briefing: frame.briefing, revision: frame.revision };
@@ -204,6 +202,17 @@ const decodeJobEventMessage = (data: unknown, highest: number): SocketMessage =>
   }
 
   return { _tag: 'status', status: frame.status, revision: frame.revision };
+};
+
+/**
+ * Reads one WebSocket message against the worker's protocol and classifies it against the highest applied revision.
+ * Non-text, malformed, and off-protocol frames yield undefined; the subscription fails on them.
+ */
+const messageFromSocketEvent = (event: MessageEvent, highest: number): SocketMessage | undefined => {
+  const data: unknown = event.data;
+  const frame = isScalarString(data) ? decodeJobEventFrame(data) : undefined;
+
+  return frame === undefined ? undefined : messageFromJobEvent(frame, highest);
 };
 
 const reportBriefingStatus = (onStatus: (state: BriefingStatus) => void, state: BriefingStatus): Error | undefined => {
@@ -226,15 +235,15 @@ const listenForJobEvents = (
     let resumed = false;
 
     function onMessage(event: MessageEvent): void {
-      const message = decodeJobEventMessage(event.data, highest);
+      const message = messageFromSocketEvent(event, highest);
 
-      if (message._tag === 'ignored') return;
-
-      if (message._tag === 'invalid') {
+      if (message === undefined) {
         complete(Effect.fail(new Error('The briefing stream sent a frame the page cannot read')));
 
         return;
       }
+
+      if (message._tag === 'ignored') return;
 
       highest = message.revision;
 

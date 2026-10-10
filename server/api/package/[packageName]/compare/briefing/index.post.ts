@@ -30,7 +30,7 @@ type SubmissionFailureStatus = 'Evidence service unavailable' | 'Briefing servic
 // oxlint-disable-next-line rules/no-unknown-returns -- The service binding's raw envelope is the boundary; the protocol decoder consumes it immediately.
 type BriefingService = { submit(packet: BriefingEvidence): Promise<unknown> };
 
-type DisposableRpcResult = object & { [Symbol.dispose](): void };
+type DisposableRpcResult = RpcResultData & { [Symbol.dispose](): void };
 
 // Cloudflare adds this documented lifecycle hook to every object returned over RPC. It is the sole runtime-owned
 // property permitted at this boundary; all application fields remain subject to the strict protocol decoder below.
@@ -42,18 +42,16 @@ const RpcResultDataSchema = Schema.Record(Schema.String, Schema.Unknown);
 
 type RpcResultData = typeof RpcResultDataSchema.Type;
 
-const isRpcResultObject = Schema.is(Schema.Struct({}));
+// Only objects, arrays, and the function-backed proxies Miniflare can return in development carry own keys; primitives
+// are rejected before any key enumeration.
+const isRpcResultObject = (value: unknown): value is RpcResultData =>
+  Predicate.isObjectOrArray(value) || Predicate.isFunction(value);
 
 const isScalarString = Schema.is(Schema.String);
 
 // Copy every own string key, including non-enumerable ones, so strict decoding still rejects undeclared application
 // data. When present, the documented disposer is excluded because the caller invokes it unconditionally.
-// oxlint-disable-next-line rules/no-unknown-parameters -- The RPC envelope is runtime-owned until the copy below flattens own keys for strict decoding.
-const copyRpcServiceResultData = (submission: unknown): RpcResultData => {
-  if (!isRpcResultObject(submission)) {
-    throw new TypeError('Briefing service did not return an object');
-  }
-
+const copyRpcServiceResultData = (submission: RpcResultData): RpcResultData => {
   const data: RpcResultData = {};
 
   for (const key of Reflect.ownKeys(submission)) {
@@ -75,12 +73,7 @@ const copyRpcServiceResultData = (submission: unknown): RpcResultData => {
 
 // Node's Miniflare bridge omits descriptor values while keeping ordinary property reads live. This is reachable only
 // through Nuxt's compile-time development branch below; built Workers retain the descriptor-only path above.
-// oxlint-disable-next-line rules/no-unknown-parameters -- Same RPC envelope as above, under the descriptor-omitting development bridge.
-const copyNodeDevelopmentRpcServiceResultData = (submission: unknown): RpcResultData => {
-  if (!isRpcResultObject(submission)) {
-    throw new TypeError('Briefing service did not return an object');
-  }
-
+const copyNodeDevelopmentRpcServiceResultData = (submission: RpcResultData): RpcResultData => {
   const data: RpcResultData = {};
 
   for (const key of Reflect.ownKeys(submission)) {
@@ -156,6 +149,8 @@ const receiveBriefingServiceResult = async (
     // local development usable while retaining the same strict application-field decode; this compile-time Nuxt flag
     // is false in the built Worker, which still requires and invokes Cloudflare's documented lifecycle hook.
     if (import.meta.dev) {
+      if (!isRpcResultObject(rpcResult)) throw new TypeError('Briefing service did not return an object');
+
       return decodeBriefingServiceResult(copyNodeDevelopmentRpcServiceResultData(rpcResult));
     }
 

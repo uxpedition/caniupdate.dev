@@ -1,14 +1,9 @@
-import { Result, Schema } from 'effect';
+import { flow, Result, Schema } from 'effect';
 
 import {
   HexSpanIdSchema,
   HexTraceIdSchema,
-  MAX_DEPTH,
   MAX_DROPPED_COUNT,
-  MAX_NODES,
-  MAX_RECORDS,
-  MAX_STRING_LENGTH,
-  MAX_TOTAL_STRING_LENGTH,
   OtlpLogsDataSchema,
   OtlpTracesDataSchema,
   SanitizedLogsDataSchema,
@@ -31,12 +26,12 @@ import type {
   OtlpSpan,
   OtlpSpanLink,
   SanitizedLogsData,
-  SanitizedTelemetryPayload,
   SanitizedTraceData,
   TelemetryAttribute,
   TelemetryResource,
   TelemetryResourceAttribute,
 } from './telemetry.schema';
+import { decodeBoundedTelemetryValue } from './telemetryBounds';
 import { isErrorAttributeKey, sanitizeErrorAttribute } from './telemetryError';
 import type { ErrorAttributeKey } from './telemetryError';
 
@@ -149,114 +144,13 @@ const isTelemetrySpanName = Schema.is(TelemetrySpanNameSchema);
 
 type SafeStringValue = TelemetryAttribute['value'];
 
-type BoundedState = { visited: number; stringLength: number };
-
-type PendingValue = { value: unknown; depth: number };
-
-const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
-
-type UnknownRecord = typeof UnknownRecordSchema.Type;
-
-const isJsonString = Schema.is(Schema.String);
-
-const isJsonNumber = Schema.is(Schema.Number);
-
-const isJsonBoolean = Schema.is(Schema.Boolean);
-
-const isJsonContainer = Schema.is(Schema.Union([UnknownRecordSchema, Schema.Array(Schema.Unknown)]));
-
-const isJsonArray = Schema.is(Schema.Array(Schema.Unknown));
-
-const addStringLength = (state: BoundedState, value: string): boolean => {
-  state.stringLength += value.length;
-
-  return value.length <= MAX_STRING_LENGTH && state.stringLength <= MAX_TOTAL_STRING_LENGTH;
-};
-
-const enqueueArray = (values: ReadonlyArray<unknown>, pending: Array<PendingValue>, depth: number): boolean => {
-  if (values.length > MAX_RECORDS) return false;
-
-  for (const value of values) pending.push({ value, depth });
-
-  return true;
-};
-
-const enqueueRecord = (
-  value: UnknownRecord,
-  pending: Array<PendingValue>,
-  depth: number,
-  state: BoundedState,
-): boolean => {
-  const keys = Object.keys(value);
-
-  if (keys.length > 64) return false;
-
-  for (const key of keys) {
-    if (key.length > 128 || !addStringLength(state, key)) return false;
-    const child = value[key];
-
-    if (child !== undefined) pending.push({ value: child, depth });
-  }
-
-  return true;
-};
-
-// oxlint-disable-next-line rules/no-unknown-parameters -- Bounded walker input is arbitrary JSON by contract; this is the pre-decode bound checker.
-const isBoundedPrimitive = (value: unknown, state: BoundedState): boolean => {
-  if (isJsonString(value)) return addStringLength(state, value);
-
-  if (isJsonNumber(value)) return Number.isFinite(value);
-
-  return value === null || isJsonBoolean(value);
-};
-
-const enqueueChildren = (
-  // oxlint-disable-next-line rules/no-unknown-parameters -- Bounded walker input is arbitrary JSON by contract; this is the pre-decode bound checker.
-  value: unknown,
-  pending: Array<PendingValue>,
-  depth: number,
-  seen: WeakSet<object>,
-  state: BoundedState,
-): boolean => {
-  if (!isJsonContainer(value)) return false;
-
-  if (seen.has(value)) return false;
-
-  seen.add(value);
-
-  if (isJsonArray(value)) return enqueueArray(value, pending, depth);
-
-  return enqueueRecord(value, pending, depth, state);
-};
-
-/** Bound unknown OTLP attribute values before schema decoding or transport. */
-// oxlint-disable-next-line rules/no-unknown-parameters -- Bounded walker input is arbitrary JSON by contract; this is the pre-decode bound checker.
-const isBoundedJson = (value: unknown): boolean => {
-  const pending: Array<PendingValue> = [{ value, depth: 0 }];
-  const seen = new WeakSet<object>();
-  const state: BoundedState = { visited: 0, stringLength: 0 };
-
-  while (pending.length > 0) {
-    const current = pending.pop();
-
-    if (current === undefined) return false;
-    state.visited++;
-
-    if (state.visited > MAX_NODES || current.depth > MAX_DEPTH) return false;
-
-    if (isBoundedPrimitive(current.value, state)) continue;
-
-    if (!enqueueChildren(current.value, pending, current.depth + 1, seen, state)) return false;
-  }
-
-  return true;
-};
+/** Decodes one raw OTLP attribute value into a sanitized value; library decoders match this shape. */
+type DecodeAttributeValue = (value: OtlpAttribute['value']) => Result.Result<SafeStringValue, Schema.SchemaError>;
 
 const sanitizeKnownAttribute = (
   attribute: OtlpAttribute,
   key: TelemetryAttribute['key'],
-  // oxlint-disable-next-line rules/no-unknown-parameters -- Injected decoders are library-composed envelope parsers; their input is unknown by contract.
-  decode: (value: unknown) => Result.Result<SafeStringValue, unknown>,
+  decode: DecodeAttributeValue,
 ): TelemetryAttribute | undefined => {
   const value = Result.getOrUndefined(decode(attribute.value));
 
@@ -495,21 +389,25 @@ const sanitizeTraces = (data: typeof OtlpTracesDataSchema.Type): SanitizedTraceD
   return decodeSanitizedTraceData({ resourceSpans });
 };
 
-/** Decode and rebuild only bounded OTLP JSON records approved for application telemetry. */
-// oxlint-disable rules/no-unknown-parameters -- This function is the ingress decode boundary; its body runs the bounded schema parsers above.
-export function decodeTelemetryPayload(signal: 'logs', value: unknown): SanitizedLogsData;
-export function decodeTelemetryPayload(signal: 'traces', value: unknown): SanitizedTraceData;
-export function decodeTelemetryPayload(signal: TelemetrySignal, value: unknown): SanitizedTelemetryPayload;
-export function decodeTelemetryPayload(signal: TelemetrySignal, value: unknown): SanitizedTelemetryPayload {
-  if (!isBoundedJson(value)) throw new TypeError('Telemetry payload exceeds safety limits');
+const decodeTelemetryLogs = flow(decodeBoundedTelemetryValue, decodeOtlpLogsData, sanitizeLogs);
 
+const decodeTelemetryTraces = flow(decodeBoundedTelemetryValue, decodeOtlpTracesData, sanitizeTraces);
+
+/** Select the ingress decoder; bounds are checked before OTLP decoding and sanitization. */
+export function decodeTelemetryPayload(signal: 'logs'): typeof decodeTelemetryLogs;
+export function decodeTelemetryPayload(signal: 'traces'): typeof decodeTelemetryTraces;
+export function decodeTelemetryPayload(
+  signal: TelemetrySignal,
+): typeof decodeTelemetryLogs | typeof decodeTelemetryTraces;
+export function decodeTelemetryPayload(
+  signal: TelemetrySignal,
+): typeof decodeTelemetryLogs | typeof decodeTelemetryTraces {
   switch (signal) {
     case 'logs':
-      return sanitizeLogs(decodeOtlpLogsData(value));
+      return decodeTelemetryLogs;
     case 'traces':
-      return sanitizeTraces(decodeOtlpTracesData(value));
+      return decodeTelemetryTraces;
     default:
       throw new TypeError('Unsupported telemetry signal');
   }
 }
-// oxlint-enable rules/no-unknown-parameters

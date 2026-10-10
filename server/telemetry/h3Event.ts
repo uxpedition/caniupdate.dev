@@ -1,12 +1,19 @@
+import type { ReadableEventMap } from 'node:stream';
+
 import { Predicate, Schema } from 'effect';
 
 import { TelemetryIngressError } from '../api/telemetry/_internals/ingress';
 
-/** Declared shapes H3 1 (Node development) and workerd (web) expose; leaves stay unknown and are guarded at use. */
+/**
+ * Declared shapes H3 1 (Node development) and workerd (web) expose. Leaves are platform-owned: each is
+ * narrowed by a guard at its use site before it is read as a concrete type.
+ */
+type RequestContainer = { readonly request?: unknown };
+
 type EventContainer = {
-  readonly node?: { readonly req?: unknown; readonly res?: unknown };
-  readonly web?: { readonly request?: unknown };
-  readonly context?: { readonly cloudflare?: { readonly request?: unknown }; readonly clientAddress?: unknown };
+  readonly node?: { readonly req?: unknown; readonly res?: unknown } | undefined;
+  readonly web?: RequestContainer | undefined;
+  readonly context?: { readonly cloudflare?: unknown; readonly clientAddress?: unknown } | undefined;
   readonly req?: unknown;
   readonly method?: unknown;
   readonly path?: unknown;
@@ -29,7 +36,9 @@ interface LegacyNodeRequest {
   readonly url?: string;
   readonly originalUrl?: string;
   readonly socket?: unknown;
-  on(event: string, listener: (...values: unknown[]) => void): void;
+  on(event: 'data', listener: (...args: ReadableEventMap['data']) => void): void;
+  on(event: 'end', listener: () => void): void;
+  on(event: 'error', listener: (error: Error) => void): void;
   pause(): void;
   resume(): void;
   destroy(): void;
@@ -74,13 +83,12 @@ const nodeResponseFromEvent = (event: EventContainer): LegacyNodeResponse | unde
   return isLegacyNodeResponse(node.res) ? node.res : undefined;
 };
 
-const legacyHeaders = (
-  // oxlint-disable-next-line rules/no-unknown-parameters -- The event headers value is runtime-owned; the concrete Headers instance check is the validation.
-  value: unknown,
-): Headers => {
-  if (!(value instanceof Headers)) throw new TelemetryIngressError(400);
+const headersFromEvent = (event: EventContainer): Headers => {
+  const headers = event.headers;
 
-  return value;
+  if (!(headers instanceof Headers)) throw new TelemetryIngressError(400);
+
+  return headers;
 };
 
 const textEncoder = new TextEncoder();
@@ -91,21 +99,11 @@ const enqueueNodeRequestChunk = (
   request: LegacyNodeRequest,
   controller: ReadableStreamDefaultController<Uint8Array>,
   state: NodeRequestBodyState,
-  // oxlint-disable-next-line rules/no-unknown-parameters -- The stream feeds arbitrary chunk representations; each is discriminated below.
-  chunk: unknown,
+  chunk: string | Uint8Array,
 ): void => {
   if (!state.active) return;
   request.pause();
-
-  if (isScalarString(chunk)) {
-    controller.enqueue(textEncoder.encode(chunk));
-  } else if (chunk instanceof Uint8Array) {
-    controller.enqueue(chunk);
-  } else {
-    state.active = false;
-    controller.error(new TypeError('Invalid request body chunk'));
-    request.destroy();
-  }
+  controller.enqueue(isScalarString(chunk) ? textEncoder.encode(chunk) : chunk);
 };
 
 const closeNodeRequestBody = (
@@ -120,8 +118,7 @@ const closeNodeRequestBody = (
 const failNodeRequestBody = (
   controller: ReadableStreamDefaultController<Uint8Array>,
   state: NodeRequestBodyState,
-  // oxlint-disable-next-line rules/no-unknown-parameters -- Stream failure causes are platform-owned; only their Error shape is narrowed.
-  error: unknown,
+  error: Error,
 ): void => {
   if (!state.active) return;
   state.active = false;
@@ -134,7 +131,19 @@ const startNodeRequestBody = (
   state: NodeRequestBodyState,
 ): void => {
   request.pause();
-  request.on('data', (chunk) => enqueueNodeRequestChunk(request, controller, state, chunk));
+  request.on('data', (chunk) => {
+    if (!state.active) return;
+    const value: unknown = chunk;
+
+    if (isScalarString(value) || value instanceof Uint8Array) {
+      enqueueNodeRequestChunk(request, controller, state, value);
+    } else {
+      request.pause();
+      state.active = false;
+      controller.error(new TypeError('Invalid request body chunk'));
+      request.destroy();
+    }
+  });
   request.on('end', () => closeNodeRequestBody(controller, state));
   request.on('error', (error) => failNodeRequestBody(controller, state, error));
 };
@@ -178,11 +187,10 @@ const nodeRequestBody = (request: LegacyNodeRequest, response?: LegacyNodeRespon
   });
 };
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Nested runtime container guarded structurally before the concrete instance check.
-const requestFromContainer = (value: unknown): Request | undefined => {
-  if (!isRequestContainer(value)) return undefined;
+const requestFromContainer = (container: RequestContainer): Request | undefined => {
+  if (!isRequestContainer(container)) return undefined;
 
-  return value.request instanceof Request ? value.request : undefined;
+  return container.request instanceof Request ? container.request : undefined;
 };
 
 const webRequestFromEvent = (event: EventContainer): Request | undefined => {
@@ -196,7 +204,7 @@ const cloudflareRequestFromEvent = (event: EventContainer): Request | undefined 
 
   const cloudflare = event.context.cloudflare;
 
-  return cloudflare === undefined ? undefined : requestFromContainer(cloudflare);
+  return isRequestContainer(cloudflare) ? requestFromContainer(cloudflare) : undefined;
 };
 
 const requestFromEvent = (event: EventContainer): Request | undefined => {
@@ -254,7 +262,7 @@ const createLegacyWebRequest = (
   method: string,
   path: string,
 ): Request => {
-  const headers = legacyHeaders(event.headers);
+  const headers = headersFromEvent(event);
   const url = nodeRequestURL(headers, request, path);
 
   const body =
@@ -273,8 +281,7 @@ const createLegacyWebRequest = (
 };
 
 /** Preserve the H3 1 Node request body as a backpressured Web stream for bounded ingress. */
-// oxlint-disable-next-line rules/no-unknown-parameters -- Exported event-to-Request boundary; the raw event is runtime-owned and probed shape by shape below.
-export const toTelemetryRequest = (event: unknown): Request => {
+export const toTelemetryRequest = (event: EventContainer): Request => {
   if (!isEventObject(event)) throw new TelemetryIngressError(400);
   const nodeRequest = nodeRequestFromEvent(event);
 
@@ -310,8 +317,7 @@ const nodeClientAddress = (event: EventContainer): string | undefined => {
 const eventClientAddress = (event: EventContainer): string | undefined =>
   contextClientAddress(event) ?? nodeClientAddress(event);
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Exported event-to-address boundary; the raw event is runtime-owned and probed shape by shape below.
-export const telemetryClientAddress = (event: unknown, request: Request): string | undefined => {
+export const telemetryClientAddress = (event: EventContainer, request: Request): string | undefined => {
   if (isEventObject(event)) {
     const address = eventClientAddress(event);
 

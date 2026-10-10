@@ -1,8 +1,8 @@
-import { Schema } from 'effect';
+import { Effect, Option, Schema } from 'effect';
 
-import { decodeTraceContext } from '../../telemetry/traceContext.defs';
+import { TraceContextSchema } from '../../telemetry/traceContext.defs';
 import type { TraceContext } from '../../telemetry/traceContext.defs';
-import { decodeBriefingSubmission } from './briefingJob.defs';
+import { BriefingSubmissionSchema } from './briefingJob.defs';
 import type { BriefingSubmission } from './briefingJob.defs';
 
 export type BriefingServiceResult = {
@@ -10,22 +10,19 @@ export type BriefingServiceResult = {
   readonly generationContext?: TraceContext;
 };
 
-const BriefingServiceResultEnvelopeSchema = Schema.Struct({
-  submission: Schema.Unknown,
-  generationContext: Schema.optionalKey(Schema.Unknown),
+// A malformed diagnostic context is dropped; the public submission remains strictly decoded. Any failure for the
+// context property (wrong shape, undeclared keys, or an undefined value) becomes an absent key.
+const GenerationContextSchema = Schema.optionalKey(
+  TraceContextSchema.pipe(Schema.catchDecoding(() => Effect.succeed(Option.none()))),
+);
+
+const BriefingServiceResultSchema: Schema.Codec<BriefingServiceResult> = Schema.Struct({
+  submission: BriefingSubmissionSchema,
+  generationContext: GenerationContextSchema,
 });
 
-const decodeBriefingServiceResultEnvelope = Schema.decodeUnknownSync(BriefingServiceResultEnvelopeSchema, {
+// The envelope rejects undeclared keys at every level, so a smuggled field is a submission failure, not dropped data.
+export const decodeBriefingServiceResult = Schema.decodeUnknownSync(BriefingServiceResultSchema, {
   errors: 'all',
   onExcessProperty: 'error',
 });
-
-/** A malformed diagnostic context is dropped; the public submission remains strictly decoded. */
-// oxlint-disable-next-line rules/no-unknown-parameters -- Exported RPC service-result decode boundary; the envelope decoder above runs first.
-export const decodeBriefingServiceResult = (value: unknown): BriefingServiceResult => {
-  const envelope = decodeBriefingServiceResultEnvelope(value);
-  const submission = decodeBriefingSubmission(envelope.submission);
-  const generationContext = decodeTraceContext(envelope.generationContext);
-
-  return generationContext === undefined ? { submission } : { submission, generationContext };
-};

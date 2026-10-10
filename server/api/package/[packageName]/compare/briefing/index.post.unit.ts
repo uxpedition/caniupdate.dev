@@ -1,7 +1,7 @@
 import { Schema } from 'effect';
 import { mockEvent } from 'h3';
 import { Miniflare } from 'miniflare';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
 import type { BriefingSubmission } from '#shared/comparison/briefing/briefingJob.defs';
@@ -172,13 +172,20 @@ const isScalarString = Schema.is(Schema.String);
 
 const decodeConsoleLogRecord = Schema.decodeUnknownSync(ConsoleLogRecordSchema, { errors: 'all' });
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Logged console values are runtime-owned; the string and JSON checks below are the validation.
-const annotationsFromLog = (value: unknown): ConsoleLogRecord['annotations'] => {
+// Console spies record each argument as unknown; the first argument of a call is narrowed to a string here, at capture.
+const loggedLine = (log: MockInstance, call = 0): string => {
+  const value: unknown = log.mock.calls[call]?.[0];
+
   if (!isScalarString(value)) throw new Error('Expected a JSON console record');
+
+  return value;
+};
+
+const annotationsFromLog = (line: string): ConsoleLogRecord['annotations'] => {
   let record: unknown;
 
   try {
-    record = JSON.parse(value);
+    record = JSON.parse(line);
   } catch {
     throw new Error('Expected a valid JSON console record');
   }
@@ -234,7 +241,7 @@ describe('briefing submission endpoint', () => {
 
       expect(response.status).toBe(200);
       expect(submit).toHaveBeenCalledWith(resolved);
-      expect(annotationsFromLog(log.mock.calls[0]?.[0])).toMatchObject({
+      expect(annotationsFromLog(loggedLine(log))).toMatchObject({
         'comparison.package.name': 'minimist',
         'comparison.version.from': '1.4.0',
         'comparison.version.to': '3.0.0',
@@ -275,8 +282,8 @@ describe('briefing submission endpoint', () => {
       await expect(first.json()).resolves.toEqual(pending());
       await expect(second.json()).resolves.toEqual(pending());
       expect(log).toHaveBeenCalledTimes(2);
-      const firstAnnotations = annotationsFromLog(log.mock.calls[0]?.[0]);
-      const secondAnnotations = annotationsFromLog(log.mock.calls[1]?.[0]);
+      const firstAnnotations = annotationsFromLog(loggedLine(log));
+      const secondAnnotations = annotationsFromLog(loggedLine(log, 1));
       expect(firstAnnotations).toMatchObject({
         traceId: '4bf92f3577b34da6a3ce929d0e0e4736',
         parentSpanId: '00f067aa0ba902b7',
@@ -301,7 +308,7 @@ describe('briefing submission endpoint', () => {
 
       expect(response.status).toBe(200);
       expect(log).toHaveBeenCalledTimes(1);
-      const annotations = annotationsFromLog(log.mock.calls[0]?.[0]);
+      const annotations = annotationsFromLog(loggedLine(log));
       expect(annotations.traceId).toMatch(/^[0-9a-f]{32}$/);
       expect(annotations.spanId).toMatch(/^[0-9a-f]{16}$/);
       expect(annotations.parentSpanId).toBeUndefined();
@@ -473,14 +480,14 @@ describe('briefing submission endpoint', () => {
       });
 
       expect(log).toHaveBeenCalledTimes(1);
-      const line: unknown = log.mock.calls[0]?.[0];
+      const line = loggedLine(log);
       expect(annotationsFromLog(line)).toMatchObject({
         'comparison.package.name': 'minimist',
         'comparison.requested.to': 'latest',
       });
       expect(annotationsFromLog(line)).not.toHaveProperty('comparison.requested.from');
-      expect(String(line)).not.toContain('private.example');
-      expect(String(line)).not.toContain('token=secret');
+      expect(line).not.toContain('private.example');
+      expect(line).not.toContain('token=secret');
       expect(submit).not.toHaveBeenCalled();
     } finally {
       log.mockRestore();
@@ -544,7 +551,7 @@ describe('briefing submission endpoint', () => {
       });
       // A foreign failure contributes its name and nothing else: no message, no provider text, no credential.
       expect(log).toHaveBeenCalledTimes(1);
-      expect(annotationsFromLog(log.mock.calls[0]?.[0])).toMatchObject({
+      expect(annotationsFromLog(loggedLine(log))).toMatchObject({
         name: 'Error',
         'comparison.package.name': 'minimist',
         'comparison.version.from': '1.0.0',
@@ -560,7 +567,7 @@ describe('briefing submission endpoint', () => {
         statusCode: 503,
         statusMessage: 'Briefing service unavailable',
       });
-      expect(annotationsFromLog(log.mock.calls[0]?.[0])).toMatchObject({
+      expect(annotationsFromLog(loggedLine(log))).toMatchObject({
         name: 'BriefingSubmissionError',
         reason: 'cache-error',
       });
@@ -571,7 +578,7 @@ describe('briefing submission endpoint', () => {
         Object.assign(new Error('provider body: api key sk-live-123 leaked'), { name: 'BriefingSubmissionError' }),
       );
       await expect(handler(eventFor())).rejects.toMatchObject({ statusCode: 503 });
-      expect(annotationsFromLog(log.mock.calls[0]?.[0])).toMatchObject({ name: 'BriefingSubmissionError' });
+      expect(annotationsFromLog(loggedLine(log))).toMatchObject({ name: 'BriefingSubmissionError' });
       expect(String(log.mock.calls[0]?.[0])).not.toContain('sk-live-123');
     } finally {
       log.mockRestore();

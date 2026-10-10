@@ -45,12 +45,24 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
   async load<T>(key: string, loader: () => Promise<T>, options: ComparisonEvidenceCacheOptions<T>): Promise<T> {
     const existing = this.inFlight.get(key);
 
-    if (existing !== undefined) return validateValue(await existing, options);
+    if (existing !== undefined) {
+      const value = await existing;
+
+      if (!isValidValue(value, options))
+        throw new EvidenceStorageCorruptionError({ detail: 'Evidence value does not match its schema' });
+
+      return value;
+    }
 
     this.cleanupExpired();
     const cached = this.read(key, Date.now());
 
-    if (cached.found) return validateValue(cached.value, options);
+    if (cached.found) {
+      if (!isValidValue(cached.value, options))
+        throw new EvidenceStorageCorruptionError({ detail: 'Evidence value does not match its schema' });
+
+      return cached.value;
+    }
 
     const pending = this.populate(key, loader, options);
     this.inFlight.set(key, pending);
@@ -186,12 +198,9 @@ function storageOperation<T>(operation: StorageOperation, run: () => T): T {
   }
 }
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Persisted cache values are unknown until the caller's isValid predicate narrows them.
-function validateValue<T>(value: unknown, options: ComparisonEvidenceCacheOptions<T>): T {
-  if (!options.isValid(value))
-    throw new EvidenceStorageCorruptionError({ detail: 'Evidence value does not match its schema' });
-
-  return value;
+// Persisted and in-flight cache values stay unknown until the caller's isValid predicate narrows them.
+function isValidValue<T>(value: unknown, options: ComparisonEvidenceCacheOptions<T>): value is T {
+  return options.isValid(value);
 }
 
 function validateMetadata(row: RecordRow): void {

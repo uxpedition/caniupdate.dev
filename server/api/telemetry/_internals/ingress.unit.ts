@@ -128,7 +128,7 @@ const expectTraceExport = (forwarded: readonly ForwardedRequest[]): void => {
   expect(forwardedText).not.toContain('private status text');
   expect(forwardedText).not.toContain('private top-level data');
 
-  const decoded = decodeTelemetryPayload('traces', parseJson(forwardedText));
+  const decoded = decodeTelemetryPayload('traces')(parseJson(forwardedText));
   const group = decoded.resourceSpans[0];
 
   if (group === undefined) throw new Error('Expected forwarded trace resource');
@@ -143,7 +143,7 @@ const expectTraceExport = (forwarded: readonly ForwardedRequest[]): void => {
 const expectLogExport = (forwarded: readonly ForwardedRequest[]): void => {
   const { input, init } = requireForwardedRequest(forwarded);
   expect(String(input)).toBe('http://127.0.0.1:4318/v1/logs');
-  const payload = decodeTelemetryPayload('logs', parseJson(String(init.body)));
+  const payload = decodeTelemetryPayload('logs')(parseJson(String(init.body)));
   const group = payload.resourceLogs[0];
 
   if (group === undefined) throw new Error('Expected forwarded log resource');

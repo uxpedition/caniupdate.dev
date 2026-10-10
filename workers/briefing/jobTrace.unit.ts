@@ -36,10 +36,7 @@ const packet: BriefingEvidence = {
 
 const isScalarString = Schema.is(Schema.String);
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Captured console values are runtime-owned; the string guard and strict decoder below validate each one.
-const parseConsoleLog = (line: unknown): typeof ConsoleLogSchema.Type | undefined => {
-  if (!isScalarString(line)) return undefined;
-
+const parseConsoleLog = (line: string): typeof ConsoleLogSchema.Type | undefined => {
   try {
     const value: unknown = JSON.parse(line);
 
@@ -54,8 +51,7 @@ describe('generation trace persistence', () => {
     let persisted: LegacyRecord | undefined;
 
     const storage = {
-      // oxlint-disable-next-line rules/no-unknown-parameters -- Storage stubs receive driver-owned values; decodeLegacyRecord validates each one.
-      put: async (_key: string, value: unknown) => {
+      put: async <T>(_key: string, value: T) => {
         persisted = decodeLegacyRecord(value);
       },
     };
@@ -77,7 +73,11 @@ describe('generation trace persistence', () => {
       expect(result.record.traceContext).toEqual(context);
 
       const acceptanceLog = consoleLog.mock.calls
-        .map(([line]) => parseConsoleLog(line))
+        .map(([line]) => {
+          const value: unknown = line;
+
+          return isScalarString(value) ? parseConsoleLog(value) : undefined;
+        })
         .find((line) => line?.message === 'briefing.generation.accepted');
 
       expect(acceptanceLog?.annotations).toMatchObject({
@@ -104,7 +104,11 @@ describe('generation trace persistence', () => {
       );
 
       const attachmentLog = consoleLog.mock.calls
-        .map(([line]) => parseConsoleLog(line))
+        .map(([line]) => {
+          const value: unknown = line;
+
+          return isScalarString(value) ? parseConsoleLog(value) : undefined;
+        })
         .find((line) => line?.message === 'briefing.generation.trace_context.attached');
 
       expect(attachmentLog?.annotations).toMatchObject({

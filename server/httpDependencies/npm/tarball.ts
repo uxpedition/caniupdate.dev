@@ -211,10 +211,7 @@ type ContentState = {
   allowance: number;
 };
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Tar entry stream feeds arbitrary chunk values; the Buffer check validates each one.
-function consumeContentChunk(value: unknown, state: ContentState, signal: AbortSignal): void {
-  if (!Buffer.isBuffer(value)) throw new Error('Invalid tarball content chunk');
-  const chunk = value;
+function consumeContentChunk(chunk: Buffer, state: ContentState, signal: AbortSignal): void {
   signal.throwIfAborted();
   state.actual += chunk.length;
   state.hash?.update(chunk);
@@ -239,7 +236,11 @@ async function inspectContent(
     allowance,
   };
 
-  for await (const value of entry) consumeContentChunk(value, state, signal);
+  for await (const value of entry) {
+    if (!Buffer.isBuffer(value)) throw new Error('Invalid tarball content chunk');
+
+    consumeContentChunk(value, state, signal);
+  }
 
   if (state.actual !== file.size) throw new Error('Incomplete tarball entry');
 

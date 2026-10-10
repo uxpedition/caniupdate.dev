@@ -39,7 +39,11 @@ import { FIXTURE_API_KEY, MODEL, SOURCE_ID, providerFixture } from './provider.s
 const execFileAsync = promisify(execFile);
 
 /** Any non-null, non-function container: the gate before probing unconverted wire bodies. */
-const isContainerObject = Schema.is(Schema.Struct({}));
+const isContainerObject = Schema.is(
+  Schema.Union([Schema.Record(Schema.String, Schema.Unknown), Schema.Array(Schema.Unknown)]),
+);
+
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 
 const isScalarString = Schema.is(Schema.String);
 
@@ -257,16 +261,14 @@ export type RuntimeFixture = {
   structuredLogs(): readonly string[];
   /** One request against the public hostname, through the real runtime, exactly as a browser sends it. */
   publicFetch: DispatchFetch;
-  // The harness adapter reports packets and response bodies unconverted: asserting the wire contract itself is the
-  // point, so it publishes unknown at these ports and the fixture decoders validate the response shapes they use.
-  // oxlint-disable rules/no-unknown-parameters
-  submit(packet: unknown): Promise<SubmitResult>;
+  // The harness adapter reports response bodies unconverted: asserting the wire contract itself is the point, so the
+  // fixture decoders validate only the response shapes they use.
+  submit<T>(packet: T): Promise<SubmitResult>;
   /** The same real service-binding call, reported unconverted so a test can assert the wire contract itself. */
-  rawSubmit(packet: unknown): Promise<RawSubmission>;
-  submitToJob(hash: string, packet: unknown): Promise<SubmitResult>;
+  rawSubmit<T>(packet: T): Promise<RawSubmission>;
+  submitToJob<T>(hash: string, packet: T): Promise<SubmitResult>;
   jobEvent(hash: string): Promise<BriefingJobEvent | undefined>;
-  publicPost(url: string, body: unknown): Promise<{ status: number; text: string }>;
-  // oxlint-enable rules/no-unknown-parameters
+  publicPost<T>(url: string, body: T): Promise<{ status: number; text: string }>;
   /**
    * Miniflare's real object eviction: workerd deactivates the object and, because hibernation is requested, keeps its
    * accepted sockets attached for whatever wakes it next. This is the eviction a production runtime performs on its
@@ -404,19 +406,27 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
 
     // These helpers pass wire bodies through to and from the real runtime unconverted; the wrapped decoders below
     // validate only the shapes a test asserts on (BriefingServiceResult / RawSubmission), never the transport itself.
-    // oxlint-disable rules/no-unknown-parameters
-    const callHarness = async (path: string, body: unknown): Promise<{ status: number; body: unknown }> => {
+    const callHarness = async <T>(path: string, body: T): Promise<{ status: number; body: Schema.Json }> => {
       const response = await harness.fetch(`https://harness.test${path}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
 
-      return { status: response.status, body: await response.json() };
+      return { status: response.status, body: decodeJson(await response.json()) };
     };
 
-    const readSubmitResult = (status: number, body: unknown): SubmitResult => {
-      if (status !== 200) return { httpStatus: status, submission: undefined, error: rejectionReason(body) };
+    const rejectionReason = (body: Schema.Json): string => {
+      if (!isContainerObject(body) || !('error' in body)) return '';
+
+      return String(body.error);
+    };
+
+    const readSubmitResult = (status: number, body: Schema.Json): SubmitResult => {
+      if (status !== 200) {
+        return { httpStatus: status, submission: undefined, error: rejectionReason(body) };
+      }
+
       const result = decodeBriefingServiceResult(body);
 
       return {
@@ -427,9 +437,15 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
       };
     };
 
-    const readRawSubmission = (status: number, body: unknown): RawSubmission => {
+    const readRawSubmission = (status: number, body: Schema.Json): RawSubmission => {
       if (status !== 200 || !isContainerObject(body)) {
-        return { httpStatus: status, kind: undefined, symbols: [], text: undefined, error: rejectionReason(body) };
+        return {
+          httpStatus: status,
+          kind: undefined,
+          symbols: [],
+          text: undefined,
+          error: rejectionReason(body),
+        };
       }
 
       return {
@@ -440,7 +456,6 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
         error: undefined,
       };
     };
-    // oxlint-enable rules/no-unknown-parameters
 
     return {
       database,
@@ -450,18 +465,17 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
       queueDeliveries: (): number => log.lines.filter((line) => QUEUE_DELIVERY.test(line.replace(ANSI, ''))).length,
       structuredLogs: (): readonly string[] => structuredLogs,
       publicFetch: (input, init) => runtime.dispatchFetch(input, init),
-      // oxlint-disable rules/no-unknown-parameters -- The adapter passes packets and post bodies through unconverted (see the fixture contract above).
-      async submit(packet: unknown): Promise<SubmitResult> {
+      async submit<T>(packet: T): Promise<SubmitResult> {
         const { status, body } = await callHarness('/submit', packet);
 
         return readSubmitResult(status, body);
       },
-      async rawSubmit(packet: unknown): Promise<RawSubmission> {
+      async rawSubmit<T>(packet: T): Promise<RawSubmission> {
         const { status, body } = await callHarness('/raw-submit', packet);
 
         return readRawSubmission(status, body);
       },
-      async submitToJob(hash: string, packet: unknown): Promise<SubmitResult> {
+      async submitToJob<T>(hash: string, packet: T): Promise<SubmitResult> {
         const { status, body } = await callHarness(`/job-submit?hash=${hash}`, packet);
 
         return readSubmitResult(status, body);
@@ -473,7 +487,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
 
         return decodeBriefingJobEvent(await response.json());
       },
-      async publicPost(url: string, body: unknown): Promise<{ status: number; text: string }> {
+      async publicPost<T>(url: string, body: T): Promise<{ status: number; text: string }> {
         const response = await worker.fetch(url, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -482,7 +496,6 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
 
         return { status: response.status, text: await response.text() };
       },
-      // oxlint-enable rules/no-unknown-parameters
       async evictJob(hash: string): Promise<void> {
         await runtime.unsafeEvictDurableObject(WORKER_NAME, 'BriefingJob', { name: hash, webSockets: 'hibernate' });
       },
@@ -492,14 +505,6 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
     await runtime.dispose();
     throw error;
   }
-}
-
-/** The harness reports a rejected submission as a sanitized `{ error }` body; anything else is an empty reason. */
-// oxlint-disable-next-line rules/no-unknown-parameters -- Rejected-submission bodies are runtime-owned; the container guard below validates the shape it reads.
-function rejectionReason(body: unknown): string {
-  if (isContainerObject(body) && 'error' in body) return String(body.error);
-
-  return '';
 }
 
 /**

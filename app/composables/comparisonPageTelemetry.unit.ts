@@ -45,8 +45,8 @@ describe('openComparisonPage', () => {
 
     if (logsRequest === undefined || tracesRequest === undefined)
       throw new Error('Expected OTLP log and trace exports');
-    const logs = decodeTelemetryPayload('logs', JSON.parse(logsRequest.body));
-    const traces = decodeTelemetryPayload('traces', JSON.parse(tracesRequest.body));
+    const logs = decodeTelemetryPayload('logs')(JSON.parse(logsRequest.body));
+    const traces = decodeTelemetryPayload('traces')(JSON.parse(tracesRequest.body));
     const log = firstRecord(firstRecord(firstRecord(logs.resourceLogs).scopeLogs).logRecords);
     const span = firstRecord(firstRecord(firstRecord(traces.resourceSpans).scopeSpans).spans);
 

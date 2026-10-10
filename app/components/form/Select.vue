@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { Check, ChevronDown } from '@lucide/vue';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { Schema } from 'effect';
 import {
+  type AcceptableValue,
   ListboxRoot,
   ListboxContent,
   ListboxItem,
@@ -125,10 +127,10 @@ const focusListbox = () => {
   target?.focus();
 };
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Reka-UI emits AcceptableValue selections; the string acceptance is the guarded contract.
-const selectValue = (value: unknown) => {
-  // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating Reka-UI's declared AcceptableValue selection union, not unparsed input.
-  selectedValue.value = typeof value === 'string' ? value : null;
+const isScalarString = Schema.is(Schema.String);
+
+const selectValue = (value: AcceptableValue) => {
+  selectedValue.value = isScalarString(value) ? value : null;
   open.value = false;
 };
 

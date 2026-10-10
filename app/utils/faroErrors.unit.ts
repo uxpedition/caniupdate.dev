@@ -107,7 +107,7 @@ describe('Faro error integration', () => {
     const logsRequest = requests.find(({ url }) => url.endsWith('/v1/logs'));
 
     if (logsRequest === undefined) throw new Error('Expected an OTLP log export');
-    const logs = decodeTelemetryPayload('logs', JSON.parse(logsRequest.body));
+    const logs = decodeTelemetryPayload('logs')(JSON.parse(logsRequest.body));
     const records = logs.resourceLogs.flatMap(({ scopeLogs }) => scopeLogs.flatMap(({ logRecords }) => logRecords));
     const serialized = JSON.stringify(logs);
 

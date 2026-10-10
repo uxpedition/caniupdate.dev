@@ -271,8 +271,8 @@ describe('packageBriefingQueryOptions', () => {
 
     if (logsRequest === undefined || tracesRequest === undefined)
       throw new Error('Expected OTLP log and trace exports');
-    const logs = decodeTelemetryPayload('logs', JSON.parse(logsRequest.body));
-    const traces = decodeTelemetryPayload('traces', JSON.parse(tracesRequest.body));
+    const logs = decodeTelemetryPayload('logs')(JSON.parse(logsRequest.body));
+    const traces = decodeTelemetryPayload('traces')(JSON.parse(tracesRequest.body));
     const log = logs.resourceLogs.flatMap(({ scopeLogs }) => scopeLogs.flatMap(({ logRecords }) => logRecords))[0];
     const span = traces.resourceSpans.flatMap(({ scopeSpans }) => scopeSpans.flatMap(({ spans }) => spans))[0];
 

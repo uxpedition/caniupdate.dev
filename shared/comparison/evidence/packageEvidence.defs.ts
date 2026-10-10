@@ -2,14 +2,14 @@ export type PackageEvidenceBodyReadResult = { readonly done: boolean; readonly v
 
 export type PackageEvidenceBodyReader = {
   read(): Promise<PackageEvidenceBodyReadResult>;
-  // oxlint-disable-next-line rules/no-unknown-parameters -- Mirrors WHATWG ReadableStream.cancel's reason contract; callers forward the runtime's own reason unchanged.
-  cancel(reason?: unknown): Promise<void>;
+  // Mirrors WHATWG ReadableStream.cancel: the reason is opaque, forwarded to the runtime, and never inspected here.
+  cancel<Reason>(reason?: Reason): Promise<void>;
   releaseLock(): void;
 };
 
 export type PackageEvidenceResponseBody = {
-  // oxlint-disable-next-line rules/no-unknown-parameters -- Mirrors WHATWG Response-body cancel semantics; callers forward the runtime's own reason unchanged.
-  cancel(reason?: unknown): Promise<void>;
+  // Mirrors WHATWG Response-body cancel: the reason is opaque, forwarded to the runtime, and never inspected here.
+  cancel<Reason>(reason?: Reason): Promise<void>;
   getReader(): PackageEvidenceBodyReader;
 };
 

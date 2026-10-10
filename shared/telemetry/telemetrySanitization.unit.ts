@@ -115,7 +115,7 @@ describe('telemetry sanitization', () => {
       ],
     } satisfies OtlpTracer.TraceData;
 
-    const decoded = decodeTelemetryPayload('traces', sanitizeTelemetryTraces(nativeBatch));
+    const decoded = decodeTelemetryPayload('traces')(sanitizeTelemetryTraces(nativeBatch));
     const spans = decoded.resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans));
     const root = spans.find(({ name }) => name === 'briefing.generation');
     const child = spans.find(({ name }) => name === 'briefing.generation.accepted');

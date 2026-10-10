@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import type { ReadableEventMap } from 'node:stream';
 import { createGunzip, type Gunzip } from 'node:zlib';
 
 import { Cause, Effect, Exit, Fiber, Queue, Schema, Scope, Stream } from 'effect';
@@ -202,13 +203,10 @@ function feedCompressed(gunzip: Gunzip, events: EventAdapter, body: Buffer): Eff
   });
 }
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Gunzip output feeds arbitrary chunk values; the Buffer/Uint8Array checks validate each one.
-function requireBufferChunk(value: unknown): Buffer {
-  if (Buffer.isBuffer(value)) return value;
+function asBufferChunk(chunk: Uint8Array): Buffer {
+  if (Buffer.isBuffer(chunk)) return chunk;
 
-  if (!(value instanceof Uint8Array)) throw new Error('Invalid tarball decompressed chunk');
-
-  return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  return Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
 }
 
 function retainTail(tail: Buffer, tailLength: number, chunk: Buffer): number {
@@ -237,21 +235,35 @@ function inspectArchiveTrailer(total: number, tail: Buffer, tailLength: number):
   }
 }
 
-function decompressedChunks(gunzip: Gunzip, signalReady: () => void): Stream.Stream<unknown, unknown> {
-  return Stream.callback<unknown, unknown>(
+// Gunzip's 'data' listener is untyped; non-binary output is rejected here, before it reaches the consumer.
+function decompressedChunkListener(
+  gunzip: Gunzip,
+  queue: Queue.Enqueue<Buffer, unknown>,
+): (...args: ReadableEventMap['data']) => void {
+  return (chunk) => {
+    gunzip.pause();
+    const value: unknown = chunk;
+
+    if (!Buffer.isBuffer(value) && !(value instanceof Uint8Array)) {
+      Queue.failCauseUnsafe(queue, Cause.fail(new Error('Invalid tarball decompressed chunk')));
+
+      return;
+    }
+
+    if (!Queue.offerUnsafe(queue, asBufferChunk(value))) {
+      Queue.failCauseUnsafe(queue, Cause.fail(new Error('Gunzip output queue overflow')));
+    }
+  };
+}
+
+function decompressedChunks(gunzip: Gunzip, signalReady: () => void): Stream.Stream<Buffer, unknown> {
+  return Stream.callback<Buffer, unknown>(
     (queue) =>
       Effect.acquireRelease(
         Effect.sync(() => {
           let ended = false;
 
-          // oxlint-disable-next-line rules/no-unknown-parameters -- Gunzip output feeds arbitrary chunk values; the queue consumer validates each one.
-          const onData = (chunk: unknown) => {
-            gunzip.pause();
-
-            if (!Queue.offerUnsafe(queue, chunk)) {
-              Queue.failCauseUnsafe(queue, Cause.fail(new Error('Gunzip output queue overflow')));
-            }
-          };
+          const onData = decompressedChunkListener(gunzip, queue);
 
           const onEnd = () => {
             ended = true;
@@ -294,18 +306,15 @@ function consumeGunzip(
   let total = 0;
 
   return Effect.gen(function* () {
-    yield* Stream.runForEach(decompressedChunks(gunzip, signalReady), (rawChunk) =>
+    yield* Stream.runForEach(decompressedChunks(gunzip, signalReady), (chunk) =>
       Effect.gen(function* () {
-        const chunk = yield* Effect.try({
+        yield* Effect.try({
           try: () => {
-            const value = requireBufferChunk(rawChunk);
-            const nextTotal = total + value.length;
+            const nextTotal = total + chunk.length;
 
             if (nextTotal > MAX_ARCHIVE_BYTES) throw new Error('Tarball exceeds archive byte limit');
             total = nextTotal;
-            tailLength = retainTail(tail, tailLength, value);
-
-            return value;
+            tailLength = retainTail(tail, tailLength, chunk);
           },
           catch: (cause) => cause,
         });

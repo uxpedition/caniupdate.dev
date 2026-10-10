@@ -73,9 +73,8 @@ hot?.dispose((data) => {
   data[STATE_KEY] = state;
 });
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Faro SDK payload attributes arrive untyped; each value is guarded before sanitization.
-const addErrorAttribute = (attributes: Record<string, string>, key: string, value: unknown): void => {
-  if (!isErrorAttributeKey(key) || !isScalarString(value)) return;
+const addErrorAttribute = (attributes: Record<string, string>, key: string, value: string | undefined): void => {
+  if (value === undefined || !isErrorAttributeKey(key)) return;
   const sanitized = sanitizeErrorAttribute(key, value);
 
   if (sanitized !== undefined && sanitized.length > 0) attributes[key] = sanitized;
@@ -151,8 +150,8 @@ const safeExceptionEvent = (event: ExceptionEventExtended): ExceptionEvent => {
 
 const toSafeLog = (event: ExceptionEvent, current: FaroState): SafeErrorLog => {
   const attributes: Record<string, string> = {};
-  addErrorAttribute(attributes, 'exception.type', event.type);
-  addErrorAttribute(attributes, 'exception.message', event.value);
+  addErrorAttribute(attributes, 'exception.type', isScalarString(event.type) ? event.type : undefined);
+  addErrorAttribute(attributes, 'exception.message', isScalarString(event.value) ? event.value : undefined);
 
   if (event.stacktrace !== undefined) {
     const frames = safeStackFrames(event.stacktrace.frames);

@@ -57,18 +57,6 @@ export type ProviderFixture = {
   close(): Promise<void>;
 };
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- The provider fixture serializes call-site-shaped bullets; the service decoder validates the response.
-const providerResponse = (bullets: unknown): string =>
-  JSON.stringify({
-    id: 'chatcmpl-fixture',
-    object: 'chat.completion',
-    created: 1_700_000_000,
-    model: MODEL,
-    choices: [
-      { index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify({ bullets }) } },
-    ],
-  });
-
 /** The response a mode describes. `stall` never gets here: a held request is released into whatever mode is current. */
 function respond(response: ServerResponse, mode: ProviderMode): void {
   if (mode.kind === 'http-error') {
@@ -78,8 +66,20 @@ function respond(response: ServerResponse, mode: ProviderMode): void {
     return;
   }
 
+  const bullets = mode.kind === 'invalid' ? [] : validBullets;
+
   response.writeHead(200, { 'content-type': 'application/json' });
-  response.end(providerResponse(mode.kind === 'invalid' ? [] : validBullets));
+  response.end(
+    JSON.stringify({
+      id: 'chatcmpl-fixture',
+      object: 'chat.completion',
+      created: 1_700_000_000,
+      model: MODEL,
+      choices: [
+        { index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify({ bullets }) } },
+      ],
+    }),
+  );
 }
 
 /**

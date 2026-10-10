@@ -49,14 +49,9 @@ type WorkerEffectLog = typeof WorkerEffectLogSchema.Type;
 
 const decodeWorkerEffectLog = Schema.decodeUnknownSync(WorkerEffectLogSchema, { errors: 'all' });
 
-const isScalarString = Schema.is(Schema.String);
-
-// oxlint-disable-next-line rules/no-unknown-parameters -- Captured effect-log values are runtime-owned; the string guard and strict decoder below validate each one.
-const parseWorkerEffectLog = (value: unknown): WorkerEffectLog | undefined => {
-  if (!isScalarString(value)) return undefined;
-
+const parseWorkerEffectLog = (line: string): WorkerEffectLog | undefined => {
   try {
-    return decodeWorkerEffectLog(JSON.parse(value));
+    return decodeWorkerEffectLog(JSON.parse(line));
   } catch {
     return undefined;
   }

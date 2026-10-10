@@ -1,4 +1,5 @@
 import { Schema } from 'effect';
+import type { RuntimeConfig } from 'nuxt/schema';
 
 import type { NuxtApp } from '#app';
 import { defineNuxtPlugin, useRuntimeConfig } from '#imports';
@@ -9,33 +10,17 @@ import {
   type ServerTelemetryBaseConfig,
 } from '#shared/telemetry/telemetryDiagnostics';
 
-/** Any non-null, non-function container object: the gate before probing nested runtime-config nodes. */
-const isScopeObject = Schema.is(Schema.Struct({}));
-
 const isScalarString = Schema.is(Schema.String);
 
 /** The SSR app owns its runtime config; no Nitro bundle import is required to reach it. */
-// oxlint-disable-next-line rules/no-unknown-parameters -- Exported runtime-config reader container; Nuxt owns the config object shape.
-const telemetryFromRuntime = (runtime: unknown): ServerTelemetryBaseConfig => {
-  const config: unknown = runtime;
-
-  const nested = (path: string) =>
-    path.split('.').reduce<unknown>((value, key) => {
-      if (!isScopeObject(value) || !Reflect.has(value, key)) return undefined;
-
-      const child: unknown = Reflect.get(value, key);
-
-      return child;
-    }, config);
-
-  const endpoint = nested('otelEndpoint');
-
-  const endpointText = isScalarString(endpoint) ? endpoint : '';
+const telemetryFromRuntime = (runtime: RuntimeConfig): ServerTelemetryBaseConfig => {
+  // Nuxt types the members, but environment overrides can change their runtime value, so each is checked here.
+  const endpointText = isScalarString(runtime.otelEndpoint) ? runtime.otelEndpoint : '';
 
   return {
-    enabled: nested('public.telemetryEnabled') === true && endpointText.trim() !== '',
+    enabled: runtime.public.telemetryEnabled === true && endpointText.trim() !== '',
     endpoint: endpointText,
-    headers: decodeTelemetryHeaders(nested('otelHeaders')),
+    headers: decodeTelemetryHeaders(runtime.otelHeaders),
   };
 };
 

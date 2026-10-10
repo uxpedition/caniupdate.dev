@@ -271,7 +271,7 @@ const readBrowserTelemetryPayload = async (
   try {
     const body = await readBoundedTelemetryBody(request);
 
-    return forceBrowserIdentity(signal, decodeTelemetryPayload(signal, body));
+    return forceBrowserIdentity(signal, decodeTelemetryPayload(signal)(body));
   } catch (error) {
     release();
 

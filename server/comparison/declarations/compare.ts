@@ -1,4 +1,4 @@
-import { Schema } from 'effect';
+import { Predicate, type Schema } from 'effect';
 
 import type {
   DeclaredPackageVersion,
@@ -8,10 +8,9 @@ import type {
   ValueComparison,
 } from '#shared/comparison/comparison.defs';
 
-/** Any container in the conditional export tree: plain records and arrays both branch the walker below. */
-const isExportContainer = Schema.is(
-  Schema.Union([Schema.Record(Schema.String, Schema.Unknown), Schema.Array(Schema.Unknown)]),
-);
+// Children are already decoded JSON; only the container shape needs narrowing at each level.
+const isExportContainer = (value: Schema.Json): value is Schema.JsonObject | Schema.JsonArray =>
+  Predicate.isObjectOrArray(value);
 
 // Keep object order for conditional exports and typesVersions: first matching conditions win.
 const equal = <T>(from: T, to: T): boolean => JSON.stringify(from) === JSON.stringify(to);
@@ -72,9 +71,9 @@ function moduleDeclaration(version: DeclaredPackageVersion) {
   };
 }
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Recursive walk over registry-declared conditional export trees; the container gate checks each level.
-function hasTypeCondition(value: unknown): boolean {
-  if (value === null || !isExportContainer(value)) return false;
+// Walks registry-declared conditional export JSON; objects and arrays both branch, scalars end the walk.
+function hasTypeCondition(value: Schema.Json): boolean {
+  if (!isExportContainer(value)) return false;
 
   return Object.entries(value).some(
     ([key, child]) => key === 'types' || key.startsWith('types@') || hasTypeCondition(child),
@@ -88,7 +87,7 @@ function typeDeclaration(version: DeclaredPackageVersion) {
     ...(types === undefined ? {} : { types }),
     ...(typings === undefined ? {} : { typings }),
     ...(typesVersions === undefined ? {} : { typesVersions }),
-    exports: hasTypeCondition(exports) ? (exports ?? null) : null,
+    exports: exports !== undefined && hasTypeCondition(exports) ? exports : null,
   };
 }
 

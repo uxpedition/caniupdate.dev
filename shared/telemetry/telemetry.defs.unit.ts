@@ -127,7 +127,7 @@ describe('decodeTelemetryPayload', () => {
       { key: 'error.source', value: { stringValue: 'vue' } },
       { key: 'user.email', value: { stringValue: 'alice@example.com' } },
     ];
-    const decoded = decodeTelemetryPayload('logs', payload);
+    const decoded = decodeTelemetryPayload('logs')(payload);
     const safe = first(first(first(decoded.resourceLogs).scopeLogs).logRecords);
     expect(safe.attributes).toContainEqual({
       key: 'exception.stacktrace',
@@ -138,7 +138,7 @@ describe('decodeTelemetryPayload', () => {
     expect(JSON.stringify(decoded)).not.toMatch(/alice|fixture-secret|collector-secret/);
   });
   it('retains approved log identities and linked context while stripping unknown fields and annotations', () => {
-    const decoded = decodeTelemetryPayload('logs', logPayload());
+    const decoded = decodeTelemetryPayload('logs')(logPayload());
     const serialized = JSON.stringify(decoded);
 
     expect(serialized).not.toContain('collector-secret');
@@ -176,7 +176,7 @@ describe('decodeTelemetryPayload', () => {
   });
 
   it('preserves hex IDs and span links while removing exception text and error descriptions', () => {
-    const decoded = decodeTelemetryPayload('traces', tracePayload());
+    const decoded = decodeTelemetryPayload('traces')(tracePayload());
     const span = decoded.resourceSpans[0]?.scopeSpans[0]?.spans[0];
 
     expect(span).toMatchObject({
@@ -195,7 +195,7 @@ describe('decodeTelemetryPayload', () => {
     expect(span?.status).not.toHaveProperty('message');
     expect(span?.events).toEqual([]);
     expect(JSON.stringify(decoded)).not.toContain('collector-secret');
-    expect(decodeTelemetryPayload('traces', decoded)).toEqual(decoded);
+    expect(decodeTelemetryPayload('traces')(decoded)).toEqual(decoded);
   });
 
   it.each([
@@ -221,7 +221,7 @@ describe('decodeTelemetryPayload', () => {
     const payload = logPayload();
     const record = first(first(first(payload.resourceLogs).scopeLogs).logRecords);
     record.attributes = [{ key, value: { stringValue: value } }];
-    const decoded = decodeTelemetryPayload('logs', payload);
+    const decoded = decodeTelemetryPayload('logs')(payload);
     const attributes = first(first(first(decoded.resourceLogs).scopeLogs).logRecords).attributes;
     expect(attributes).toEqual(retained ? [{ key, value: { stringValue: value } }] : []);
   });
@@ -229,11 +229,11 @@ describe('decodeTelemetryPayload', () => {
   it('rejects unknown instrumentation, malformed hexadecimal IDs, and over-budget record counts', () => {
     const unknownInstrumentation = logPayload();
     first(first(unknownInstrumentation.resourceLogs).scopeLogs).scope.name = 'unreviewed.operation';
-    expect(() => decodeTelemetryPayload('logs', unknownInstrumentation)).toThrow();
+    expect(() => decodeTelemetryPayload('logs')(unknownInstrumentation)).toThrow();
 
     const malformedId = tracePayload();
     first(first(first(malformedId.resourceSpans).scopeSpans).spans).traceId = '4bf92f3577b34da6a3ce929d0e0e473g';
-    expect(() => decodeTelemetryPayload('traces', malformedId)).toThrow();
+    expect(() => decodeTelemetryPayload('traces')(malformedId)).toThrow();
 
     const overBudget = logPayload();
     const scopeLogs = first(first(overBudget.resourceLogs).scopeLogs);
@@ -242,6 +242,6 @@ describe('decodeTelemetryPayload', () => {
 
     for (let index = 0; index < 65; index++) logRecords.push({ ...record });
     scopeLogs.logRecords = logRecords;
-    expect(() => decodeTelemetryPayload('logs', overBudget)).toThrow();
+    expect(() => decodeTelemetryPayload('logs')(overBudget)).toThrow();
   });
 });

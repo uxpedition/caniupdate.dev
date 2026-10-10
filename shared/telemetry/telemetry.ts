@@ -116,8 +116,8 @@ const filterNativeTracer = (tracer: Tracer.Tracer): Tracer.Tracer =>
   });
 
 const sanitizedSerializationLayer = Layer.succeed(OtlpSerialization.OtlpSerialization, {
-  traces: (data) => HttpBody.jsonUnsafe(decodeTelemetryPayload('traces', sanitizeTelemetryTraces(data))),
-  logs: (data) => HttpBody.jsonUnsafe(decodeTelemetryPayload('logs', sanitizeTelemetryLogs(data))),
+  traces: (data) => HttpBody.jsonUnsafe(decodeTelemetryPayload('traces')(sanitizeTelemetryTraces(data))),
+  logs: (data) => HttpBody.jsonUnsafe(decodeTelemetryPayload('logs')(sanitizeTelemetryLogs(data))),
   metrics: (data) => HttpBody.jsonUnsafe(data),
 });
 

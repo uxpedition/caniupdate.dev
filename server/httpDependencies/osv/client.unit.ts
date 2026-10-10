@@ -1,12 +1,11 @@
-import { Cause, Effect, Result } from 'effect';
+import { Cause, Effect, Result, Schema } from 'effect';
 import { HttpClient, HttpClientResponse } from 'effect/http';
 import { describe, expect, it, vi } from 'vitest';
 
 import { getVulnerability, queryBatch } from './client';
 
 /** Runs an OSV effect against a stub client that replies with `body`, capturing outgoing request URLs. */
-// oxlint-disable-next-line rules/no-unknown-parameters -- Transport stub returning arbitrary OSV JSON; the client decodes every response.
-function runWithStub<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, body: unknown, status = 200) {
+function runWithStub<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, body: Schema.Json, status = 200) {
   const urls: Array<string> = [];
 
   const client = HttpClient.make((request) => {
@@ -21,8 +20,7 @@ function runWithStub<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, b
   };
 }
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Transport stub returning arbitrary OSV JSON after a delay; the client decodes every response.
-function runWithDelayedBody<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, body: unknown) {
+function runWithDelayedBody<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, body: Schema.Json) {
   let timer: ReturnType<typeof setTimeout>;
   const started = Promise.withResolvers<void>();
 
@@ -108,7 +106,7 @@ describe('queryBatch', () => {
   });
 });
 
-const advisory = {
+const advisory: Schema.Json = {
   schema_version: '1.7.3',
   id: 'GHSA-vh95-rmgr-6w4m',
   modified: '2026-03-13T22:11:31.390433Z',

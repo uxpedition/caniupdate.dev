@@ -1,4 +1,4 @@
-import { Schema } from 'effect';
+import { flow, Result, Schema } from 'effect';
 
 export type TraceContext = { readonly traceId: string; readonly spanId: string };
 
@@ -25,20 +25,11 @@ export const TraceContextSchema: Schema.Codec<TraceContext> = Schema.Struct({
   ),
 });
 
-const decodeTraceContextSync = Schema.decodeUnknownSync(TraceContextSchema, {
-  errors: 'all',
-  onExcessProperty: 'error',
-});
-
 /** Invalid or undeclared persisted diagnostics are absent, never submission failures. */
-// oxlint-disable-next-line rules/no-unknown-parameters -- Exported persisted-data decode boundary; the body runs the strict schema parser above.
-export const decodeTraceContext = (value: unknown): TraceContext | undefined => {
-  try {
-    return decodeTraceContextSync(value);
-  } catch {
-    return undefined;
-  }
-};
+export const decodeTraceContext = flow(
+  Schema.decodeUnknownResult(TraceContextSchema, { errors: 'all', onExcessProperty: 'error' }),
+  Result.getOrUndefined,
+);
 
 /** Parse only the W3C version-00 shape. Incoming sampling flags do not control local console logging. */
 export const parseTraceparent = (value: string | null | undefined): TraceContext | undefined => {

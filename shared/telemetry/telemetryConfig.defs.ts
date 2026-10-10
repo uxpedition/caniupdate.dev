@@ -1,4 +1,4 @@
-import { Schema } from 'effect';
+import { flow, Result, Schema } from 'effect';
 
 export const TelemetryRuntimeConfigSchema = Schema.Struct({ enabled: Schema.Boolean });
 
@@ -30,19 +30,17 @@ const parseHeaderRecord = (text: string): HeaderRecord | undefined => {
   }
 };
 
-// oxlint-disable-next-line rules/no-unknown-parameters -- Exported worker/config header decode boundary; the input is environment-owned until parsed above.
-export const decodeTelemetryHeaders = (input: unknown): Record<string, string> => {
-  const candidate = isScalarString(input) ? parseHeaderRecord(input) : input;
+/** Decode JSON text or a header record at ingress; malformed configuration contributes no headers. */
+export const decodeTelemetryHeaders = flow(
+  Schema.decodeUnknownResult(Schema.Union([Schema.String, HeaderRecordSchema]), { errors: 'all' }),
+  (result): Record<string, string> => {
+    const input = Result.getOrUndefined(result);
+    const record = isScalarString(input) ? parseHeaderRecord(input) : input;
 
-  let record: HeaderRecord | undefined;
-
-  try {
-    record = decodeHeaderRecord(candidate);
-  } catch {
-    record = undefined;
-  }
-
-  return record === undefined
-    ? {}
-    : Object.fromEntries(Object.entries(record).filter((entry): entry is [string, string] => isScalarString(entry[1])));
-};
+    return record === undefined
+      ? {}
+      : Object.fromEntries(
+          Object.entries(record).filter((entry): entry is [string, string] => isScalarString(entry[1])),
+        );
+  },
+);
