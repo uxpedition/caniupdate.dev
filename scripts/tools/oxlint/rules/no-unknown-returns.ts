@@ -16,16 +16,22 @@ type FunctionWithReturnType =
   | ESTree.TSFunctionType
   | ESTree.TSMethodSignature;
 
-/** Ban function contracts that return unknown instead of a parsed domain type. */
+/** Require explicit return contracts that keep unknown within parsing and error-inspection boundaries. */
 export const noUnknownReturnsRule = defineRule({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Disallow functions whose explicit return contract is unknown or Promise<unknown>.',
+      description:
+        'Disallow explicit return annotations exposing unknown, including unions and Promise/PromiseLike wrappers. Keep unknown local to parsing and error inspection: return decoded domain values, bytes or text from transport-only readers, producer-owned contracts, caller types for unchanged forwarding, or validated details/never from error helpers.',
     },
     messages: {
       unknownReturn:
-        'This function exposes `unknown` to its caller. Parse the value at its boundary and return a named domain type.',
+        'expected a concrete return contract, found `unknown` in the return type' +
+        '\nhelp: for external JSON, decode before returning, e.g. `Schema.decodeSync(Schema.fromJsonString(DomainSchema))(text)`' +
+        '\nhelp: transport-only readers can return bytes or text; keep size bounds at the transport boundary' +
+        '\nhelp: reuse producer or fixture contracts; use `T` for unchanged forwarding, validated details for error helpers, and `never` for throw-only helpers' +
+        '\nnote: `unknown` is valid while parsing untrusted data, but should not escape an API without establishing a concrete contract' +
+        '\nnote: a type annotation or assertion does not validate external data; keep runtime decoding and cleanup',
     },
   },
   createOnce(context) {
