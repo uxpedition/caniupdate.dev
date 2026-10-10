@@ -2,6 +2,7 @@
 import { definePageMeta, useSeoMeta } from '#imports';
 
 definePageMeta({ layout: 'site' });
+
 useSeoMeta({ title: 'Privacy · Can I Update?' });
 </script>
 

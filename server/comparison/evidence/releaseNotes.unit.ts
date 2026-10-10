@@ -40,8 +40,10 @@ function run(
   packageName = 'widget',
 ) {
   const calls: string[] = [];
+
   const client = HttpClient.make((request) => {
     calls.push(request.url);
+
     return Effect.succeed(
       HttpClientResponse.fromWeb(request, responses(new Request(request.url, { method: request.method }))),
     );
@@ -58,16 +60,21 @@ function run(
 function releaseAndChangelogResponses(releases: unknown, changelog: string | Response = '# Changelog\n') {
   return (request: Request) => {
     const url = new URL(request.url);
+
     if (url.pathname.endsWith('/releases')) return Response.json(releases);
+
     if (url.pathname === '/contents' || url.pathname.includes('/contents/')) {
       if (url.pathname.endsWith('/CHANGELOG.md') || url.pathname.endsWith('/changelog.md')) {
         return changelog instanceof Response ? changelog : new Response(changelog);
       }
+
       const directory = url.pathname.split('/contents/')[1] ?? '';
+
       return Response.json([
         { name: 'CHANGELOG.md', path: `${directory ? `${directory}/` : ''}CHANGELOG.md`, type: 'file' },
       ]);
     }
+
     return Response.json({ message: 'Not Found' }, { status: 404 });
   };
 }
@@ -128,6 +135,7 @@ describe('getPackageReleaseNotes', () => {
 
   it('requires package-specific release tags and never substitutes a repository changelog for a monorepo package', async () => {
     const packageName = '@scope/widget';
+
     const { calls, result } = run(
       manifest('1.0.0', {
         repository: { url: 'github:acme/widgets', directory: 'packages/widget' },
@@ -176,14 +184,18 @@ describe('getPackageReleaseNotes', () => {
   it('uses a bare monorepo target tag only for a changelog verified by the package manifest at that tag', async () => {
     const repository = { url: 'https://github.com/acme/widgets', directory: 'packages/widget' };
     const responses = releaseAndChangelogResponses([release('v1.1.0')], '## 1.1.0\nUse the new adapter.');
+
     const { result } = run(manifest('1.0.0', { repository }), manifest('1.1.0', { repository }), (request) => {
       const url = new URL(request.url);
+
       if (url.pathname.includes('/contents/') && url.searchParams.get('ref') !== 'v1.1.0') {
         return new Response('unpinned request', { status: 400 });
       }
+
       if (url.pathname.endsWith('/contents/packages/widget/package.json')) {
         return Response.json({ name: 'widget', version: '1.1.0' });
       }
+
       return responses(request);
     });
 
@@ -202,6 +214,7 @@ describe('getPackageReleaseNotes', () => {
   ])('does not attribute a monorepo changelog with %s at the target tag', async (_label, body, status) => {
     const repository = { url: 'https://github.com/acme/widgets', directory: 'packages/widget' };
     const responses = releaseAndChangelogResponses([release('v1.1.0')], 'Unrelated changes.');
+
     const { result } = run(manifest('1.0.0', { repository }), manifest('1.1.0', { repository }), (request) =>
       new URL(request.url).pathname.endsWith('/package.json') ? new Response(body, { status }) : responses(request),
     );
@@ -212,6 +225,7 @@ describe('getPackageReleaseNotes', () => {
   it('does not choose between ambiguous bare target tags in a monorepo', async () => {
     const repository = { url: 'https://github.com/acme/widgets', directory: 'packages/widget' };
     const responses = releaseAndChangelogResponses([release('v1.1.0'), release('1.1.0')], 'Ambiguous changes.');
+
     const { result } = run(manifest('1.0.0', { repository }), manifest('1.1.0', { repository }), (request) =>
       new URL(request.url).pathname.endsWith('/package.json')
         ? Response.json({ name: 'widget', version: '1.1.0' })
@@ -223,11 +237,13 @@ describe('getPackageReleaseNotes', () => {
 
   it('returns unavailable without making GitHub calls for unsupported hosts or mismatched repositories', async () => {
     const noCalls = () => new Response('unexpected', { status: 500 });
+
     const unsupported = run(
       manifest('1.0.0', { repository: 'https://gitlab.com/acme/widgets.git' }),
       manifest('1.1.0', { repository: 'https://gitlab.com/acme/widgets.git' }),
       noCalls,
     );
+
     await expect(unsupported.result).resolves.toMatchObject({ status: 'unavailable', releases: [], changelog: null });
     expect(unsupported.calls).toEqual([]);
     expect((await unsupported.result).reasons.join(' ')).toMatch(/unsupported/i);
@@ -237,12 +253,14 @@ describe('getPackageReleaseNotes', () => {
       manifest('1.1.0', { repository: 'https://github.com/acme/other.git' }),
       noCalls,
     );
+
     await expect(mismatched.result).resolves.toMatchObject({ status: 'unavailable', releases: [], changelog: null });
     expect(mismatched.calls).toEqual([]);
   });
 
   it('isolates changelog failures and reports truncated release pagination as partial evidence', async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => release(index === 0 ? '1.1.0' : `2.${index}.0`));
+
     const { calls, result } = run(
       manifest('1.0.0', {
         repository: 'https://github.com/acme/widgets',
@@ -254,6 +272,7 @@ describe('getPackageReleaseNotes', () => {
       }),
       (request) => {
         const url = new URL(request.url);
+
         if (url.pathname.endsWith('/releases')) {
           return url.searchParams.get('page') === '1'
             ? Response.json(firstPage, {
@@ -263,7 +282,9 @@ describe('getPackageReleaseNotes', () => {
               })
             : Response.json({ message: 'rate limited' }, { status: 429 });
         }
+
         if (url.pathname.endsWith('/CHANGELOG.md')) return new Response('unavailable', { status: 503 });
+
         return Response.json([{ name: 'CHANGELOG.md', path: 'CHANGELOG.md', type: 'file' }]);
       },
     );
@@ -286,6 +307,7 @@ describe('getPackageReleaseNotes', () => {
       }),
       () => new Response('unexpected', { status: 500 }),
     );
+
     await expect(traversal.result).resolves.toMatchObject({ status: 'unavailable', releases: [], changelog: null });
     expect(traversal.calls).toEqual([]);
     expect((await traversal.result).reasons.join(' ')).toMatch(/traversal|unsafe/i);
@@ -295,6 +317,7 @@ describe('getPackageReleaseNotes', () => {
       manifest('1.1.0', { repository: 'https://github.com/acme/widgets', gitHead: 'release/../main' }),
       () => new Response('unexpected', { status: 500 }),
     );
+
     await expect(unsafeRef.result).resolves.toMatchObject({ status: 'unavailable', releases: [], changelog: null });
     expect(unsafeRef.calls.filter((url) => url.includes('/releases'))).toHaveLength(1);
     expect(unsafeRef.calls.some((url) => url.includes('/contents/'))).toBe(false);

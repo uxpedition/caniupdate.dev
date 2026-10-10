@@ -5,6 +5,7 @@ import { decodeBriefingJobEvent, decodeBriefingSubmission } from './briefingJob.
 import type { BriefingJobEvent, BriefingSubmission } from './briefingJob.defs';
 
 const HASH = 'b637f83283a13491f7fee3cd9a108ab6ea20994d00a95a6646ba7a1bd48818b4';
+
 const EVENTS_URL = `wss://briefing.example/api/briefings/${HASH}/events`;
 
 // Every terminal reason the socket may carry. The wire literals cannot drift from `BriefingUnavailableReason` in
@@ -120,6 +121,7 @@ describe('decodeBriefingSubmission', () => {
       eventsUrl: EVENTS_URL,
       revision: 0,
     };
+
     const running: BriefingSubmission = {
       status: 'running',
       packageName: 'minimist',
@@ -204,6 +206,7 @@ describe('decodeBriefingSubmission', () => {
       eventsUrl: EVENTS_URL,
       revision: 0,
     };
+
     // The type alone forbids both smuggled fields and the decoder rejects the value that carries them anyway.
     // @ts-expect-error a browser-facing submission may not carry the bounded evidence packet
     const withPacket: BriefingSubmission = { ...pending, packet: { packageName: 'minimist' } };

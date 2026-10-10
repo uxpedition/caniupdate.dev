@@ -38,19 +38,30 @@ import { FIXTURE_API_KEY, MODEL, SOURCE_ID, providerFixture } from './provider.s
 const execFileAsync = promisify(execFile);
 
 export const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
+
 const WRANGLER_BIN = join(REPO_ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+
 export const WORKER_NAME = 'can-i-update-local-briefing';
+
 const HARNESS_NAME = 'briefing-submission-harness';
+
 const HARNESS_MODULE = 'harness.js';
+
 const QUEUE_NAME = 'can-i-update-local-briefings';
+
 const D1_ID = 'can-i-update-local-briefings';
+
 export const PUBLIC_URL = 'ws://localhost:8791';
 
 const POLL_MS = 100;
+
 const D1_WAIT_MS = 30_000;
+
 export const JOB_WAIT_MS = 30_000;
+
 /** A window in which an unwanted provider call would have happened, for negative assertions. */
 export const QUIET_MS = 2_000;
+
 export const LEASE_WAIT_MS = 150_000;
 
 /**
@@ -84,6 +95,7 @@ export const BRIEFING_ENVIRONMENTS = ENVIRONMENTS;
  * to this line fails loudly instead of silently reporting nothing.
  */
 const QUEUE_DELIVERY = new RegExp(String.raw`QUEUE\s+${QUEUE_NAME}\s+\d+/\d+`);
+
 // Miniflare's broker colours that line when it thinks it is on a TTY; strip escape codes before matching.
 // oxlint-disable-next-line no-control-regex -- matching terminal colour escapes is the point of this expression.
 const ANSI = /\u001B\[[0-9;]*m/g;
@@ -218,9 +230,11 @@ export type RawSubmission = {
 /** The queued/running envelope, narrowed: tests assert hashes and revisions, which only a pending job carries. */
 export function pendingOf(result: SubmitResult): Extract<BriefingSubmission, { status: 'queued' | 'running' }> {
   const { submission } = result;
+
   if (submission === undefined || submission.status === 'available') {
     throw new Error(`Expected a queued or running submission, received ${JSON.stringify(result)}`);
   }
+
   return submission;
 }
 
@@ -274,6 +288,7 @@ let workerBundle: Promise<Record<string, { type: 'esm'; contents: string }>> | u
 
 async function bundleWorker(): Promise<Record<string, { type: 'esm'; contents: string }>> {
   const outdir = await mkdtemp(join(tmpdir(), 'briefing-bundle-'));
+
   try {
     await execFileAsync(
       process.execPath,
@@ -290,10 +305,12 @@ async function bundleWorker(): Promise<Record<string, { type: 'esm'; contents: s
       { cwd: REPO_ROOT },
     );
     const modules: Record<string, { type: 'esm'; contents: string }> = {};
+
     for (const entry of await readdir(outdir)) {
       if (entry.endsWith('.js'))
         modules[entry] = { type: 'esm', contents: await readFile(join(outdir, entry), 'utf8') };
     }
+
     return modules;
   } finally {
     await rm(outdir, { recursive: true, force: true });
@@ -314,7 +331,9 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
     BRIEFING_PUBLIC_URL: { type: 'text', value: environment.publicUrl },
     BRIEFING_ALLOWED_ORIGIN: { type: 'text', value: allowedOrigin },
   };
+
   if (options.producer !== false) briefingEnv.BRIEFING_QUEUE = { type: 'queue', name: QUEUE_NAME };
+
   if (options.aiConfig !== false) {
     briefingEnv.AI_BRIEFING_ENDPOINT = { type: 'text', value: providerFixture().endpoint };
     briefingEnv.AI_BRIEFING_API_KEY = { type: 'text', value: FIXTURE_API_KEY };
@@ -364,10 +383,12 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
     const worker = await runtime.getWorker(WORKER_NAME);
     const harness = await runtime.getWorker(HARNESS_NAME);
     const database: D1Database = await runtime.getD1Database('BRIEFINGS_DB', WORKER_NAME);
+
     const queue: Queue<BriefingJobMessage> | undefined =
       options.producer === false
         ? undefined
         : await runtime.getQueueProducer<BriefingJobMessage>('BRIEFING_QUEUE', WORKER_NAME);
+
     if (options.installSchema !== false) await installBriefingSchema(database);
 
     const callHarness = async (path: string, body: unknown): Promise<{ status: number; body: unknown }> => {
@@ -376,12 +397,14 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
+
       return { status: response.status, body: await response.json() };
     };
 
     const readSubmitResult = (status: number, body: unknown): SubmitResult => {
       if (status !== 200) return { httpStatus: status, submission: undefined, error: rejectionReason(body) };
       const result = decodeBriefingServiceResult(body);
+
       return {
         httpStatus: status,
         submission: result.submission,
@@ -394,6 +417,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
       if (status !== 200 || typeof body !== 'object' || body === null) {
         return { httpStatus: status, kind: undefined, symbols: [], text: undefined, error: rejectionReason(body) };
       }
+
       return {
         httpStatus: status,
         kind: 'kind' in body && typeof body.kind === 'string' ? body.kind : undefined,
@@ -413,19 +437,24 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
       publicFetch: (input, init) => runtime.dispatchFetch(input, init),
       async submit(packet: unknown): Promise<SubmitResult> {
         const { status, body } = await callHarness('/submit', packet);
+
         return readSubmitResult(status, body);
       },
       async rawSubmit(packet: unknown): Promise<RawSubmission> {
         const { status, body } = await callHarness('/raw-submit', packet);
+
         return readRawSubmission(status, body);
       },
       async submitToJob(hash: string, packet: unknown): Promise<SubmitResult> {
         const { status, body } = await callHarness(`/job-submit?hash=${hash}`, packet);
+
         return readSubmitResult(status, body);
       },
       async jobEvent(hash: string): Promise<BriefingJobEvent | undefined> {
         const response = await harness.fetch(`https://harness.test/job?hash=${hash}`);
+
         if (response.status !== 200) return undefined;
+
         return decodeBriefingJobEvent(await response.json());
       },
       async publicPost(url: string, body: unknown): Promise<{ status: number; text: string }> {
@@ -434,6 +463,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(body),
         });
+
         return { status: response.status, text: await response.text() };
       },
       async evictJob(hash: string): Promise<void> {
@@ -450,6 +480,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
 /** The harness reports a rejected submission as a sanitized `{ error }` body; anything else is an empty reason. */
 function rejectionReason(body: unknown): string {
   if (typeof body === 'object' && body !== null && 'error' in body) return String(body.error);
+
   return '';
 }
 
@@ -464,11 +495,14 @@ export async function crashRunningGeneration(stateDir: string, packet: BriefingE
 
   fixture.setMode({ kind: 'stall' });
   const crashed = await startRuntime({ stateDir });
+
   try {
     const parked = await crashed.submit(packet);
+
     if (parked.submission?.status !== 'queued') {
       throw new Error(`Expected the crash fixture to park this submission as queued: ${JSON.stringify(parked)}`);
     }
+
     await waitFor(
       async () => (fixture.requestsFor(packet.packageName) >= 1 ? true : undefined),
       JOB_WAIT_MS,
@@ -480,6 +514,7 @@ export async function crashRunningGeneration(stateDir: string, packet: BriefingE
     fixture.setMode({ kind: 'valid' });
     fixture.releaseStalls();
   }
+
   return hash;
 }
 
@@ -487,17 +522,21 @@ export async function crashRunningGeneration(stateDir: string, packet: BriefingE
 export async function waitFor<T>(read: () => Promise<T | undefined>, timeoutMs: number, label: string): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
+
   for (;;) {
     try {
       const value = await read();
+
       if (value !== undefined) return value;
     } catch (error) {
       lastError = error;
     }
+
     if (Date.now() >= deadline) {
       const last = lastError instanceof Error ? lastError.message : String(lastError);
       throw new Error(`Timed out after ${timeoutMs}ms waiting for ${label} (last: ${last})`, { cause: lastError });
     }
+
     await delay(POLL_MS);
   }
 }
@@ -519,9 +558,12 @@ export async function waitForJobEvent(
   return await waitFor(
     async () => {
       const event = await fixture.jobEvent(hash);
+
       // Throwing rather than returning undefined keeps the last observed event in the timeout's cause.
       if (event === undefined) throw new Error('no job record for this hash');
+
       if (!predicate(event)) throw new Error(`job event is ${JSON.stringify(event)}`);
+
       return event;
     },
     timeoutMs,
@@ -530,9 +572,11 @@ export async function waitForJobEvent(
 }
 
 const stateDirs: string[] = [];
+
 export async function openStateDir(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'briefing-state-'));
   stateDirs.push(dir);
+
   return dir;
 }
 
@@ -570,7 +614,9 @@ export async function subscribe(
   const response = await fixture.publicFetch(fixture.eventsUrl(hash), {
     headers: { Upgrade: 'websocket', Origin: origin },
   });
+
   const socket: RuntimeWebSocket | null = response.webSocket;
+
   if (socket === null) {
     throw new Error(`The public route refused the upgrade for ${hash} with status ${response.status}`);
   }

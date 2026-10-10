@@ -15,6 +15,7 @@ const TELEMETRY_CONFIG_TIMEOUT_MS = 1_000;
 const readTelemetryEnabled = async (): Promise<boolean> => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TELEMETRY_CONFIG_TIMEOUT_MS);
+
   try {
     const response = await fetch(new URL('/api/telemetry/config', window.location.origin), {
       method: 'GET',
@@ -23,7 +24,9 @@ const readTelemetryEnabled = async (): Promise<boolean> => {
       redirect: 'error',
       signal: controller.signal,
     });
+
     if (!response.ok) return false;
+
     return decodeTelemetryRuntimeConfig(await response.json()).enabled;
   } catch {
     return false;
@@ -44,13 +47,16 @@ type TelemetryPluginState = {
 };
 
 type TelemetryHotData = Record<string, unknown> & { telemetryClientApps?: Map<NuxtApp, TelemetryPluginState> };
+
 type TelemetryHotModule = {
   readonly data: TelemetryHotData;
   dispose(callback: (data: TelemetryHotData) => void): void;
 };
 
 const hot: TelemetryHotModule | undefined = import.meta.hot;
+
 const telemetryClientApps = hot?.data.telemetryClientApps ?? new Map<NuxtApp, TelemetryPluginState>();
+
 if (hot !== undefined) hot.data.telemetryClientApps = telemetryClientApps;
 
 hot?.dispose(() => {
@@ -65,11 +71,14 @@ const initializeTelemetry = async (): Promise<TelemetryRuntime> => {
   const endpoint = (await readTelemetryEnabled())
     ? new URL('/api/telemetry', window.location.origin).toString().replace(/\/$/, '')
     : undefined;
+
   const runtimeOptions = {
     ...(endpoint === undefined ? {} : { endpoint }),
     serviceName: 'can-i-update-browser',
   };
+
   let telemetry = createTelemetryRuntime(runtimeOptions);
+
   try {
     await telemetry.context();
   } catch {
@@ -77,18 +86,22 @@ const initializeTelemetry = async (): Promise<TelemetryRuntime> => {
     telemetry = createTelemetryRuntime({ serviceName: 'can-i-update-browser' });
     await telemetry.context().catch(() => undefined);
   }
+
   return telemetry;
 };
 
 const ensureTelemetry = async (state: TelemetryPluginState): Promise<TelemetryRuntime> => {
   if (state.telemetry !== undefined) return state.telemetry;
   const initialization = (state.initialization ??= initializeTelemetry());
+
   try {
     const telemetry = await initialization;
+
     if (!state.disposed) {
       state.telemetry = telemetry;
       state.initialization = undefined;
     }
+
     return telemetry;
   } catch {
     if (state.initialization === initialization) state.initialization = undefined;
@@ -124,12 +137,15 @@ const reportTelemetryError = (
   }
 
   const telemetry = state.telemetry;
+
   if (telemetry === undefined) {
     logSafeConsoleFallback(body, attributes);
+
     return;
   }
 
   const program = body === 'runtime.error' ? Effect.logError(body) : Effect.logWarning(body);
+
   try {
     void telemetry.runPromise(program.pipe(Effect.annotateLogs(attributes))).catch(() => {
       logSafeConsoleFallback(body, attributes);
@@ -145,11 +161,13 @@ const cleanupTelemetry = (nuxtApp: NuxtApp, state: TelemetryPluginState): void =
   state.generation += 1;
   state.unregisterHooks?.();
   state.unregisterHooks = undefined;
+
   try {
     state.errorCapture?.stop();
   } catch {
     // Diagnostic shutdown must not interfere with app teardown.
   }
+
   state.errorCapture = undefined;
 
   const telemetry = state.telemetry;
@@ -157,6 +175,7 @@ const cleanupTelemetry = (nuxtApp: NuxtApp, state: TelemetryPluginState): void =
   state.telemetry = undefined;
   state.initialization = undefined;
   telemetryClientApps.delete(nuxtApp);
+
   if (telemetry !== undefined) void telemetry.dispose().catch(() => undefined);
   else if (initialization !== undefined)
     void initialization.then((runtime) => runtime.dispose()).catch(() => undefined);
@@ -164,7 +183,9 @@ const cleanupTelemetry = (nuxtApp: NuxtApp, state: TelemetryPluginState): void =
 
 const createPluginState = (nuxtApp: NuxtApp): TelemetryPluginState => {
   const existing = telemetryClientApps.get(nuxtApp);
+
   if (existing !== undefined) return existing;
+
   const state: TelemetryPluginState = {
     telemetry: undefined,
     initialization: undefined,
@@ -175,20 +196,25 @@ const createPluginState = (nuxtApp: NuxtApp): TelemetryPluginState => {
     generation: 0,
     disposed: false,
   };
+
   telemetryClientApps.set(nuxtApp, state);
+
   return state;
 };
 
 const registerErrorHooks = (nuxtApp: NuxtApp, state: TelemetryPluginState): void => {
   state.unregisterHooks?.();
+
   const hooks = createTelemetryErrorHooks((body, attributes, source, error) =>
     reportTelemetryError(state, body, attributes, source, error),
   );
+
   const unregister = [
     nuxtApp.hook('vue:error', hooks['vue:error']),
     nuxtApp.hook('app:error', hooks['app:error']),
     nuxtApp.hook('app:chunkError', hooks['app:chunkError']),
   ];
+
   state.unregisterHooks = () => {
     for (const unhook of unregister) {
       try {
@@ -202,6 +228,7 @@ const registerErrorHooks = (nuxtApp: NuxtApp, state: TelemetryPluginState): void
 
 const ensureErrorCapture = (state: TelemetryPluginState): void => {
   if (state.errorCapture !== undefined) return;
+
   try {
     state.errorCapture = initializeFaroErrors();
   } catch {
@@ -214,6 +241,7 @@ const wireAppTeardown = (nuxtApp: NuxtApp, state: TelemetryPluginState): void =>
     state.appTeardownRegistered = true;
     nuxtApp.vueApp.onUnmount(() => state.teardown?.());
   }
+
   state.teardown = () => cleanupTelemetry(nuxtApp, state);
 };
 
@@ -226,12 +254,15 @@ const setupTelemetry = async (nuxtApp: NuxtApp): Promise<{ provide: { telemetry:
   wireAppTeardown(nuxtApp, state);
 
   const telemetry = await ensureTelemetry(state);
+
   if (state.generation !== generation || state.disposed) return { provide: { telemetry } };
+
   try {
     state.errorCapture?.attachRuntime(telemetry);
   } catch {
     logSafeConsoleFallback('runtime.warning', { 'error.source': 'browser' });
   }
+
   return { provide: { telemetry } };
 };
 

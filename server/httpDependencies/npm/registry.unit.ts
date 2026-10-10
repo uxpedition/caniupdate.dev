@@ -30,6 +30,7 @@ it('encodes search text without creating extra query parameters', async () => {
     expect([...url.searchParams.keys()]).toEqual(['text', 'size']);
     expect(url.searchParams.get('text')).toBe('@scope/pkg & size=250');
     expect(url.searchParams.get('size')).toBe('20');
+
     return Response.json({ objects: [] });
   });
   await expect(run('/-/v1/search', { query: { text: '@scope/pkg & size=250', size: 20 } })).resolves.toEqual({
@@ -53,6 +54,7 @@ it('forwards the caller-supplied install-v1 accept header', async () => {
   const accepts: Array<string | null> = [];
   fetchStub.mockImplementation(async (input, init) => {
     accepts.push(new Headers(init?.headers).get('accept'));
+
     return Response.json({});
   });
   await expect(run('/widget', { accept: INSTALL_V1_ACCEPT })).resolves.toEqual({});
@@ -64,6 +66,7 @@ it('preserves a once-encoded scoped package segment', async () => {
     const url = new URL(new Request(input, init).url);
     expect(url.origin).toBe('https://registry.npmjs.org');
     expect(url.pathname).toBe('/%40scope%2Fpkg/1.0.0');
+
     return Response.json({});
   });
   await expect(run(`/${encodeURIComponent('@scope/pkg')}/1.0.0`)).resolves.toEqual({});

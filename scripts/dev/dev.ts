@@ -21,7 +21,9 @@ import { browserOrigins } from './_internals/browserOrigins.ts';
 import { parseOptions, UsageError, type Options } from './_internals/devOptions.ts';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
+
 const nuxt = fileURLToPath(new URL('../../node_modules/nuxt/bin/nuxt.mjs', import.meta.url));
+
 const wrangler = fileURLToPath(new URL('../../node_modules/wrangler/bin/wrangler.js', import.meta.url));
 
 const STATE_LOCK_FILE = 'launcher.lock';
@@ -194,6 +196,7 @@ const nuxtFrontendCommand = (launch: Options) =>
 
 const frontendCommand = (launch: Options) => {
   if (launch.preview) return previewFrontendCommand(launch);
+
   return nuxtFrontendCommand(launch);
 };
 
@@ -227,6 +230,7 @@ const lockPathFor = (persistTo: string): string => `${persistTo.replace(/\/+$/, 
 const processIsAlive = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
+
     return true;
   } catch {
     return false;
@@ -238,17 +242,23 @@ type LockHolder = { readonly pid?: number; readonly mode?: string };
 /** A malformed or empty lock is treated as a stale one: only a readable pid can claim the root. */
 const readLockHolder = async (lockPath: string): Promise<LockHolder | undefined> => {
   const contents = await readFile(lockPath, 'utf8').catch(() => undefined);
+
   if (contents === undefined) return undefined;
   let parsed: unknown;
+
   try {
     parsed = JSON.parse(contents);
   } catch {
     return {};
   }
+
   if (typeof parsed !== 'object' || parsed === null) return {};
   const holder: { -readonly [K in keyof LockHolder]: LockHolder[K] } = {};
+
   if ('pid' in parsed && typeof parsed.pid === 'number') holder.pid = parsed.pid;
+
   if ('mode' in parsed && typeof parsed.mode === 'string') holder.mode = parsed.mode;
+
   return holder;
 };
 
@@ -262,6 +272,7 @@ const acquireStateLock = (launch: Options) =>
       try: async () => {
         const lockPath = lockPathFor(launch.persistTo);
         const holder = await readLockHolder(lockPath);
+
         if (holder !== undefined && typeof holder.pid === 'number' && processIsAlive(holder.pid)) {
           throw new StateInUseError({
             message:
@@ -269,6 +280,7 @@ const acquireStateLock = (launch: Options) =>
               'Stop it first: dev and preview must not own the same local state concurrently.',
           });
         }
+
         await mkdir(dirname(lockPath), { recursive: true });
         await writeFile(lockPath, JSON.stringify({ pid: process.pid, mode: launch.preview ? 'preview' : 'dev' }));
       },
@@ -285,6 +297,7 @@ const acquireStateLock = (launch: Options) =>
       Effect.promise(async () => {
         const lockPath = lockPathFor(launch.persistTo);
         const holder = await readLockHolder(lockPath);
+
         if (holder?.pid === process.pid) await rm(lockPath, { force: true });
       }).pipe(Effect.orElseSucceed(() => undefined)),
   );

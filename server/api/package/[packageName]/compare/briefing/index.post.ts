@@ -27,6 +27,7 @@ import { browserBriefingSocketUrl } from './_internals/socketUrl';
 type SubmissionFailureStatus = 'Evidence service unavailable' | 'Briefing service unavailable';
 
 type BriefingService = { submit(packet: BriefingEvidence): Promise<unknown> };
+
 type DisposableRpcResult = object & { [Symbol.dispose](): void };
 
 // Cloudflare adds this documented lifecycle hook to every object returned over RPC. It is the sole runtime-owned
@@ -47,12 +48,15 @@ const copyRpcServiceResultData = (submission: unknown): Record<string, unknown> 
 
   for (const key of Reflect.ownKeys(submission)) {
     if (key === Symbol.dispose) continue;
+
     if (typeof key === 'symbol') throw new TypeError('Briefing service returned an unexpected symbol');
 
     const descriptor = Object.getOwnPropertyDescriptor(submission, key);
+
     if (descriptor === undefined || !('value' in descriptor)) {
       throw new TypeError('Briefing service returned an accessor property');
     }
+
     Object.defineProperty(data, key, { enumerable: true, value: descriptor.value });
   }
 
@@ -72,9 +76,11 @@ const copyNodeDevelopmentRpcServiceResultData = (submission: unknown): Record<st
     if (typeof key === 'symbol') throw new TypeError('Briefing service returned an unexpected symbol');
 
     const descriptor = Object.getOwnPropertyDescriptor(submission, key);
+
     if (descriptor === undefined || descriptor.writable === undefined) {
       throw new TypeError('Briefing service returned an accessor property');
     }
+
     const value: unknown = Reflect.get(submission, key);
     Object.defineProperty(data, key, { enumerable: true, value });
   }
@@ -83,6 +89,7 @@ const copyNodeDevelopmentRpcServiceResultData = (submission: unknown): Record<st
 };
 
 const SUBMISSION_FAILURE_TAG = 'BriefingSubmissionError';
+
 // Every reason the service's sanitized error type carries is a lowercase token; anything else in an error's text must
 // not reach the log, whatever the error is called.
 const SANITIZED_REASON_PATTERN = /^[a-z][a-z-]*$/;
@@ -92,6 +99,7 @@ const sanitizedFailureReason = (error: unknown): string | undefined => {
   // The service's class carries the reason; across the binding's RPC boundary only its name and message survive, and
   // its message is the reason. The shape guard keeps free text — a provider body, a credential — out of the log.
   const reason = 'reason' in error && typeof error.reason === 'string' ? error.reason : error.message;
+
   return SANITIZED_REASON_PATTERN.test(reason) ? reason : undefined;
 };
 
@@ -110,6 +118,7 @@ class BriefingSubmissionFailure extends Error {
 const submissionFailure = (error: unknown): BriefingSubmissionFailure => {
   const failureName = error instanceof Error ? error.name : typeof error;
   const reason = failureName === SUBMISSION_FAILURE_TAG ? sanitizedFailureReason(error) : undefined;
+
   return new BriefingSubmissionFailure(failureName, reason);
 };
 
@@ -119,8 +128,10 @@ const receiveBriefingServiceResult = async (
 ): Promise<BriefingServiceResult> => {
   try {
     const rpcResult = await service.submit(evidence);
+
     if (isDisposableRpcResult(rpcResult)) {
       const dispose = rpcResult[Symbol.dispose];
+
       try {
         return decodeBriefingServiceResult(copyRpcServiceResultData(rpcResult));
       } finally {
@@ -134,6 +145,7 @@ const receiveBriefingServiceResult = async (
     if (import.meta.dev) {
       return decodeBriefingServiceResult(copyNodeDevelopmentRpcServiceResultData(rpcResult));
     }
+
     throw new TypeError('Briefing service did not return a disposable object');
   } catch (error) {
     throw submissionFailure(error);
@@ -165,6 +177,7 @@ type BriefingSubmissionRequest = { readonly packageName: string; readonly from: 
 const readBriefingSubmissionRequest = async (event: H3Event): Promise<BriefingSubmissionRequest> => {
   const { packageName } = await getValidatedRouterParams(event, decodePackageComparisonRouterParams);
   const { from, to } = await getValidatedQuery(event, decodePackageComparisonQuery);
+
   return { packageName, from, to };
 };
 
@@ -176,6 +189,7 @@ const logAcceptedSubmission = (
   Effect.gen(function* () {
     const span = yield* Effect.currentSpan;
     const generationContext = result.generationContext;
+
     if (generationContext !== undefined) {
       yield* Effect.sync(() =>
         span.addLinks([
@@ -186,6 +200,7 @@ const logAcceptedSubmission = (
         ]),
       );
     }
+
     yield* Effect.logInfo('briefing.submission.accepted').pipe(
       Effect.annotateLogs({
         traceId: span.traceId,
@@ -214,6 +229,7 @@ const failBriefingSubmission = (
         ...identityAttributes,
       }),
     );
+
     return yield* Effect.fail(createError({ statusCode: 503, statusMessage: cause.statusMessage }));
   });
 
@@ -231,17 +247,21 @@ const readResolvedBriefingEvidence = (event: H3Event, request: BriefingSubmissio
           ? new BriefingSubmissionFailure(cause.name, cause.reason, 'Evidence service unavailable')
           : cause,
     });
+
     const identityAttributes = comparisonTelemetryAttributes(evidence, { from: request.from, to: request.to });
     yield* Effect.annotateCurrentSpan(identityAttributes);
+
     return { evidence, identityAttributes };
   });
 
 const createBriefingSubmissionProgram = (event: H3Event, parsed: TraceContext | undefined) => {
   let identityAttributes: Record<string, string> = {};
+
   const parent =
     parsed === undefined
       ? undefined
       : Tracer.externalSpan({ traceId: parsed.traceId, spanId: parsed.spanId, sampled: true });
+
   const spanOptions =
     parent === undefined ? { kind: 'server' as const, root: true } : { kind: 'server' as const, parent };
 
@@ -250,6 +270,7 @@ const createBriefingSubmissionProgram = (event: H3Event, parsed: TraceContext | 
       try: () => readBriefingSubmissionRequest(event),
       catch: (cause) => cause,
     });
+
     identityAttributes = comparisonTelemetryAttributes(
       { packageName: request.packageName },
       { from: request.from, to: request.to },
@@ -260,6 +281,7 @@ const createBriefingSubmissionProgram = (event: H3Event, parsed: TraceContext | 
     identityAttributes = resolved.identityAttributes;
 
     const service = event.context.cloudflare?.env?.BRIEFING_SERVICE;
+
     if (service === undefined) {
       return yield* Effect.fail(new BriefingSubmissionFailure('BriefingServiceBindingUnavailable'));
     }
@@ -268,7 +290,9 @@ const createBriefingSubmissionProgram = (event: H3Event, parsed: TraceContext | 
       try: () => receiveBriefingServiceResult(service, resolved.evidence),
       catch: (cause) => cause,
     });
+
     yield* logAcceptedSubmission(parsed, result, identityAttributes);
+
     return submissionAnswer(event, result.submission);
   }).pipe(
     Effect.catchIf(
@@ -283,6 +307,7 @@ const handleBriefingSubmission = async (event: H3Event) => {
   const parsed = parseTraceparent(getRequestHeader(event, 'traceparent'));
   const program = createBriefingSubmissionProgram(event, parsed);
   const telemetry = readServerTelemetryConfig(event);
+
   return runWithTelemetry(
     program,
     {

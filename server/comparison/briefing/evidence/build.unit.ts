@@ -82,6 +82,7 @@ describe('buildBriefingEvidence', () => {
       '## 1.0.0',
       'The selected from version is excluded.',
     ].join('\n');
+
     const releaseNotes = notes({
       changelog: {
         body,
@@ -90,6 +91,7 @@ describe('buildBriefingEvidence', () => {
         url: 'https://github.com/acme/widget/blob/target-commit/docs/CHANGELOG.md',
       },
     });
+
     const result = buildBriefingEvidence(input(version('1.0.0'), version('2.0.0'), releaseNotes));
     const changelog = result.sources.find((source) => source.kind === 'maintainer');
 
@@ -135,6 +137,7 @@ describe('buildBriefingEvidence', () => {
         },
       ],
     });
+
     const result = buildBriefingEvidence(input(version('1.0.0'), version('2.0.0'), releaseNotes));
     const release = result.sources.find((source) => source.id === 'release.2.0.0');
 
@@ -156,6 +159,7 @@ describe('buildBriefingEvidence', () => {
         url: 'https://github.com/acme/widget/blob/target/CHANGELOG.md',
       },
     });
+
     const result = buildBriefingEvidence(input(version('1.0.0'), version('2.0.0'), releaseNotes));
 
     expect(result.sources.filter((source) => source.kind === 'maintainer')).toHaveLength(0);
@@ -166,6 +170,7 @@ describe('buildBriefingEvidence', () => {
     const from = version('1.0.0');
     const to = version('2.0.0');
     const base = { ...compareDeclarations(from, to), ...compareMeasurements(from, to) };
+
     const hugeComparison = {
       ...base,
       dependencies: Array.from({ length: 30_000 }, (_, index) => ({
@@ -175,7 +180,9 @@ describe('buildBriefingEvidence', () => {
         to: { category: 'runtime' as const, range: `^${index}.0.0` },
       })),
     };
+
     const longRelease = 'Release details 🚀 '.repeat(2_000);
+
     const releaseNotes = notes({
       releases: [
         {
@@ -187,6 +194,7 @@ describe('buildBriefingEvidence', () => {
         },
       ],
     });
+
     const evidenceInput: BriefingInput = { packageName: 'widget', from, to, comparison: hugeComparison, releaseNotes };
     const before = JSON.stringify(evidenceInput);
     const result = buildBriefingEvidence(evidenceInput);
@@ -217,10 +225,13 @@ describe('buildBriefingEvidence', () => {
       })),
       affected: [{ package: { ecosystem: 'npm', name: 'widget' }, versions: ['1.0.0', '2.0.0'] }],
     };
+
     const vulnerabilities = { status: 'available' as const, count: 1, advisories: [advisory] };
+
     const result = buildBriefingEvidence(
       input(version('1.0.0', { vulnerabilities }), version('2.0.0', { vulnerabilities })),
     );
+
     const source = result.sources.find(({ id }) => id === 'comparison.advisories');
 
     expect(JSON.parse(source?.text ?? 'null')).toMatchObject({
@@ -252,6 +263,7 @@ describe('buildBriefingEvidence', () => {
       modified: '2026-01-01T00:00:00Z',
       summary: 'Oversized provider summary. '.repeat(3_000),
     };
+
     const result = buildBriefingEvidence(
       input(
         version('1.0.0', { engines: { node: '>=18' } }),
@@ -261,6 +273,7 @@ describe('buildBriefingEvidence', () => {
         }),
       ),
     );
+
     const node = result.sources.find(({ id }) => id === 'comparison.node');
     const coverage = result.sources.find(({ id }) => id === 'coverage');
 
@@ -303,9 +316,11 @@ describe('buildBriefingEvidence', () => {
       url: 'https://osv.dev/vulnerability/GHSA-example',
       detailsStatus: 'unavailable',
     };
+
     const from = version('1.0.0', {
       vulnerabilities: { status: 'available', count: 1, advisories: [advisory] },
     });
+
     const to = version('2.0.0', { vulnerabilities: { status: 'partial', count: 0, advisories: [] } });
     const result = buildBriefingEvidence(input(from, to));
     const advisories = result.sources.find((source) => source.id === 'comparison.advisories');

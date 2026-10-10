@@ -16,10 +16,15 @@ import { SYSTEM_PROMPT, USER_PROMPT_LINES } from './prompt';
 import { readBoundedResponse, REQUEST_TIMEOUT, providerLayer, type BriefingProviderTarget } from './provider';
 
 const MAX_BULLET_TEXT = 600;
+
 const MAX_BULLETS = 5;
+
 const MIN_BULLETS = 1;
+
 const MAX_EVIDENCE_NUMBERS = 8;
+
 const INLINE_URL_PATTERN = /(?:^|[^A-Za-z0-9_])(?:[a-z][a-z0-9+.-]*:(?=\S)|\/\/|www\.)/i;
+
 const CHAT_COMPLETIONS_SUFFIX = '/chat/completions';
 
 const BriefingContentSchema = Schema.Struct({
@@ -34,12 +39,14 @@ export type BriefingConfig =
 const BriefingInvalidResponseError = Data.TaggedError('BriefingInvalidResponseError')<{
   readonly reason?: never;
 }>;
+
 type BriefingInvalidResponseError = InstanceType<typeof BriefingInvalidResponseError>;
 
 const BriefingResponseTooLargeError = Data.TaggedError('BriefingResponseTooLargeError')<{
   readonly actual: number;
   readonly limit: number;
 }>;
+
 type BriefingResponseTooLargeError = InstanceType<typeof BriefingResponseTooLargeError>;
 
 const unavailable = (reason: BriefingUnavailableReason): PackageBriefing => ({
@@ -62,6 +69,7 @@ const isAllowedEndpoint = (rawEndpoint: string): boolean => {
   if (rawEndpoint.trim() !== rawEndpoint) return false;
 
   let endpoint: URL;
+
   try {
     endpoint = new URL(rawEndpoint);
   } catch {
@@ -69,10 +77,13 @@ const isAllowedEndpoint = (rawEndpoint: string): boolean => {
   }
 
   if (endpoint.username !== '' || endpoint.password !== '' || endpoint.hash !== '') return false;
+
   if (endpoint.protocol === 'https:') return endpoint.hostname !== '';
+
   if (endpoint.protocol !== 'http:') return false;
 
   const hostname = endpoint.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
 };
 
@@ -82,7 +93,9 @@ const chatCompletionsBaseUrl = (endpoint: string): string | undefined => {
   if (!isAllowedEndpoint(endpoint)) return undefined;
 
   const url = new URL(endpoint);
+
   if (url.search !== '' || !url.pathname.endsWith(CHAT_COMPLETIONS_SUFFIX)) return undefined;
+
   return `${url.origin}${url.pathname.slice(0, -CHAT_COMPLETIONS_SUFFIX.length)}`;
 };
 
@@ -105,9 +118,11 @@ export const readBriefingConfig = (env: BriefingEnvironment): BriefingConfig => 
   const model = nonBlankEnvironmentValue(env.AI_BRIEFING_MODEL);
 
   if (endpoint === undefined && apiKey === undefined && model === undefined) return { status: 'not-configured' };
+
   if (endpoint === undefined || apiKey === undefined || model === undefined) return { status: 'invalid-config' };
 
   const apiUrl = chatCompletionsBaseUrl(endpoint);
+
   if (apiUrl === undefined) return { status: 'invalid-config' };
 
   return {
@@ -124,6 +139,7 @@ const hasErrorTag = (value: unknown, tag: string): boolean =>
 const hasExactKeys = (value: unknown, expected: readonly string[]): value is Record<string, unknown> => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const keys = Object.keys(value);
+
   return keys.length === expected.length && expected.every((key) => Object.hasOwn(value, key));
 };
 
@@ -135,7 +151,9 @@ const parseJson = (content: string): Effect.Effect<unknown, BriefingInvalidRespo
 
 const hasValidContentShape = (value: unknown): boolean => {
   if (!hasExactKeys(value, ['bullets']) || !Array.isArray(value.bullets)) return false;
+
   if (value.bullets.length < MIN_BULLETS || value.bullets.length > MAX_BULLETS) return false;
+
   return value.bullets.every((bullet) => hasExactKeys(bullet, ['kind', 'basis', 'text', 'evidenceNumbers']));
 };
 
@@ -149,6 +167,7 @@ const isValidBullet = (bullet: BriefingBullet, numbers: ReadonlySet<number>): bo
   ) {
     return false;
   }
+
   return (
     bullet.evidenceNumbers.length >= 1 &&
     bullet.evidenceNumbers.length <= MAX_EVIDENCE_NUMBERS &&
@@ -163,15 +182,19 @@ const decodeContent = (
 ): Effect.Effect<readonly BriefingBullet[], BriefingInvalidResponseError> =>
   Effect.gen(function* () {
     const parsed = yield* parseJson(content);
+
     if (!hasValidContentShape(parsed)) return yield* Effect.fail(invalidResponse());
 
     const decoded = yield* Schema.decodeUnknownEffect(BriefingContentSchema)(parsed, { errors: 'all' }).pipe(
       Effect.mapError(() => invalidResponse()),
     );
+
     const numbers = new Set(evidence.sources.map((source) => source.number));
+
     if (!decoded.bullets.every((bullet) => isValidBullet(bullet, numbers))) {
       return yield* Effect.fail(invalidResponse());
     }
+
     return decoded.bullets;
   });
 
@@ -187,10 +210,13 @@ const collectResponseEvidence = (
   const referenced = new Set(bullets.flatMap((bullet) => bullet.evidenceNumbers));
   const kept = sources.filter((source) => source.kind === 'coverage' || referenced.has(source.number));
   const displayNumbers = new Map(kept.map((source, position) => [source.number, position]));
+
   const renumber = (numbers: readonly number[]): number[] =>
     numbers.map((number) => {
       const display = displayNumbers.get(number);
+
       if (display === undefined) throw new Error('A cited evidence number is missing from the response sources');
+
       return display;
     });
 
@@ -206,7 +232,9 @@ const isInvalidProviderOutput = (failure: unknown): boolean => {
   if (hasErrorTag(failure, 'BriefingInvalidResponseError') || hasErrorTag(failure, 'BriefingResponseTooLargeError')) {
     return true;
   }
+
   if (!hasErrorTag(failure, 'AiError')) return false;
+
   return (
     typeof failure === 'object' &&
     failure !== null &&
@@ -229,11 +257,13 @@ const requestBriefing = (request: BriefingRequest): Effect.Effect<PackageBriefin
     ]);
 
     const client = yield* HttpClient.HttpClient;
+
     const boundedClient = client.pipe(
       HttpClient.transform((effect, httpRequest) =>
         Effect.flatMap(effect, (response) => readBoundedResponse(httpRequest, response)),
       ),
     );
+
     const provider = providerLayer(request.config, request.session).pipe(
       Layer.provide(Layer.succeed(HttpClient.HttpClient, boundedClient)),
     );
@@ -244,6 +274,7 @@ const requestBriefing = (request: BriefingRequest): Effect.Effect<PackageBriefin
         Effect.provide(provider),
         Effect.provideService(FetchHttpClient.RequestInit, { redirect: 'manual' }),
       );
+
       if (response.finishReason !== 'stop') return yield* Effect.fail(invalidResponse());
 
       const bullets = yield* decodeContent(response.text, request.evidence);
@@ -261,8 +292,11 @@ const requestBriefing = (request: BriefingRequest): Effect.Effect<PackageBriefin
     Effect.result,
     Effect.map((result) => {
       if (Result.isSuccess(result)) return result.success;
+
       if (Cause.isTimeoutError(result.failure)) return unavailable('timeout');
+
       if (isInvalidProviderOutput(result.failure)) return unavailable('invalid-response');
+
       return unavailable('provider-error');
     }),
   );

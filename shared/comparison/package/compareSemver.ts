@@ -82,9 +82,11 @@ const compareParsedSemver = (left: ParsedSemver, right: ParsedSemver): number =>
   if (left.major !== right.major) {
     return left.major - right.major;
   }
+
   if (left.minor !== right.minor) {
     return left.minor - right.minor;
   }
+
   if (left.patch !== right.patch) {
     return left.patch - right.patch;
   }

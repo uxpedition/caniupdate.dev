@@ -13,10 +13,12 @@ export const readServerTelemetryConfig = (event: H3Event): ServerTelemetryConfig
   const config = useRuntimeConfig(event);
   const env = event.context.cloudflare?.env;
   const endpoint = env?.NUXT_OTEL_ENDPOINT ?? config.otelEndpoint;
+
   const enabled =
     (env?.NUXT_PUBLIC_TELEMETRY_ENABLED === undefined
       ? config.public.telemetryEnabled === true
       : env.NUXT_PUBLIC_TELEMETRY_ENABLED === 'true') && endpoint.trim() !== '';
+
   return {
     enabled,
     endpoint,

@@ -34,8 +34,10 @@ const sample = async (label: string, pids: RuntimePids, requests: number, run: (
   await run();
   const windowMs = Math.max(Date.now() - startedAt, 1);
   const after = await readTrees(pids);
+
   const render = (ms: number) =>
     requests === 0 ? `${((ms / windowMs) * 1_000).toFixed(2)} ms/s` : `${(ms / requests).toFixed(3)} ms/req`;
+
   log(
     `  ${label}: ${requests} request(s) over ${(windowMs / 1_000).toFixed(1)} s -> frontend ${render(after.frontend - before.frontend)}, ` +
       `briefing ${render(after.briefing - before.briefing)}, evidence ${render(after.evidence - before.evidence)}`,
@@ -51,15 +53,18 @@ const warmBurst = async (requests: number, from: string, to: string, packageName
 
 const runtimePids = (launcher: Launcher): RuntimePids => {
   const childPids = launcher.childPids();
+
   const pids: RuntimePids = {
     frontend: childPids.get('Frontend'),
     briefing: childPids.get('Briefing worker'),
     evidence: childPids.get('Evidence worker'),
   };
+
   check(
     pids.frontend !== undefined && pids.briefing !== undefined && pids.evidence !== undefined,
     `The launcher must log all three child PIDs, saw ${JSON.stringify([...childPids])}`,
   );
+
   return pids;
 };
 
@@ -71,6 +76,7 @@ const sampleConcurrentSubscribers = async (pids: RuntimePids, eventsUrl: string)
         openSubscription(eventsUrl, FRONTEND_ORIGIN, SUBSCRIPTION_TIMEOUT_MS),
       ),
     );
+
     for (const subscription of subscriptions) {
       check(
         subscription.frames.at(-1)?.status === 'available',
@@ -85,6 +91,7 @@ const sampleConcurrentSubscribers = async (pids: RuntimePids, eventsUrl: string)
 const sampleLargePackageWarmups = async (pids: RuntimePids, warmPosts: number): Promise<void> => {
   const large = await submit(LARGE_FROM, LARGE_TO, LARGE_PACKAGE_NAME);
   check(large.status === 202 || large.status === 200, `Large-package POST answered ${large.status}`);
+
   if (large.status === 202 && large.body.eventsUrl !== undefined) await waitForAvailable(large.body.eventsUrl);
   await sample(`${LARGE_PACKAGE_NAME} warm POST (D1 hit) x${warmPosts}`, pids, warmPosts, async () => {
     await warmBurst(warmPosts, LARGE_FROM, LARGE_TO, LARGE_PACKAGE_NAME);

@@ -21,9 +21,11 @@ export class UsageError extends Data.TaggedError('UsageError')<{
 
 const parsePort = (flag: string, value: string | undefined): number => {
   const port = Number(value);
+
   if (value === undefined || !Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new UsageError({ message: `${flag} expects a TCP port, got ${JSON.stringify(value)}\n${USAGE}` });
   }
+
   return port;
 };
 
@@ -31,16 +33,19 @@ const parseDirectory = (value: string | undefined): string => {
   if (value === undefined || value.trim() === '') {
     throw new UsageError({ message: `--persist-to expects a directory\n${USAGE}` });
   }
+
   return value;
 };
 
 const parseEndpoint = (value: string | undefined): string => {
   let parsed: URL;
+
   try {
     parsed = new URL(value ?? '');
   } catch {
     throw new UsageError({ message: `--otel-endpoint expects an HTTP(S) URL\n${USAGE}` });
   }
+
   if (
     !['http:', 'https:'].includes(parsed.protocol) ||
     parsed.username ||
@@ -52,6 +57,7 @@ const parseEndpoint = (value: string | undefined): string => {
       message: `--otel-endpoint expects an HTTP(S) URL without credentials, query or fragment\n${USAGE}`,
     });
   }
+
   return parsed.href.replace(/\/+$/, '');
 };
 
@@ -92,13 +98,16 @@ export const parseOptions = (argv: readonly string[]): Options => {
     frontendPort: 5173,
     inspectorBase: 9230,
   };
+
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
+
     if (flag === '--preview') options.preview = true;
     else {
       index += 1;
       applyValueOption(options, flag, argv[index]);
     }
   }
+
   return options;
 };

@@ -28,11 +28,16 @@ const {
   briefingError,
   sources,
 } = await useComparisonPage(props.pageTraceContext);
+
 const expanded = ref(new Set<string>());
+
 const showBrief = ref(false);
+
 const showSources = ref(false);
+
 // Render here so the description arrives in the same SSR branch as the declaration rows, before hydration.
 const description = computed(() => declarations.value?.to.description ?? declarations.value?.from.description);
+
 const rows = computed(() =>
   declarations.value
     ? buildComparisonSummaries(
@@ -45,28 +50,39 @@ const rows = computed(() =>
       )
     : [],
 );
+
 const groups = computed(() => [
   { title: 'Dependencies & runtime', rows: rows.value.slice(0, 3) },
   { title: 'Package surface', rows: rows.value.slice(3, 8) },
   { title: 'Size & provenance', rows: rows.value.slice(8) },
 ]);
+
 const changedCount = computed(() => rows.value.filter((row) => row.changed).length);
+
 const dependencyCount = computed(() => declarations.value?.comparison.dependencies.length ?? 0);
+
 const security = computed(() => {
   const measured = measurements.value;
+
   if (!measured) return { value: isMeasurementsUnavailable.value ? 'Unavailable' : 'Checking…', detail: '' };
   const { status, count } = measured.to.vulnerabilities;
+
   if (status !== 'available' || count === null)
     return { value: 'Incomplete coverage', detail: 'No safety conclusion can be drawn.' };
+
   return {
     value: `${count} matched ${count === 1 ? 'advisory' : 'advisories'}`,
     detail: `For ${measured.to.version} · not a guarantee of safety`,
   };
 });
+
 const briefingState = computed(() => {
   if (isDeclarationsError.value) return 'Waiting for package facts';
+
   if (briefingError.value || briefing.value?.status === 'unavailable') return 'Unavailable · facts are unaffected';
+
   if (briefing.value?.status === 'available') return `${briefing.value.bullets.length} evidence-linked notes`;
+
   return 'Preparing evidence-linked notes…';
 });
 
@@ -74,17 +90,23 @@ const toggleRow = (id: string) => {
   if (expanded.value.has(id)) expanded.value.delete(id);
   else expanded.value.add(id);
 };
+
 const preventBriefingToggle = (event: MouseEvent) => {
   if (isBriefingPending.value) event.preventDefault();
 };
+
 const revealCitation = async (event: MouseEvent) => {
   const target = event.target;
+
   if (!(target instanceof Element)) return;
   const href = target.closest('a')?.getAttribute('href');
+
   if (!href?.startsWith('#')) return;
   const id = href.slice(1);
   const row = rows.value.find((item) => item.anchor === id);
+
   if (row?.expandable) expanded.value.add(row.anchor);
+
   if (id.startsWith('evidence-')) showSources.value = true;
   await nextTick();
   document.getElementById(id)?.scrollIntoView({ block: 'center' });

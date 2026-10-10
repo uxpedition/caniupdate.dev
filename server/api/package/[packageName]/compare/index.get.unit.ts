@@ -15,7 +15,9 @@ function startRequest(from: string, to: string, packageName = 'minimist') {
   const event = mockEvent(
     `http://localhost/api/package/${encodeURIComponent(packageName)}/compare?${new URLSearchParams({ from, to })}`,
   );
+
   event.context.params = { packageName: encodeURIComponent(packageName) };
+
   return Promise.resolve(handler(event));
 }
 
@@ -27,12 +29,15 @@ beforeEach(() => {
   // Registry manifests are served from the fetch boundary; tarballs (`/-/`) and evidence providers stay with fetchMock.
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(new Request(input, init).url);
+
     if (url.origin === 'https://registry.npmjs.org' && !url.pathname.includes('/-/')) {
       return Response.json(await registry.json(url.pathname));
     }
+
     return fetchMock(input, init);
   });
 });
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
@@ -82,12 +87,15 @@ describe('declaration comparison', () => {
     vi.stubEnv('AI_BRIEFING_MODEL', 'test-model');
     registry.json.mockImplementation(async (path) => {
       const old = path.endsWith('/1.0.0');
+
       return { ...manifest(old ? '1.0.0' : '2.0.0'), engines: { node: old ? '>=18' : '>=20' } };
     });
     const providerCalls: string[] = [];
     fetchMock.mockImplementation(async (input, init) => {
       const url = new URL(new Request(input, init).url);
+
       if (url.hostname === 'briefing.example') providerCalls.push(url.href);
+
       return new Response(null, { status: 503 });
     });
 
@@ -103,6 +111,7 @@ describe('declaration comparison', () => {
   it('compares declarations even when evidence providers are unavailable', async () => {
     registry.json.mockImplementation(async (path) => {
       const old = path.endsWith('/1.0.0');
+
       return {
         ...manifest(old ? '1.0.0' : '2.0.0'),
         dependencies: { moved: '^1', overridden: '^1' },

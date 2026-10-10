@@ -38,6 +38,7 @@ export const isBriefingStoreFailure = (cause: unknown): cause is BriefingStoreFa
 function decodeRow(value: unknown): AvailablePackageBriefing {
   try {
     if (typeof value !== 'string') throw new TypeError('Stored briefing is not JSON text');
+
     return decodeBriefing(JSON.parse(value));
   } catch (cause) {
     throw new BriefingStoreCorruptionError({ cause });
@@ -49,17 +50,21 @@ export async function readStoredBriefing(
   evidenceHash: string,
 ): Promise<AvailablePackageBriefing | undefined> {
   let row: { responseJson: string } | undefined;
+
   try {
     const db = drizzle(database);
+
     const rows = await db
       .select({ responseJson: packageBriefings.responseJson })
       .from(packageBriefings)
       .where(eq(packageBriefings.evidenceHash, evidenceHash))
       .limit(1);
+
     row = rows[0];
   } catch (cause) {
     throw new BriefingStoreError({ operation: 'read', cause });
   }
+
   return row === undefined ? undefined : decodeRow(row.responseJson);
 }
 
@@ -70,6 +75,7 @@ export async function saveBriefing(
   briefing: AvailablePackageBriefing,
 ): Promise<AvailablePackageBriefing> {
   let validated: AvailablePackageBriefing;
+
   try {
     validated = decodeBriefing(briefing);
   } catch (cause) {
@@ -77,8 +83,10 @@ export async function saveBriefing(
   }
 
   let responseJson: unknown;
+
   try {
     const db = drizzle(database);
+
     const [, selected] = await db.batch([
       db
         .insert(packageBriefings)
@@ -90,9 +98,11 @@ export async function saveBriefing(
         .where(eq(packageBriefings.evidenceHash, evidenceHash))
         .limit(1),
     ]);
+
     responseJson = selected[0]?.responseJson;
   } catch (cause) {
     throw new BriefingStoreError({ operation: 'write', cause });
   }
+
   return decodeRow(responseJson);
 }

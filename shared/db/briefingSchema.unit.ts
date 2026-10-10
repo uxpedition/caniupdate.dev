@@ -11,14 +11,18 @@ const migrationsDirectory = new URL('../../migrations/', import.meta.url);
 
 async function openSchema(): Promise<DatabaseSync> {
   const database = new DatabaseSync(':memory:');
+
   try {
     const names = (await readdir(migrationsDirectory)).filter((name) => name.endsWith('.sql')).sort();
+
     for (const name of names) {
       const sql = await readFile(new URL(name, migrationsDirectory), 'utf8');
+
       for (const statement of sql.split('--> statement-breakpoint')) {
         if (statement.trim() !== '') database.exec(statement);
       }
     }
+
     return database;
   } catch (error) {
     database.close();
@@ -29,6 +33,7 @@ async function openSchema(): Promise<DatabaseSync> {
 describe('generated briefing schema', () => {
   it('enforces the existing key, nullability and timestamp-default contract', async () => {
     const database = await openSchema();
+
     try {
       expect(database.prepare('PRAGMA table_info(package_briefings)').all()).toEqual([
         { cid: 0, name: 'evidence_hash', type: 'TEXT', notnull: 1, dflt_value: null, pk: 1 },
@@ -44,9 +49,11 @@ describe('generated briefing schema', () => {
           .run('invalid'),
       ).toThrow();
       database.prepare('INSERT INTO package_briefings (evidence_hash, response_json) VALUES (?, ?)').run('valid', '{}');
+
       const createdAt = database
         .prepare('SELECT created_at FROM package_briefings WHERE evidence_hash = ?')
         .get('valid')?.created_at;
+
       if (typeof createdAt !== 'string') throw new Error('Missing default timestamp');
       expect(createdAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
       expect(database.prepare('PRAGMA foreign_key_list(package_briefings)').all()).toEqual([]);
@@ -60,8 +67,10 @@ describe('generated briefing schema', () => {
 
   it('installs ordered multiline migrations and every breakpoint-delimited statement', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'briefing-migrations-'));
+
     try {
       const runtime = await openBriefingD1(join(directory, 'state'));
+
       try {
         await writeFile(
           join(directory, '20261005000000_later.sql'),

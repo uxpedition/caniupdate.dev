@@ -9,22 +9,29 @@ import { Log, LogLevel, Miniflare } from 'miniflare';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const execFileAsync = promisify(execFile);
+
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+
 const CONFIG_PATH = join(ROOT, 'workers', 'evidence', 'test', 'tarball.wrangler.jsonc');
+
 const WRANGLER_BIN = join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+
 const WORKER_NAME = 'can-i-update-tarball-streaming-test';
 
 type WorkerResponse = {
   status: number;
   json(): Promise<unknown>;
 };
+
 type WorkerHandle = { fetch(input: string): Promise<WorkerResponse> };
 
 let runtime: Miniflare | undefined;
+
 let worker: WorkerHandle | undefined;
 
 async function bundleFixture(): Promise<Record<string, { type: 'esm'; contents: string }>> {
   const outdir = await mkdtemp(join(tmpdir(), 'tarball-workerd-bundle-'));
+
   try {
     await execFileAsync(
       process.execPath,
@@ -32,10 +39,12 @@ async function bundleFixture(): Promise<Record<string, { type: 'esm'; contents: 
       { cwd: ROOT },
     );
     const modules: Record<string, { type: 'esm'; contents: string }> = {};
+
     for (const entry of await readdir(outdir)) {
       if (entry.endsWith('.js'))
         modules[entry] = { type: 'esm', contents: await readFile(join(outdir, entry), 'utf8') };
     }
+
     return modules;
   } finally {
     await rm(outdir, { recursive: true, force: true });
@@ -45,6 +54,7 @@ async function bundleFixture(): Promise<Record<string, { type: 'esm'; contents: 
 async function inspect(mode: string): Promise<{ response: WorkerResponse; body: unknown }> {
   if (worker === undefined) throw new Error('Workerd fixture has not started');
   const response = await worker.fetch(`https://tarball.test/${mode}`);
+
   return { response, body: await response.json() };
 }
 

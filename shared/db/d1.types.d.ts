@@ -9,8 +9,12 @@ import type {
 // The pinned D1 driver references SDK globals; import only its type dependencies, never the SDK's blanket globals.
 declare global {
   type D1Database = CloudflareD1Database;
+
   type D1DatabaseSession = CloudflareD1DatabaseSession;
+
   type D1PreparedStatement = CloudflareD1PreparedStatement;
+
   type D1Response = CloudflareD1Response;
+
   type D1Result<Row = unknown> = CloudflareD1Result<Row>;
 }

@@ -36,6 +36,7 @@ describe('hibernating subscribers', () => {
     // This runtime has no Queue producer, so only the job's own dispatch-recovery alarm can settle it — the durable
     // path a subscriber has to be reachable from after the object that accepted it was evicted.
     const runtime = await startRuntime({ stateDir, producer: false, consumer: false });
+
     try {
       expect((await runtime.submit(packet)).submission?.status).toBe('queued');
       const queued = await waitForJobEvent(runtime, hash, (event) => event.status === 'queued');

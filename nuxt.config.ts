@@ -9,6 +9,7 @@ import { parseSiteOrigin } from './shared/site/siteUrl';
 // shipping a wrong canonical address; `scripts/check-site-url/check-site-url.ts` additionally requires one to exist for a build. An
 // unset value is allowed here: local development then emits no canonical link rather than a guessed origin.
 const rawSiteUrl = process.env['NUXT_PUBLIC_SITE_URL'] ?? '';
+
 const parsedSiteUrl = parseSiteOrigin(rawSiteUrl);
 
 if (!parsedSiteUrl.ok && rawSiteUrl.trim() !== '') {

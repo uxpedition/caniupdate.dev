@@ -4,7 +4,9 @@ import ComparisonForm from '~/components/comparison/ComparisonForm.vue';
 import SiteFooter from '~/components/SiteFooter.vue';
 
 const homepageHeroEntry = useState('homepage-hero-entry', () => 0);
+
 const showFormIntro = useNuxtApp().isHydrating === true;
+
 useSeoMeta({ title: 'Can I update? · Review npm package changes before updating' });
 </script>
 

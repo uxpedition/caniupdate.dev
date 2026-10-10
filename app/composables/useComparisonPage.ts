@@ -16,6 +16,7 @@ import { resolvedBriefingVersions } from '~/pages/[packageName]/comparisonView';
 const prefetchDeclarations = async (queryClient: QueryClient, declarationsOptions: PackageComparisonQueryOptions) => {
   if (import.meta.server) {
     await queryClient.query(declarationsOptions).catch(() => undefined);
+
     if (queryClient.getQueryState(declarationsOptions.queryKey)?.status !== 'success') {
       queryClient.removeQueries({ queryKey: declarationsOptions.queryKey });
     }
@@ -34,9 +35,11 @@ export const useComparisonPage = async (pageTraceContext?: TraceContext) => {
   const resolved = computed(() => resolvedBriefingVersions(declarations.value));
   const resolvedFrom = computed(() => resolved.value.from);
   const resolvedTo = computed(() => resolved.value.to);
+
   const measurementsQuery = useQuery(
     packageMeasurementsQueryOptions(requestFetch, packageName, resolvedFrom, resolvedTo),
   );
+
   const measurements = computed(() => measurementsQuery.data.value);
   // Cached measurements remain renderable after a failed refetch; only an error without resolved data is unavailable.
   const isMeasurementsUnavailable = computed(() => measurementsQuery.isError.value && measurements.value === undefined);

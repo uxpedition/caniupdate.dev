@@ -9,9 +9,11 @@ export const getVersionBundleSize = Effect.fn('Bundlephobia.getVersionBundleSize
 ) {
   const source = { provider: 'bundlephobia' as const, url: bundlephobiaSizeUrl(packageName, version) };
   const result = yield* getBundlephobiaSize(packageName, version).pipe(Effect.result);
+
   if (Result.isFailure(result) || result.success.name !== packageName || result.success.version !== version) {
     return { ...source, status: 'unavailable', size: null, gzip: null } satisfies PackageBundleSize;
   }
+
   return {
     ...source,
     ...result.success,

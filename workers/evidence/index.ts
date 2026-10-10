@@ -18,18 +18,25 @@ import { SqlEvidenceCache } from './store';
 
 // These globals belong to workerd; keep their types local instead of replacing Node's globals.
 type Request = Cloudflare.Request;
+
 type Response = Cloudflare.Response;
+
 declare const Response: typeof Cloudflare.Response;
 
 const MAX_REQUEST_BYTES = 16 * 1024;
+
 const VERSION_MAX_LENGTH = 256;
+
 const VersionSchema = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(VERSION_MAX_LENGTH));
+
 const EvidenceRequestSchema = Schema.Struct({
   packageName: PackageNameSchema,
   from: VersionSchema,
   to: VersionSchema,
 });
+
 const decodeEvidenceRequest = Schema.decodeUnknownSync(EvidenceRequestSchema, { errors: 'all' });
+
 const textEncoder = new TextEncoder();
 
 export type EvidenceRequest = typeof EvidenceRequestSchema.Type;
@@ -39,9 +46,12 @@ export type EvidenceEnv = {
 };
 
 const archiveAdmission = new BoundedArchiveAdmission();
+
 const responseAdmission = new BoundedResponseAdmission();
+
 // Coalesced callers share work, but their request bodies and eventual responses still occupy memory.
 const MAX_PENDING_EVIDENCE_REQUESTS = 16;
+
 const requestAdmission = new BoundedResponseAdmission(MAX_PENDING_EVIDENCE_REQUESTS);
 
 type InFlightValue = Promise<unknown>;
@@ -54,6 +64,7 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
 
   constructor(ctx: ConstructorParameters<typeof DurableObject>[0], env: EvidenceEnv) {
     super(ctx, env);
+
     try {
       this.#cache = new SqlEvidenceCache(ctx.storage);
       this.#storageFailure = undefined;
@@ -61,6 +72,7 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
       this.#cache = undefined;
       this.#storageFailure = cause;
     }
+
     this.#services = {
       archiveAdmission,
       ...(this.#cache === undefined ? {} : { cache: this.#cache }),
@@ -83,18 +95,23 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
 
   async #handle(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname;
+
     if (request.method !== 'POST' || (path !== '/measurements' && path !== '/briefing-evidence')) {
       return jsonError('Not found', 404);
     }
+
     if (this.#storageFailure !== undefined) return jsonError('Evidence storage unavailable', 503);
     const headersError = validateEvidenceHeaders(request);
+
     if (headersError !== null) return headersError;
     const input = await readEvidenceInput(request);
+
     if (input instanceof Response) return input;
 
     const key = `${path}:${JSON.stringify(input)}`;
     const load = path === '/measurements' ? () => this.#measurements(input) : () => this.#briefingEvidence(input);
     const result = await this.#coalesce(key, load);
+
     return Response.json(result, { headers: { 'content-type': 'application/json; charset=utf-8' } });
   }
 
@@ -117,7 +134,9 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
 
   async #coalesce(key: string, load: () => Promise<unknown>): Promise<unknown> {
     const current = this.#inFlight.get(key);
+
     if (current !== undefined) return await current;
+
     const pending = Effect.runPromise(
       responseAdmission.withPermit(
         Effect.tryPromise({
@@ -126,7 +145,9 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
         }),
       ),
     );
+
     this.#inFlight.set(key, pending);
+
     try {
       return await pending;
     } finally {
@@ -137,10 +158,13 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
 
 function validateEvidenceHeaders(request: Request): Response | null {
   const contentType = request.headers.get('content-type');
+
   if (contentType !== null && !contentType.toLowerCase().startsWith('application/json')) {
     return jsonError('Expected JSON request', 415);
   }
+
   const declaredLength = Number(request.headers.get('content-length'));
+
   return Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES
     ? jsonError('Request is too large', 413)
     : null;
@@ -149,7 +173,9 @@ function validateEvidenceHeaders(request: Request): Response | null {
 async function readEvidenceInput(request: Request): Promise<EvidenceRequest | Response> {
   try {
     const body = await request.text();
+
     if (textEncoder.encode(body).byteLength > MAX_REQUEST_BYTES) return jsonError('Request is too large', 413);
+
     return decodeEvidenceRequest(JSON.parse(body));
   } catch {
     return jsonError('Invalid evidence request', 400);
@@ -170,6 +196,7 @@ function backendError(cause: unknown): Response {
       },
     });
   }
+
   return jsonError('Evidence service unavailable', 503);
 }
 

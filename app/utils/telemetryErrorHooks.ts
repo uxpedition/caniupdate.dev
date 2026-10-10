@@ -1,7 +1,9 @@
 import { sanitizedErrorAttributes } from '#shared/telemetry/telemetryError';
 
 export type TelemetryErrorBody = 'runtime.error' | 'runtime.warning';
+
 export type TelemetryErrorAttributes = Record<string, string>;
+
 export type TelemetryErrorReporter = (
   body: TelemetryErrorBody,
   attributes: TelemetryErrorAttributes,
@@ -30,11 +32,13 @@ export const createTelemetryErrorHooks = (report: TelemetryErrorReporter): Telem
     'app:error': (error) => capture('runtime.error', 'app', error),
     'app:chunkError': (options) => {
       let error: unknown;
+
       try {
         error = options.error;
       } catch {
         return;
       }
+
       if (error instanceof Error) capture('runtime.warning', 'chunk', error);
     },
   };

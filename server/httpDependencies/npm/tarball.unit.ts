@@ -13,15 +13,18 @@ async function archive(
 ) {
   const output = pack();
   const chunks: Buffer[] = [];
+
   const reading = (async () => {
     for await (const chunk of output) {
       if (!Buffer.isBuffer(chunk)) throw new Error('Invalid fixture chunk');
       chunks.push(chunk);
     }
   })();
+
   for (const { body = '', ...header } of entries) output.entry(header, body);
   output.finalize();
   await reading;
+
   return gzipSync(Buffer.concat(chunks));
 }
 
@@ -38,6 +41,7 @@ function manifest(body: Buffer, version = '1.0.0') {
 }
 
 const respond = (body: Buffer) => new Response(new Uint8Array(body));
+
 const MAX_ARCHIVE_BYTES = 32 * 1024 * 1024;
 
 afterEach(() => {
@@ -54,6 +58,7 @@ describe('published tarball evidence', () => {
       { name: 'package/index.js', body: 'throw new Error("must not execute");' },
       { name: 'package/docs/CHANGELOG.md', body: '# Changes\nPublished fixes' },
     ]);
+
     const gate = Promise.withResolvers<void>();
     const started: string[] = [];
     vi.stubGlobal(
@@ -61,15 +66,18 @@ describe('published tarball evidence', () => {
       vi.fn(async (url: string) => {
         started.push(String(url));
         await gate.promise;
+
         return respond(body);
       }),
     );
     const pending = Effect.runPromise(getPair(manifest(body), manifest(body, '2.0.0')));
+
     try {
       await vi.waitFor(() => expect(started).toHaveLength(2));
     } finally {
       gate.resolve();
     }
+
     const result = await pending;
     expect(result.from).toMatchObject({
       status: 'available',
@@ -193,6 +201,7 @@ describe('published tarball evidence', () => {
       { name: 'package/first', body: Buffer.alloc(16 * 1024 * 1024) },
       { name: 'package/second', body: Buffer.alloc(16 * 1024 * 1024) },
     ]);
+
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => respond(body)),
@@ -232,6 +241,7 @@ describe('published tarball evidence', () => {
       'fetch',
       vi.fn(async (url: string, init: RequestInit) => {
         if (String(url).includes('2.0.0')) return respond(body);
+
         return new Response(
           new ReadableStream({
             start(controller) {
@@ -266,10 +276,12 @@ describe('published tarball evidence', () => {
 
   it('inspects PAX long paths and records safe links without following them', async () => {
     const path = `docs/${'long-directory/'.repeat(20)}HISTORY`;
+
     const body = await archive([
       { name: `package/${path}`, body: 'Published history' },
       { name: 'package/current', type: 'symlink', linkname: path },
     ]);
+
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => respond(body)),

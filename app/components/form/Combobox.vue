@@ -55,8 +55,11 @@ const emit = defineEmits<{
 }>();
 
 const selectedValue = ref<string | null>(props.modelValue ?? null);
+
 const searchTerm = ref(props.searchTerm ?? '');
+
 const open = ref(false);
+
 let skipNextSearchTermChange = false;
 
 watch(
@@ -79,6 +82,7 @@ watch(searchTerm, (value) => {
   if (skipNextSearchTermChange) {
     skipNextSearchTermChange = false;
     open.value = false;
+
     return;
   }
 
@@ -101,10 +105,12 @@ const handleSelectedValue = (value: string) => {
   const nextSearchTerm = option?.label ?? value;
 
   selectedValue.value = value;
+
   if (searchTerm.value !== nextSearchTerm) {
     skipNextSearchTermChange = true;
     searchTerm.value = nextSearchTerm;
   }
+
   open.value = false;
   emit('update:modelValue', value);
 

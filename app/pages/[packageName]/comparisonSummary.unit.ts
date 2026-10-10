@@ -130,10 +130,12 @@ const measurements: PackageMeasurementsResponse = {
 describe('buildComparisonSummaries', () => {
   it('keeps pending measurement rows collapsed with an explicit measuring value', () => {
     const rows = buildComparisonRows(declarations, undefined);
+
     const summaries = buildComparisonSummaries(
       { declarations, measurements: undefined, measurementsUnavailable: false },
       rows,
     );
+
     const pending = summaries.filter(
       ({ row }) =>
         row.sourceId.startsWith('comparison.sizes') ||
@@ -169,16 +171,19 @@ describe('buildComparisonSummaries', () => {
 
   it('collapses measurement rows as unavailable without hiding declaration changes', () => {
     const rows = buildComparisonRows(unavailableDeclarations, undefined, true);
+
     const summaries = buildComparisonSummaries(
       { declarations: unavailableDeclarations, measurements: undefined, measurementsUnavailable: true },
       rows,
     );
+
     const unavailable = summaries.filter(
       ({ row }) =>
         row.sourceId.startsWith('comparison.sizes') ||
         row.sourceId === 'comparison.advisories' ||
         row.sourceId === 'comparison.tarball',
     );
+
     const changedDeclaration = summaries.find(({ row }) => row.sourceId === 'comparison.dependencies');
     const unchangedDeclaration = summaries.find(({ row }) => row.sourceId === 'comparison.moduleFormat');
 

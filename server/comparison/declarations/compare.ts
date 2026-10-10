@@ -8,6 +8,7 @@ import type {
 
 // Keep object order for conditional exports and typesVersions: first matching conditions win.
 const equal = (from: unknown, to: unknown): boolean => JSON.stringify(from) === JSON.stringify(to);
+
 const compareValue = <T>(from: T | undefined, to: T | undefined): ValueComparison<T> => ({
   changed: !equal(from, to),
   from: from ?? null,
@@ -18,9 +19,11 @@ const compareValue = <T>(from: T | undefined, to: T | undefined): ValueCompariso
 
 function compareDeclarationMaps<T>(from: ReadonlyMap<string, T>, to: ReadonlyMap<string, T>): DeclarationChange<T>[] {
   const changes: DeclarationChange<T>[] = [];
+
   for (const name of [...new Set([...from.keys(), ...to.keys()])].sort()) {
     const before = from.get(name);
     const after = to.get(name);
+
     if (!equal(before, after))
       changes.push({
         name,
@@ -29,19 +32,24 @@ function compareDeclarationMaps<T>(from: ReadonlyMap<string, T>, to: ReadonlyMap
         to: after ?? null,
       });
   }
+
   return changes;
 }
 
 function dependencies(version: DeclaredPackageVersion): Map<string, DependencyRequirement> {
   const result = new Map<string, DependencyRequirement>();
+
   for (const [name, range] of Object.entries(version.dependencies)) result.set(name, { category: 'runtime', range });
+
   for (const [name, range] of Object.entries(version.optionalDependencies))
     result.set(name, { category: 'optional', range });
+
   return result;
 }
 
 function peers(version: DeclaredPackageVersion) {
   const optional = new Set(version.optionalPeers);
+
   return new Map(
     Object.entries(version.peerDependencies).map(([name, range]) => [name, { range, optional: optional.has(name) }]),
   );
@@ -49,6 +57,7 @@ function peers(version: DeclaredPackageVersion) {
 
 function moduleDeclaration(version: DeclaredPackageVersion) {
   const { type, main, module } = version.moduleFormat;
+
   return {
     ...(type === undefined ? {} : { type }),
     ...(main === undefined ? {} : { main }),
@@ -58,6 +67,7 @@ function moduleDeclaration(version: DeclaredPackageVersion) {
 
 function hasTypeCondition(value: unknown): boolean {
   if (value === null || typeof value !== 'object') return false;
+
   return Object.entries(value).some(
     ([key, child]) => key === 'types' || key.startsWith('types@') || hasTypeCondition(child),
   );
@@ -65,6 +75,7 @@ function hasTypeCondition(value: unknown): boolean {
 
 function typeDeclaration(version: DeclaredPackageVersion) {
   const { types, typings, typesVersions, exports } = version.moduleFormat;
+
   return {
     ...(types === undefined ? {} : { types }),
     ...(typings === undefined ? {} : { typings }),
@@ -76,6 +87,7 @@ function typeDeclaration(version: DeclaredPackageVersion) {
 export function compareDeclarations(from: DeclaredPackageVersion, to: DeclaredPackageVersion): DeclarationComparison {
   const oldLicenses = [...new Set(from.licenses)].sort();
   const newLicenses = [...new Set(to.licenses)].sort();
+
   return {
     dependencies: compareDeclarationMaps(dependencies(from), dependencies(to)),
     peers: compareDeclarationMaps(peers(from), peers(to)),

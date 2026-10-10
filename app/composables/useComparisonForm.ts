@@ -16,6 +16,7 @@ import {
 } from './comparisonFormState';
 
 const TAG_OPTION_PREFIX = 'tag:';
+
 const VERSION_OPTION_PREFIX = 'version:';
 
 const versionSearch: SelectSearch = {
@@ -33,11 +34,13 @@ const emptyVersionCatalog: VersionCatalog = { versionByOptionValue: new Map<stri
 
 const createVersionCatalog = (metadata: ParsedPackageMetadata): VersionCatalog => {
   const versionByOptionValue = new Map<string, string>();
+
   const distTagOptions = Object.entries(metadata.distTags).map(([tag, version]) => {
     versionByOptionValue.set(`${TAG_OPTION_PREFIX}${tag}`, version);
 
     return { value: `${TAG_OPTION_PREFIX}${tag}`, label: tag, description: version };
   });
+
   const packageVersionOptions = metadata.versions.map((version, index) => {
     const value = `${VERSION_OPTION_PREFIX}${version}`;
     versionByOptionValue.set(value, version);
@@ -62,11 +65,13 @@ const createToVersionOptions = (
   }
 
   const isAtLeastFromVersion = createSemverAtLeastPredicate(fromVersion);
+
   const filteredOptions = versionOptions.filter((option) => {
     const version = versionByOptionValue.get(option.value);
 
     return version !== undefined && isAtLeastFromVersion(version);
   });
+
   const firstVersionIndex = filteredOptions.findIndex((option) => option.value.startsWith(VERSION_OPTION_PREFIX));
 
   if (firstVersionIndex <= 0) {
@@ -107,6 +112,7 @@ const useComparisonDraft = () => {
 
 const usePackageSearchOptions = (draft: Ref<ComparisonFormDraft>) => {
   const { data: searchResult, error, isError, isFetching } = usePackageSearchQuery(() => draft.value.searchTerm);
+
   const packageOptions = computed<readonly ComboboxOption[]>(
     () =>
       searchResult.value?.data.map(({ name, version, description }) => ({
@@ -126,12 +132,15 @@ const usePackageVersionMetadata = (draft: Ref<ComparisonFormDraft>) => {
     isError: isMetadataError,
     isFetching: isMetadataFetching,
   } = usePackageMetadataQuery(() => draft.value.selectedPackage);
+
   const versionCatalog = computed(() =>
     packageMetadata.value === undefined ? emptyVersionCatalog : createVersionCatalog(packageMetadata.value),
   );
+
   const versionSelectDisabled = computed(
     () => isMetadataFetching.value || packageMetadata.value === undefined || versionCatalog.value.options.length === 0,
   );
+
   const versionPlaceholder = computed(() => {
     if (isMetadataFetching.value) {
       return 'Loading…';
@@ -152,19 +161,23 @@ const usePackageVersionMetadata = (draft: Ref<ComparisonFormDraft>) => {
 
 const useVersionSelection = (draft: Ref<ComparisonFormDraft>, versionCatalog: ComputedRef<VersionCatalog>) => {
   const versionOptions = computed(() => versionCatalog.value.options);
+
   const selectedFromVersion = computed(() =>
     draft.value.fromVersionSelection === null
       ? null
       : (versionCatalog.value.versionByOptionValue.get(draft.value.fromVersionSelection) ?? null),
   );
+
   const selectedToVersion = computed(() =>
     draft.value.toVersionSelection === null
       ? null
       : (versionCatalog.value.versionByOptionValue.get(draft.value.toVersionSelection) ?? null),
   );
+
   const toVersionOptions = computed(() =>
     createToVersionOptions(versionOptions.value, versionCatalog.value.versionByOptionValue, selectedFromVersion.value),
   );
+
   const canCompare = computed(
     () =>
       draft.value.selectedPackage !== null && selectedFromVersion.value !== null && selectedToVersion.value !== null,
@@ -189,6 +202,7 @@ const setDefaultTargetVersion = (draft: Ref<ComparisonFormDraft>, metadata: Pars
 
   if (metadata.distTags.latest !== undefined) {
     draft.value.toVersionSelection = `${TAG_OPTION_PREFIX}latest`;
+
     return;
   }
 

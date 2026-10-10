@@ -33,6 +33,7 @@ export const remoteFrontendOrigin = (): string => {
       if (!address.internal && address.family === 'IPv4') return `http://${address.address}:${FRONTEND_PORT}`;
     }
   }
+
   throw new SmokeFailure('This scenario needs one non-loopback IPv4 address to act as another device');
 };
 
@@ -52,7 +53,9 @@ export const submit = async (
       signal: AbortSignal.timeout(120_000),
     },
   );
+
   const body: unknown = await response.json();
+
   try {
     return { status: response.status, body: decodeSubmission(body) };
   } catch {
@@ -68,6 +71,7 @@ export const waitForAvailable = async (eventsUrl: string, origin: string = FRONT
     `The subscription ended without an available briefing: ${JSON.stringify(subscription.frames)} ` +
       `(close ${subscription.close.code} ${subscription.close.reason})`,
   );
+
   return subscription;
 };
 
@@ -84,9 +88,11 @@ export const submitColdPair = async (from: string, to: string, provider: Provide
     `Expected a 202 submission for a cold pair, got ${first.status}: ${JSON.stringify(first.body)}`,
   );
   const eventsUrl = first.body.eventsUrl;
+
   if (eventsUrl === undefined) {
     throw new SmokeFailure(`A queued submission must carry eventsUrl: ${JSON.stringify(first.body)}`);
   }
+
   const parsed = new URL(eventsUrl);
   check(
     Number(parsed.port) === BRIEFING_PORT,
@@ -99,6 +105,7 @@ export const submitColdPair = async (from: string, to: string, provider: Provide
     provider.requestsFor(PACKAGE_NAME) === before + 1,
     `One generation must cost exactly one provider call, observed ${provider.requestsFor(PACKAGE_NAME) - before}`,
   );
+
   return eventsUrl;
 };
 
@@ -115,9 +122,11 @@ export const submitFromDevice = async (): Promise<void> => {
     `Expected a 202 submission from ${deviceOrigin}, got ${device.status}: ${JSON.stringify(device.body)}`,
   );
   const deviceEventsUrl = device.body.eventsUrl;
+
   if (deviceEventsUrl === undefined) {
     throw new SmokeFailure(`A queued submission must carry eventsUrl: ${JSON.stringify(device.body)}`);
   }
+
   const answered = new URL(deviceEventsUrl);
   check(
     answered.hostname === new URL(deviceOrigin).hostname && Number(answered.port) === BRIEFING_PORT,

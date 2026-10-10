@@ -12,18 +12,26 @@ import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import handler from './index.post';
 
 const HASH = 'b637f83283a13491f7fee3cd9a108ab6ea20994d00a95a6646ba7a1bd48818b4';
+
 const EVENTS_URL = `ws://localhost:8791/api/briefings/${HASH}/events`;
 
 const fetchMock = vi.fn<typeof fetch>();
+
 const idFromName = vi.fn((name: string) => ({ name }));
+
 const objectFetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
+
 const getObject = vi.fn<(id: object) => PackageEvidenceObject>(() => ({ fetch: objectFetch }));
+
 const namespace: PackageEvidenceNamespace = { idFromName, get: getObject };
+
 type DisposableBriefingServiceResult = BriefingServiceResult & { [Symbol.dispose](): void };
+
 type BriefingService = { submit(packet: BriefingEvidence): Promise<DisposableBriefingServiceResult> };
 
 // The private binding returns Cloudflare's native disposable object.
 const submit = vi.fn<(packet: BriefingEvidence) => Promise<DisposableBriefingServiceResult>>();
+
 const service: BriefingService = { submit };
 
 const evidence = (): BriefingEvidence => ({
@@ -82,6 +90,7 @@ const nativeServiceResult = (
 const nodeBridgeService = async (submission: BriefingSubmission) => {
   const serviceName = 'briefing-node-rpc-service';
   const callerName = 'briefing-node-rpc-caller';
+
   const runtime = new Miniflare({
     workers: [
       {
@@ -122,6 +131,7 @@ export default { fetch() { return new Response('ok'); } };`,
 
   try {
     const bindings = await runtime.getBindings<{ BRIEFING_SERVICE: BriefingService }>(callerName);
+
     return { service: bindings.BRIEFING_SERVICE, dispose: () => runtime.dispose() };
   } catch (error) {
     await runtime.dispose();
@@ -143,22 +153,27 @@ function eventFor(
     `http://localhost/api/package/${encodeURIComponent(packageName)}/compare/briefing?${new URLSearchParams({ from, to })}`,
     { headers },
   );
+
   event.context.params = { packageName: encodeURIComponent(packageName) };
   event.context.cloudflare = { env };
+
   return event;
 }
 
 const ConsoleLogRecordSchema = Schema.Struct({ annotations: Schema.Record(Schema.String, Schema.Unknown) });
+
 const decodeConsoleLogRecord = Schema.decodeUnknownSync(ConsoleLogRecordSchema, { errors: 'all' });
 
 const annotationsFromLog = (value: unknown): Readonly<Record<string, unknown>> => {
   if (typeof value !== 'string') throw new Error('Expected a JSON console record');
   let record: unknown;
+
   try {
     record = JSON.parse(value);
   } catch {
     throw new Error('Expected a valid JSON console record');
   }
+
   try {
     return decodeConsoleLogRecord(record).annotations;
   } catch {
@@ -191,6 +206,7 @@ describe('briefing submission endpoint', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(idFromName).toHaveBeenCalledWith('minimist');
     const call = objectFetch.mock.calls[0];
+
     if (call === undefined) throw new Error('Expected a Durable Object request');
     const request = new Request(call[0], call[1]);
     expect(request.url).toBe('https://package-evidence/briefing-evidence');
@@ -203,6 +219,7 @@ describe('briefing submission endpoint', () => {
     const resolved = { ...evidence(), from: '1.4.0', to: '3.0.0' };
     objectFetch.mockResolvedValue(Response.json(resolved));
     submit.mockResolvedValue(nativeServiceResult({ ...available(), from: resolved.from, to: resolved.to }));
+
     try {
       const response = await handler(eventFor('^1.0.0', 'latest'));
 
@@ -222,18 +239,22 @@ describe('briefing submission endpoint', () => {
 
   it('creates a distinct server child span for each valid incoming client context and links the shared generation', async () => {
     const log = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
     const generationContext: TraceContext = {
       traceId: '9f4f7c51d7339f60cae8f53609e7b9d2',
       spanId: '4a2bf8ebd98a0123',
     };
+
     submit.mockResolvedValue(nativeServiceResult(pending(), undefined, generationContext));
     objectFetch.mockImplementation(async () => Response.json(evidence()));
+
     try {
       const first = await handler(
         eventFor('1.0.0', '2.0.0', 'minimist', undefined, {
           traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00',
         }),
       );
+
       const second = await handler(
         eventFor('1.0.0', '2.0.0', 'minimist', undefined, {
           traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-00',
@@ -265,6 +286,7 @@ describe('briefing submission endpoint', () => {
 
   it('starts a fresh server trace when the incoming traceparent is malformed', async () => {
     const log = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
     try {
       const response = await handler(eventFor('1.0.0', '2.0.0', 'minimist', undefined, { traceparent: '00-invalid' }));
 
@@ -293,6 +315,7 @@ describe('briefing submission endpoint', () => {
 
   it('accepts a real Miniflare Node development RPC result', async () => {
     const bridge = await nodeBridgeService(available());
+
     try {
       // Node's Miniflare proxy deliberately hides symbols and omits descriptor values; property access is still live.
       const raw = await bridge.service.submit(evidence());
@@ -433,6 +456,7 @@ describe('briefing submission endpoint', () => {
   it('logs only safe requested identity when evidence fails before a packet exists', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     objectFetch.mockResolvedValue(new Response('private evidence details', { status: 503 }));
+
     try {
       await expect(handler(eventFor('https://private.example/?token=secret', 'latest'))).rejects.toMatchObject({
         statusCode: 503,
@@ -500,6 +524,7 @@ describe('briefing submission endpoint', () => {
 
   it('logs only the error name and the service reason while answering the same opaque 503', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
     try {
       // This test submits three times, and a Response body can only be read once.
       objectFetch.mockImplementation(async () => Response.json(evidence()));

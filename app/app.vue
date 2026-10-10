@@ -11,10 +11,13 @@ const canonicalUrl = useCanonicalUrl();
 useHead({
   link: computed(() => (canonicalUrl.value === undefined ? [] : [{ rel: 'canonical', href: canonicalUrl.value }])),
 });
+
 useSeoMeta({ ogUrl: canonicalUrl });
 
 const route = useRoute();
+
 const homepageHeroEntry = useState('homepage-hero-entry', () => 0);
+
 watch(
   () => route.path,
   (path, previousPath) => {

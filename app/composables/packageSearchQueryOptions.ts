@@ -6,13 +6,17 @@ import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 import type { ParsedPackagesSearchResult } from '#shared/comparison/package/search.defs';
 
 export const PACKAGE_SEARCH_QUERY_KEY_PREFIX = ['npm', 'packages', 'search'] as const;
+
 export const PACKAGE_SEARCH_DEBOUNCE_MS = 200;
+
 export const PACKAGE_SEARCH_STALE_TIME = 60_000;
 
 const PACKAGE_SEARCH_SIZE = 20;
 
 type NuxtRequestFetch = H3Event$Fetch | $Fetch;
+
 type PackageSearchQueryKey = readonly [...typeof PACKAGE_SEARCH_QUERY_KEY_PREFIX, string];
+
 type PackageSearchQueryContext = QueryFunctionContext<PackageSearchQueryKey>;
 
 export const packageSearchQueryOptions = (requestFetch: NuxtRequestFetch, searchTerm: MaybeRefOrGetter<string>) => {

@@ -39,6 +39,7 @@ import { describeFrames, submit, submitColdPair, submitFromDevice, waitForAvaila
  */
 const fixtureProviderPort = async (): Promise<number> => {
   const contents = await readFile(devVarsPath, 'utf8').catch(() => undefined);
+
   if (contents === undefined) {
     throw new SmokeFailure(
       `Missing ${devVarsPath}. Create it with a loopback fixture endpoint, for example:\n` +
@@ -47,13 +48,16 @@ const fixtureProviderPort = async (): Promise<number> => {
         '  AI_BRIEFING_MODEL="local-fixture-model"',
     );
   }
+
   const endpoint = /^AI_BRIEFING_ENDPOINT\s*=\s*"?([^"\s]+)"?/m.exec(contents)?.[1];
+
   if (endpoint === undefined) throw new SmokeFailure(`${devVarsPath} does not set AI_BRIEFING_ENDPOINT`);
   const url = new URL(endpoint);
   check(
     url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '::1',
     `Refusing to run: ${devVarsPath} points at ${url.hostname}, not loopback. This scenario only drives a local fixture.`,
   );
+
   return Number(url.port === '' ? (url.protocol === 'https:' ? 443 : 80) : url.port);
 };
 
@@ -80,12 +84,14 @@ const verifyRestart = async (
 
   log(`reconnect -> ${describeFrames(await waitForAvailable(eventsUrl))}`);
   check(provider.requestsFor(PACKAGE_NAME) === afterRestart, 'A socket reconnect must never start inference');
+
   return restarted;
 };
 
 const runScenario = async (preview: boolean, persistTo: string, provider: ProviderFixture): Promise<Launcher> => {
   log(`scenario: ${preview ? 'preview (built frontend)' : 'dev (Nuxt HMR)'}, persistence root ${persistTo}`);
   const launcher = startLauncher(preview, persistTo);
+
   try {
     await waitForHealth(launcher, HEALTH_TIMEOUT_MS);
     log(`frontend healthy on ${FRONTEND_ORIGIN}`);
@@ -95,6 +101,7 @@ const runScenario = async (preview: boolean, persistTo: string, provider: Provid
 
     await launcher.stop();
     check(await portsAreFree(), 'Shutdown must release the evidence, briefing, and frontend ports');
+
     return await verifyRestart(preview, persistTo, provider, eventsUrl);
   } catch (error) {
     await launcher.stop();
@@ -106,6 +113,7 @@ const runScenario = async (preview: boolean, persistTo: string, provider: Provid
 const assertBuiltPreview = async (preview: boolean): Promise<void> => {
   if (!preview) return;
   const built = await readFile(builtFrontendConfig, 'utf8').catch(() => undefined);
+
   if (built === undefined) {
     throw new SmokeFailure(`Missing ${builtFrontendConfig}. Run \`nub run build\` before --preview.`);
   }
@@ -114,6 +122,7 @@ const assertBuiltPreview = async (preview: boolean): Promise<void> => {
 /** Reports whatever the scenario threw: classified throwables render fully, the rest serialize as diagnostic JSON. */
 const describeFailure = (failure: unknown): string => {
   if (failure instanceof Error) return failure.stack ?? failure.message;
+
   return typeof failure === 'string' ? failure : JSON.stringify(failure);
 };
 
@@ -125,18 +134,22 @@ const runOnce = async (preview: boolean, measure: boolean, keep: boolean): Promi
   log(`fixture provider listening on 127.0.0.1:${port} (loopback, no real credential)`);
   let launcher: Launcher | undefined;
   let failure: unknown;
+
   try {
     launcher = await runScenario(preview, persistTo, provider);
     log('scenario: PASS (POST -> socket available -> restart -> D1 hit -> reconnect with no provider call)');
+
     if (measure) await runMeasurements(launcher, provider);
   } catch (error) {
     failure = error;
   } finally {
     if (launcher !== undefined) await launcher.stop();
     await provider.close();
+
     if (keep) log(`kept the isolated persistence root at ${persistTo}`);
     else await rm(persistTo, { recursive: true, force: true });
   }
+
   if (failure !== undefined) throw failure;
 };
 
@@ -146,6 +159,7 @@ const main = async (): Promise<void> => {
   const measure = argv.includes('--measure');
   const keep = argv.includes('--keep');
   await assertBuiltPreview(preview);
+
   try {
     await runOnce(preview, measure, keep);
     log('scenario: DONE');

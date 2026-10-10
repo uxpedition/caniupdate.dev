@@ -61,22 +61,28 @@ export const startLauncher = (preview: boolean, persistTo: string): Launcher => 
     // session: without it, two sessions registering `can-i-update-local-evidence` would fight over one registry entry.
     env: { ...process.env, WRANGLER_REGISTRY_PATH: join(persistTo, 'registry') },
   });
+
   let output = '';
   const childPids = new Map<string, number>();
+
   const capture = (chunk: Buffer, stream: 'out' | 'err') => {
     const text = chunk.toString('utf8');
     output = `${output}${text}`.slice(-32_768);
+
     for (const line of text.split('\n')) {
       if (line.trim() === '') continue;
       log(`  [launcher:${stream}] ${line}`);
       const pid = /(Evidence worker|Briefing worker|Frontend) child PID: (\d+)/.exec(line);
+
       if (pid?.[1] !== undefined && pid[2] !== undefined) childPids.set(pid[1], Number(pid[2]));
     }
   };
+
   child.stdout?.on('data', (chunk: Buffer) => capture(chunk, 'out'));
   child.stderr?.on('data', (chunk: Buffer) => capture(chunk, 'err'));
   const exited = new Promise<number>((resolve) => child.once('exit', (code) => resolve(code ?? -1)));
   let stopping = false;
+
   return {
     process: child,
     output: () => output,
@@ -91,18 +97,23 @@ export const startLauncher = (preview: boolean, persistTo: string): Launcher => 
 
 export const waitForHealth = async (launcher: Launcher, timeoutMs: number): Promise<void> => {
   const deadline = Date.now() + timeoutMs;
+
   while (Date.now() < deadline) {
     if (launcher.process.exitCode !== null) {
       throw new SmokeFailure(`The launcher exited with code ${launcher.process.exitCode}:\n${launcher.output()}`);
     }
+
     try {
       const response = await fetch(`${FRONTEND_ORIGIN}/api/health`, { signal: AbortSignal.timeout(2_000) });
+
       if (response.ok) return;
     } catch {
       // Not up yet.
     }
+
     await delay(500);
   }
+
   throw new SmokeFailure(
     `The frontend on ${FRONTEND_ORIGIN} was not healthy within ${timeoutMs} ms:\n${launcher.output()}`,
   );
@@ -123,5 +134,6 @@ export const portsAreFree = async (): Promise<boolean> => {
         }),
     ),
   );
+
   return attempts.every(Boolean);
 };

@@ -6,10 +6,13 @@ import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 import type { PackageDeclarationsResponse } from '#shared/comparison/comparison.defs';
 
 export const PACKAGE_COMPARISON_QUERY_KEY_PREFIX = ['npm', 'packages', 'comparison'] as const;
+
 export const PACKAGE_COMPARISON_STALE_TIME = 60_000;
 
 type NuxtRequestFetch = H3Event$Fetch | $Fetch;
+
 type PackageComparisonQueryKey = readonly [...typeof PACKAGE_COMPARISON_QUERY_KEY_PREFIX, string, string, string];
+
 type PackageComparisonQueryContext = QueryFunctionContext<PackageComparisonQueryKey>;
 
 /** The reactive declaration-query options handle shared by `useQuery`, prefetch, and cache removal. */
@@ -34,6 +37,7 @@ export const packageComparisonQueryOptions = (
     ]),
     queryFn: async ({ queryKey, signal }: PackageComparisonQueryContext): Promise<PackageDeclarationsResponse> => {
       const [, , , packageName, from, to] = queryKey;
+
       return requestFetch<PackageDeclarationsResponse>(`/api/package/${encodeURIComponent(packageName)}/compare`, {
         query: { from, to },
         retry: false,

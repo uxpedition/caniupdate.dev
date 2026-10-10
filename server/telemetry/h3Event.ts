@@ -38,12 +38,15 @@ const isLegacyNodeResponse = (value: unknown): value is LegacyNodeResponse =>
 
 const nodeResponseFromEvent = (event: object): LegacyNodeResponse | undefined => {
   const node = 'node' in event ? event.node : undefined;
+
   if (typeof node !== 'object' || node === null || !('res' in node)) return undefined;
+
   return isLegacyNodeResponse(node.res) ? node.res : undefined;
 };
 
 const legacyHeaders = (value: unknown): Headers => {
   if (!(value instanceof Headers)) throw new TelemetryIngressError(400);
+
   return value;
 };
 
@@ -59,6 +62,7 @@ const enqueueNodeRequestChunk = (
 ): void => {
   if (!state.active) return;
   request.pause();
+
   if (typeof chunk === 'string') {
     controller.enqueue(textEncoder.encode(chunk));
   } else if (chunk instanceof Uint8Array) {
@@ -107,20 +111,25 @@ const cancelNodeRequestBody = (
 ): void => {
   state.active = false;
   request.pause();
+
   if (response === undefined || response.writableFinished) {
     request.destroy();
+
     return;
   }
+
   // Destroying the incoming request first aborts Nitro's error response (and can stall its dev proxy).
   const destroy = () => {
     request.destroy();
   };
+
   response.once('finish', destroy);
   response.once('close', destroy);
 };
 
 const nodeRequestBody = (request: LegacyNodeRequest, response?: LegacyNodeResponse): ReadableStream<Uint8Array> => {
   const state: NodeRequestBodyState = { active: true };
+
   return new ReadableStream<Uint8Array>({
     start(controller) {
       startNodeRequestBody(request, controller, state);
@@ -137,36 +146,46 @@ const nodeRequestBody = (request: LegacyNodeRequest, response?: LegacyNodeRespon
 const requestFromContainer = (value: unknown): Request | undefined => {
   if (typeof value !== 'object' || value === null || !('request' in value)) return undefined;
   const request = value.request;
+
   return request instanceof Request ? request : undefined;
 };
 
 const webRequestFromEvent = (event: object): Request | undefined => {
   if (!('web' in event)) return undefined;
+
   return requestFromContainer(event.web);
 };
 
 const cloudflareRequestFromEvent = (event: object): Request | undefined => {
   if (!('context' in event)) return undefined;
   const context = event.context;
+
   if (typeof context !== 'object' || context === null || !('cloudflare' in context)) return undefined;
+
   return requestFromContainer(context.cloudflare);
 };
 
 const requestFromEvent = (event: object): Request | undefined => {
   const webRequest = webRequestFromEvent(event);
+
   if (webRequest !== undefined) return webRequest;
   const cloudflareRequest = cloudflareRequestFromEvent(event);
+
   if (cloudflareRequest !== undefined) return cloudflareRequest;
   const eventRequest = 'req' in event ? event.req : undefined;
+
   return eventRequest instanceof Request ? eventRequest : undefined;
 };
 
 const nodeRequestFromEvent = (event: object): LegacyNodeRequest | undefined => {
   const eventRequest = 'req' in event ? event.req : undefined;
+
   if (isLegacyNodeRequest(eventRequest)) return eventRequest;
 
   const node = 'node' in event ? event.node : undefined;
+
   if (typeof node !== 'object' || node === null || !('req' in node)) return undefined;
+
   return isLegacyNodeRequest(node.req) ? node.req : undefined;
 };
 
@@ -176,6 +195,7 @@ const nodeRequestURL = (headers: Headers, request: LegacyNodeRequest, path: stri
   const socket = request.socket;
   const encrypted = typeof socket === 'object' && socket !== null && 'encrypted' in socket && socket.encrypted === true;
   const protocol = forwardedProtocol === 'https' || encrypted ? 'https' : 'http';
+
   try {
     return new URL(path.replace(/^[/\\]+/, '/'), `${protocol}://${host}`);
   } catch {
@@ -185,21 +205,26 @@ const nodeRequestURL = (headers: Headers, request: LegacyNodeRequest, path: stri
 
 const requestMethodFromEvent = (event: object, request: LegacyNodeRequest): string | undefined => {
   const method = 'method' in event ? event.method : undefined;
+
   return typeof method === 'string' ? method : request.method;
 };
 
 const requestPathFromEvent = (event: object, request: LegacyNodeRequest): string | undefined => {
   if (typeof request.originalUrl === 'string') return request.originalUrl;
+
   if (typeof request.url === 'string') return request.url;
   const path = 'path' in event ? event.path : undefined;
+
   return typeof path === 'string' ? path : undefined;
 };
 
 const createLegacyWebRequest = (event: object, request: LegacyNodeRequest, method: string, path: string): Request => {
   const headers = legacyHeaders('headers' in event ? event.headers : undefined);
   const url = nodeRequestURL(headers, request, path);
+
   const body =
     method === 'GET' || method === 'HEAD' ? undefined : nodeRequestBody(request, nodeResponseFromEvent(event));
+
   try {
     return new Request(url, {
       method,
@@ -216,14 +241,18 @@ const createLegacyWebRequest = (event: object, request: LegacyNodeRequest, metho
 export const toTelemetryRequest = (event: unknown): Request => {
   if (typeof event !== 'object' || event === null) throw new TelemetryIngressError(400);
   const nodeRequest = nodeRequestFromEvent(event);
+
   if (nodeRequest !== undefined) {
     const method = requestMethodFromEvent(event, nodeRequest);
     const path = requestPathFromEvent(event, nodeRequest);
+
     if (method === undefined || path === undefined) throw new TelemetryIngressError(400);
+
     return createLegacyWebRequest(event, nodeRequest, method, path);
   }
 
   const webRequest = requestFromEvent(event);
+
   if (webRequest !== undefined) return webRequest;
   throw new TelemetryIngressError(400);
 };
@@ -231,15 +260,19 @@ export const toTelemetryRequest = (event: unknown): Request => {
 const contextClientAddress = (event: object): string | undefined => {
   if (!('context' in event)) return undefined;
   const context = event.context;
+
   if (typeof context !== 'object' || context === null || !('clientAddress' in context)) return undefined;
   const address = context.clientAddress;
+
   return typeof address === 'string' ? address : undefined;
 };
 
 const nodeClientAddress = (event: object): string | undefined => {
   const socket = nodeRequestFromEvent(event)?.socket;
+
   if (typeof socket !== 'object' || socket === null || !('remoteAddress' in socket)) return undefined;
   const address = socket.remoteAddress;
+
   return typeof address === 'string' ? address : undefined;
 };
 
@@ -249,7 +282,9 @@ const eventClientAddress = (event: object): string | undefined =>
 export const telemetryClientAddress = (event: unknown, request: Request): string | undefined => {
   if (typeof event === 'object' && event !== null) {
     const address = eventClientAddress(event);
+
     if (address !== undefined) return address;
   }
+
   return request.headers.get('cf-connecting-ip') ?? undefined;
 };

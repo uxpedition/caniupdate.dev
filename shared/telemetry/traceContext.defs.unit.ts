@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeTraceContext, formatTraceparent, parseTraceparent } from './traceContext.defs';
 
 const TRACE_ID = '4bf92f3577b34da6a3ce929d0e0e4736';
+
 const SPAN_ID = '00f067aa0ba902b7';
 
 describe('parseTraceparent', () => {

@@ -5,7 +5,9 @@ import { Cause, Effect, Exit, Fiber, Queue, Scope, Stream } from 'effect';
 import { extract, type Extract as TarStreamExtract } from 'tar-stream';
 
 const MAX_ARCHIVE_BYTES = 32 * 1024 * 1024;
+
 const COMPRESSED_FEED_CHUNK_BYTES = 64 * 1024;
+
 const ARCHIVE_TRAILER_BYTES = 1024;
 
 type EventAdapter = {
@@ -20,6 +22,7 @@ type EventAdapter = {
 type ChunkWrite = (chunk: Buffer, callback?: (cause?: Error | null) => void) => boolean;
 
 export type TarParser = TarStreamExtract;
+
 export type EntryInspector<T> = (parser: TarParser, signal: AbortSignal) => Promise<T>;
 
 type Streams = {
@@ -30,13 +33,16 @@ type Streams = {
 };
 
 type InspectionOutcome<T> = { ok: true; value: T } | { ok: false; cause: unknown };
+
 type ReadinessSignal = { promise: Promise<void>; signal: () => void };
 
 function readinessSignal(): ReadinessSignal {
   let resolve!: () => void;
+
   const promise = new Promise<void>((done) => {
     resolve = done;
   });
+
   return { promise, signal: () => resolve() };
 }
 
@@ -104,6 +110,7 @@ class ChunkWriteWaiter {
     this.events.addDrain(this.onDrain);
     this.events.addError(this.onError);
     this.events.addClose(this.onClose);
+
     try {
       this.needsDrain = !write(chunk, this.onWrite);
       this.maybeFinish();
@@ -137,8 +144,10 @@ class ChunkWriteWaiter {
   private readonly onWrite = (cause?: Error | null): void => {
     if (cause !== undefined && cause !== null) {
       this.finish(cause);
+
       return;
     }
+
     this.writeFinished = true;
     this.maybeFinish();
   };
@@ -157,6 +166,7 @@ function writeChunk(
   return Effect.callback<void, unknown>((resume) => {
     const waiter = new ChunkWriteWaiter(events, waitForWrite, closeMessage, resume);
     waiter.start(chunk, write);
+
     return Effect.sync(() => waiter.cleanup());
   });
 }
@@ -164,6 +174,7 @@ function writeChunk(
 function writeParserChunk(parser: TarParser, events: EventAdapter, chunk: Buffer): Effect.Effect<void, unknown> {
   return Effect.suspend(() => {
     if (parser.destroyed || !parser.writable) return Effect.fail(new Error('Tar parser is not writable'));
+
     return writeChunk(chunk, (input) => parser.write(input), events, false, 'Tar parser closed before draining');
   });
 }
@@ -184,25 +195,32 @@ function feedCompressed(gunzip: Gunzip, events: EventAdapter, body: Buffer): Eff
       const end = Math.min(body.length, offset + COMPRESSED_FEED_CHUNK_BYTES);
       yield* writeGunzipChunk(gunzip, events, body.subarray(offset, end));
     }
+
     yield* Effect.try({ try: () => gunzip.end(), catch: (cause) => cause });
   });
 }
 
 function requireBufferChunk(value: unknown): Buffer {
   if (Buffer.isBuffer(value)) return value;
+
   if (!(value instanceof Uint8Array)) throw new Error('Invalid tarball decompressed chunk');
+
   return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
 }
 
 function retainTail(tail: Buffer, tailLength: number, chunk: Buffer): number {
   if (chunk.length >= tail.length) {
     tail.set(chunk.subarray(chunk.length - tail.length));
+
     return tail.length;
   }
+
   const nextLength = Math.min(tail.length, tailLength + chunk.length);
   const retained = nextLength - chunk.length;
+
   if (retained > 0) tail.copyWithin(0, tailLength - retained, tailLength);
   tail.set(chunk, retained);
+
   return nextLength;
 }
 
@@ -210,6 +228,7 @@ function inspectArchiveTrailer(total: number, tail: Buffer, tailLength: number):
   if (total < ARCHIVE_TRAILER_BYTES || total % 512 !== 0 || tailLength < ARCHIVE_TRAILER_BYTES) {
     throw new Error('Incomplete tarball archive');
   }
+
   for (let index = 0; index < ARCHIVE_TRAILER_BYTES; index++) {
     if (tail[index] !== 0) throw new Error('Incomplete tarball archive');
   }
@@ -221,17 +240,22 @@ function decompressedChunks(gunzip: Gunzip, signalReady: () => void): Stream.Str
       Effect.acquireRelease(
         Effect.sync(() => {
           let ended = false;
+
           const onData = (chunk: unknown) => {
             gunzip.pause();
+
             if (!Queue.offerUnsafe(queue, chunk)) {
               Queue.failCauseUnsafe(queue, Cause.fail(new Error('Gunzip output queue overflow')));
             }
           };
+
           const onEnd = () => {
             ended = true;
             Queue.endUnsafe(queue);
           };
+
           const onError = (cause: unknown) => Queue.failCauseUnsafe(queue, Cause.fail(cause));
+
           const onClose = () => {
             if (!ended) Queue.failCauseUnsafe(queue, Cause.fail(new Error('Gunzip closed before completing')));
           };
@@ -272,13 +296,16 @@ function consumeGunzip(
           try: () => {
             const value = requireBufferChunk(rawChunk);
             const nextTotal = total + value.length;
+
             if (nextTotal > MAX_ARCHIVE_BYTES) throw new Error('Tarball exceeds archive byte limit');
             total = nextTotal;
             tailLength = retainTail(tail, tailLength, value);
+
             return value;
           },
           catch: (cause) => cause,
         });
+
         yield* writeParserChunk(parser, events, chunk);
         yield* Effect.try({ try: () => gunzip.resume(), catch: (cause) => cause });
       }),
@@ -291,6 +318,7 @@ function teardownOnFailure<A, E>(streams: Streams): (exit: Exit.Exit<A, E>) => E
   return (exit) => {
     if (!Exit.isFailure(exit)) return Effect.void;
     const cause = Cause.hasFails(exit.cause) || Cause.hasDies(exit.cause) ? Cause.squash(exit.cause) : undefined;
+
     return Effect.sync(() => destroyStreams(streams, cause));
   };
 }
@@ -299,6 +327,7 @@ function startGunzipConsumer(streams: Streams): Effect.Effect<Fiber.Fiber<void, 
   const { parser, gunzip, parserEvents } = streams;
   const consumerReady = readinessSignal();
   let outputExit: Exit.Exit<void, unknown> | undefined;
+
   const outputTask = Effect.onExit(
     Effect.onExit(consumeGunzip(gunzip, parser, parserEvents, consumerReady.signal), teardownOnFailure(streams)),
     (exit) =>
@@ -307,11 +336,14 @@ function startGunzipConsumer(streams: Streams): Effect.Effect<Fiber.Fiber<void, 
         consumerReady.signal();
       }),
   );
+
   return Effect.gen(function* () {
     const fiber: Fiber.Fiber<void, unknown> = yield* Effect.forkScoped(outputTask);
     // Attach decompressor output listeners before any input can trigger an error or be lost.
     yield* Effect.promise(() => consumerReady.promise);
+
     if (outputExit !== undefined && Exit.isFailure(outputExit)) return yield* Effect.failCause(outputExit.cause);
+
     return fiber;
   });
 }
@@ -323,15 +355,18 @@ function inspectEntriesEffect<T>(
 ): Effect.Effect<T, unknown> {
   return Effect.callback<T, unknown>((resume, signal) => {
     let pending: Promise<T>;
+
     try {
       pending = inspectEntries(streams.parser, signal);
     } catch (cause) {
       pending = Promise.reject(cause);
     }
+
     const settled: Promise<InspectionOutcome<T>> = pending.then(
       (value): InspectionOutcome<T> => ({ ok: true, value }),
       (cause): InspectionOutcome<T> => ({ ok: false, cause }),
     );
+
     signalReady();
     void settled.then((outcome) => resume(outcome.ok ? Effect.succeed(outcome.value) : Effect.fail(outcome.cause)));
 
@@ -348,13 +383,16 @@ function complete<T>(
   inspectEntries: EntryInspector<T>,
 ): Effect.Effect<T, unknown, Scope.Scope> {
   const { parser, gunzip, gunzipEvents } = streams;
+
   return Effect.gen(function* () {
     const outputFiber = yield* startGunzipConsumer(streams);
     const inspectionReady = readinessSignal();
+
     const entryTask = Effect.onExit(
       inspectEntriesEffect(streams, inspectEntries, inspectionReady.signal),
       teardownOnFailure(streams),
     );
+
     const entries: Fiber.Fiber<T, unknown> = yield* Effect.forkScoped(entryTask);
     // Register the parser iterator while it is live; a malformed first gzip chunk can close it.
     yield* Effect.promise(() => inspectionReady.promise);
@@ -362,14 +400,18 @@ function complete<T>(
     const feed = yield* Effect.exit(
       feedCompressed(gunzip, gunzipEvents, body).pipe(Effect.onExit(teardownOnFailure(streams))),
     );
+
     const output = yield* Fiber.join(outputFiber).pipe(Effect.exit);
 
     if (Exit.isFailure(output)) return yield* Effect.failCause(output.cause);
+
     if (Exit.isFailure(feed)) return yield* Effect.failCause(feed.cause);
 
     yield* Effect.try({ try: () => parser.end(undefined), catch: (cause) => cause });
     const entryExit = yield* Fiber.join(entries).pipe(Effect.exit);
+
     if (Exit.isFailure(entryExit)) return yield* Effect.failCause(entryExit.cause);
+
     return entryExit.value;
   });
 }
@@ -381,16 +423,19 @@ export function inspectTarball<T>(body: Buffer, inspectEntries: EntryInspector<T
         Effect.try({
           try: (): Streams => {
             const parser = extract();
+
             const gunzip = createGunzip({
               chunkSize: COMPRESSED_FEED_CHUNK_BYTES,
               maxOutputLength: MAX_ARCHIVE_BYTES,
             });
+
             return { parser, gunzip, parserEvents: parserEvents(parser), gunzipEvents: gunzipEvents(gunzip) };
           },
           catch: (cause) => cause,
         }),
         (streams) => Effect.sync(() => destroyStreams(streams)),
       );
+
       return yield* complete(streams, body, inspectEntries);
     }),
   );

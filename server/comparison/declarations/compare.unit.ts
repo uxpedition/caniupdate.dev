@@ -37,10 +37,12 @@ describe('declaration comparison rules', () => {
       dependencies: { same: '^1', overridden: 'old', removed: '*' },
       optionalDependencies: { overridden: '^2' },
     });
+
     const to = version({
       dependencies: { overridden: 'new', same: '^1', added: '*' },
       optionalDependencies: { overridden: '^2' },
     });
+
     expect(compareDeclarations(from, to).dependencies).toEqual([
       { name: 'added', kind: 'added', from: null, to: { category: 'runtime', range: '*' } },
       { name: 'removed', kind: 'removed', from: { category: 'runtime', range: '*' }, to: null },
@@ -70,6 +72,7 @@ describe('declaration comparison rules', () => {
       installScriptCommands: {},
       moduleFormat: { main: 'index.js' },
     };
+
     const to = { ...from, version: '2.0.0', engines: { node: '>=20' } };
 
     expect(compareDeclarations(from, to)).toMatchObject({

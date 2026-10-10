@@ -8,35 +8,52 @@ import { fileURLToPath } from 'node:url';
 import { Schema } from 'effect';
 
 export const root = fileURLToPath(new URL('../../..', import.meta.url));
+
 export const devVarsPath = join(root, 'workers', 'briefing', '.dev.vars');
+
 export const builtFrontendConfig = join(root, '.output', 'server', 'wrangler.json');
 
 export const PACKAGE_NAME = 'minimist';
+
 export const SETTLED_FROM = '1.2.5';
+
 export const SETTLED_TO = '1.2.8';
+
 /** A second pair, so `--measure` can time a cold generation instead of the D1 hit the scenario settles. */
 export const COLD_FROM = '1.2.5';
+
 export const COLD_TO = '1.2.6';
+
 /** A third pair, generated for the device-shaped Origin check, so `--measure`'s cold pair stays cold. */
 export const REMOTE_FROM = '1.2.7';
+
 export const REMOTE_TO = '1.2.8';
+
 /** A larger package for `--measure`: the frontend re-serializes the whole bounded packet on every POST. */
 export const LARGE_PACKAGE_NAME = 'vue';
+
 export const LARGE_FROM = '3.4.38';
+
 export const LARGE_TO = '3.5.13';
 
 /** Offset from the documented 8790/8791/5173 so the scenario can run beside a live development session. */
 export const EVIDENCE_PORT = 8890;
+
 export const BRIEFING_PORT = 8891;
+
 export const FRONTEND_PORT = 5273;
+
 /** Offset from the documented 9230, so a live session's inspector ports stay free. */
 export const INSPECTOR_BASE = 9330;
 
 export const FRONTEND_ORIGIN = `http://localhost:${FRONTEND_PORT}`;
+
 export const HASH_PATH = /^\/api\/briefings\/([0-9a-f]{64})\/events$/;
 
 export const HEALTH_TIMEOUT_MS = 180_000;
+
 export const SUBSCRIPTION_TIMEOUT_MS = 120_000;
+
 export const SHUTDOWN_TIMEOUT_MS = 30_000;
 
 /**

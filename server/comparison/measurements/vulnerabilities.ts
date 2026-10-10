@@ -9,10 +9,12 @@ import type {
 import { getVulnerability, queryBatch } from '../../httpDependencies/osv/client';
 
 const unavailable: PackageVulnerabilities = { status: 'unavailable', count: null, advisories: [] };
+
 const COLLECTION_TIMEOUT = Duration.seconds(30);
 
 function toPackageAdvisory(packageName: string, detail: OsvVulnerability, url: string): PackageAdvisory {
   const { id, modified, published, summary, aliases, severity, references } = detail;
+
   return {
     id,
     url,
@@ -51,6 +53,7 @@ function toVersionVulnerabilities(
       advisories.push({ id, url, detailsStatus: 'unavailable' });
       continue;
     }
+
     if (detail.withdrawn !== undefined) continue;
 
     advisories.push(toPackageAdvisory(packageName, detail, url));
@@ -72,6 +75,7 @@ export const getPackageVulnerabilities = Effect.fn('Osv.getPackageVulnerabilitie
     if (Result.isFailure(batch)) return { from: unavailable, to: unavailable };
 
     const ids = new Set(batch.success.results.flatMap((result) => result.vulns?.map(({ id }) => id) ?? []));
+
     const entries = yield* Effect.forEach(
       ids,
       (id) =>
@@ -81,6 +85,7 @@ export const getPackageVulnerabilities = Effect.fn('Osv.getPackageVulnerabilitie
         ),
       { concurrency: 5 },
     );
+
     const details = new Map(entries);
 
     return {
@@ -92,7 +97,9 @@ export const getPackageVulnerabilities = Effect.fn('Osv.getPackageVulnerabilitie
   Effect.result,
   Effect.flatMap((result) => {
     if (Result.isSuccess(result)) return Effect.succeed(result.success);
+
     if (Cause.isTimeoutError(result.failure)) return Effect.succeed({ from: unavailable, to: unavailable });
+
     return Effect.failCause(result.failure);
   }),
 );

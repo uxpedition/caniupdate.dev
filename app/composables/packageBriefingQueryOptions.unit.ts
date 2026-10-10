@@ -14,7 +14,9 @@ import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import { packageBriefingQueryOptions } from './packageBriefingQueryOptions';
 
 const HASH = 'b637f83283a13491f7fee3cd9a108ab6ea20994d00a95a6646ba7a1bd48818b4';
+
 const EVENTS_URL = `ws://localhost:8791/api/briefings/${HASH}/events`;
+
 const PAGE_CONTEXT = { traceId: '4bf92f3577b34da6a3ce929d0e0e4736', spanId: '00f067aa0ba902b7' } satisfies TraceContext;
 
 const briefing = (): AvailablePackageBriefing => ({
@@ -52,6 +54,7 @@ const pending = (revision = 3): BriefingSubmission => ({
 });
 
 type SocketListener = (event: { data?: unknown }) => void;
+
 type SocketEvent = 'message' | 'close';
 
 /** The one socket a submission may open, with the service's own reconnect behavior simulated. */
@@ -78,6 +81,7 @@ class FakeSocket {
 
   close(): void {
     this.closeCalls += 1;
+
     if (this.readyState === 3) return;
     this.readyState = 3;
     this.#dispatch('close');
@@ -111,6 +115,7 @@ class FakeSocket {
 }
 
 const requestFetch = vi.fn();
+
 const queryClient = new QueryClient();
 
 const installTelemetryCollector = () => {
@@ -120,9 +125,11 @@ const installTelemetryCollector = () => {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
       requests.push({ url: request.url, body: await request.text() });
+
       return new Response(null, { status: 200 });
     }),
   );
+
   return {
     requests,
     telemetry: createTelemetryRuntime({ endpoint: 'http://collector.test:4318', serviceName: 'can-i-update-browser' }),
@@ -131,9 +138,12 @@ const installTelemetryCollector = () => {
 
 const traceparentAt = (index: number): string | undefined => {
   const options: unknown = requestFetch.mock.calls[index]?.[1];
+
   if (typeof options !== 'object' || options === null || !('headers' in options)) return undefined;
   const headers = options.headers;
+
   if (typeof headers !== 'object' || headers === null || !('traceparent' in headers)) return undefined;
+
   return typeof headers.traceparent === 'string' ? headers.traceparent : undefined;
 };
 
@@ -167,19 +177,24 @@ const runQuery = (
     pageContext,
     options.telemetryRuntime,
   );
+
   if (typeof queryFn !== 'function') throw new Error('Expected a briefing queryFn');
+
   return queryFn({ client: queryClient, queryKey: toValue(queryKey), signal, meta: undefined });
 };
 
 const startQuery = (submission: BriefingSubmission, statuses: string[], signal: AbortSignal) => {
   requestFetch.mockResolvedValue(submission);
+
   return runQuery(statuses, signal);
 };
 
 const waitForSocket = async (index: number) => {
   await vi.waitFor(() => expect(FakeSocket.instances.length).toBeGreaterThan(index));
   const socket = FakeSocket.instances[index];
+
   if (socket === undefined) throw new Error(`Expected socket ${index + 1} to be open`);
+
   return socket;
 };
 
@@ -246,12 +261,14 @@ describe('packageBriefingQueryOptions', () => {
 
     const logsRequest = requests.find(({ url }) => url.endsWith('/v1/logs'));
     const tracesRequest = requests.find(({ url }) => url.endsWith('/v1/traces'));
+
     if (logsRequest === undefined || tracesRequest === undefined)
       throw new Error('Expected OTLP log and trace exports');
     const logs = decodeTelemetryPayload('logs', JSON.parse(logsRequest.body));
     const traces = decodeTelemetryPayload('traces', JSON.parse(tracesRequest.body));
     const log = logs.resourceLogs.flatMap(({ scopeLogs }) => scopeLogs.flatMap(({ logRecords }) => logRecords))[0];
     const span = traces.resourceSpans.flatMap(({ scopeSpans }) => scopeSpans.flatMap(({ spans }) => spans))[0];
+
     const expectedAttributes = [
       { key: 'comparison.package.name', value: { stringValue: '@scope/package' } },
       { key: 'comparison.version.from', value: { stringValue: '1.2.3' } },

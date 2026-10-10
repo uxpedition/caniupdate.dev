@@ -14,8 +14,10 @@ const load = (respond: (version: string) => { status: number; body: unknown }) =
   const client = HttpClient.make((request) => {
     const requested = decodeURIComponent(new URL(request.url).searchParams.get('package') ?? '');
     const { status, body } = respond(requested.slice(requested.indexOf('@') + 1));
+
     return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(body, { status })));
   });
+
   return Effect.runPromise(
     getPackageBundleSize('widget', '1.0.0', '2.0.0').pipe(Effect.provideService(HttpClient.HttpClient, client)),
   );
@@ -40,6 +42,7 @@ describe('getPackageBundleSize', () => {
     const result = await load((version) =>
       version === '1.0.0' ? { status, body } : { status: 200, body: measurements['2.0.0'] },
     );
+
     expect(result).toMatchObject({
       from: {
         provider: 'bundlephobia',

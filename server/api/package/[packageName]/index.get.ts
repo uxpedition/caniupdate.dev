@@ -11,6 +11,7 @@ const REGISTRY_METADATA_ACCEPT = 'application/vnd.npm.install-v1+json';
 
 export default defineEventHandler(async (event) => {
   const routerSegment = getRouterParam(event, 'packageName');
+
   if (!routerSegment) throw createError({ statusCode: 400, statusMessage: 'Package name is required' });
   // H3's `decode: true` keeps encoded path separators (`%2F`) encoded, so re-encoding its result would encode a
   // scoped name twice. Decode the router segment once here and encode it once for the registry path.

@@ -8,6 +8,7 @@ import Button from '~/components/element/Button.vue';
 import SiteFooter from '~/components/SiteFooter.vue';
 
 const router = useRouter();
+
 const isComparisonRoute = computed(
   () =>
     typeof router.currentRoute.value.params.packageName === 'string' &&

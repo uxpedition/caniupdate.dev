@@ -7,9 +7,13 @@ import type { PackageEvidenceNamespace, PackageEvidenceObject } from '#shared/co
 import handler from './index.get';
 
 const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
+
 const idFromName = vi.fn((name: string) => ({ name }));
+
 const objectFetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
+
 const getObject = vi.fn<(id: object) => PackageEvidenceObject>(() => ({ fetch: objectFetch }));
+
 const namespace: PackageEvidenceNamespace = { idFromName, get: getObject };
 
 const measuredVersion = (version: string): MeasuredPackageVersion => ({
@@ -86,8 +90,10 @@ function eventFor(
   const event = mockEvent(
     `http://localhost/api/package/${encodeURIComponent(packageName)}/compare/measurements?${new URLSearchParams({ from, to })}`,
   );
+
   event.context.params = { packageName: encodeURIComponent(packageName) };
   event.context.cloudflare = { env: { PACKAGE_EVIDENCE: binding } };
+
   return event;
 }
 
@@ -114,6 +120,7 @@ describe('measurement evidence boundary', () => {
     expect(idFromName).toHaveBeenCalledWith('minimist');
     expect(getObject).toHaveBeenCalledTimes(1);
     const call = objectFetch.mock.calls[0];
+
     if (call === undefined) throw new Error('Expected a Durable Object request');
     const request = new Request(call[0], call[1]);
     expect(request.url).toBe('https://package-evidence/measurements');
@@ -156,6 +163,7 @@ describe('measurement evidence boundary', () => {
 
   it('rejects an inventory-shaped response instead of forwarding full archive evidence', async () => {
     const response = measurementResponse();
+
     const invalid: unknown = {
       ...response,
       from: {
@@ -166,6 +174,7 @@ describe('measurement evidence boundary', () => {
         },
       },
     };
+
     objectFetch.mockResolvedValue(Response.json(invalid));
 
     await expect(handler(eventFor())).rejects.toMatchObject({ statusCode: 503 });

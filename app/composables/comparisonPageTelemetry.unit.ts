@@ -12,9 +12,11 @@ const installCollector = () => {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
       requests.push({ url: request.url, body: await request.text() });
+
       return new Response(null, { status: 200 });
     }),
   );
+
   return {
     requests,
     telemetry: createTelemetryRuntime({ endpoint: 'http://collector.test:4318', serviceName: 'can-i-update-browser' }),
@@ -23,7 +25,9 @@ const installCollector = () => {
 
 const firstRecord = <T>(records: readonly T[]): T => {
   const record = records[0];
+
   if (record === undefined) throw new Error('Missing comparison page telemetry record');
+
   return record;
 };
 
@@ -38,12 +42,14 @@ describe('openComparisonPage', () => {
 
     const logsRequest = requests.find(({ url }) => url.endsWith('/v1/logs'));
     const tracesRequest = requests.find(({ url }) => url.endsWith('/v1/traces'));
+
     if (logsRequest === undefined || tracesRequest === undefined)
       throw new Error('Expected OTLP log and trace exports');
     const logs = decodeTelemetryPayload('logs', JSON.parse(logsRequest.body));
     const traces = decodeTelemetryPayload('traces', JSON.parse(tracesRequest.body));
     const log = firstRecord(firstRecord(firstRecord(logs.resourceLogs).scopeLogs).logRecords);
     const span = firstRecord(firstRecord(firstRecord(traces.resourceSpans).scopeSpans).spans);
+
     const expectedAttributes = [
       { key: 'comparison.package.name', value: { stringValue: '@scope/package' } },
       { key: 'comparison.requested.from', value: { stringValue: '^1.2.0' } },

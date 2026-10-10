@@ -5,10 +5,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { getPackageVulnerabilities } from './vulnerabilities';
 
 const modified = '2026-03-13T22:11:31.390433Z';
+
 const match = (id: string) => ({ id, modified });
 
 function run(batch: unknown, details: Record<string, unknown> = {}, batchStatus = 200) {
   const calls: { method: string; url: string; body?: unknown }[] = [];
+
   const client = HttpClient.make((request) =>
     Effect.gen(function* () {
       const webRequest = yield* HttpClientRequest.toWeb(request).pipe(Effect.orDie);
@@ -20,6 +22,7 @@ function run(batch: unknown, details: Record<string, unknown> = {}, batchStatus 
       const isBatch = request.method === 'POST';
       const id = decodeURIComponent(request.url.slice(request.url.lastIndexOf('/') + 1));
       const body = isBatch ? batch : details[id];
+
       return HttpClientResponse.fromWeb(
         request,
         Response.json(body ?? { message: 'unavailable' }, { status: isBatch ? batchStatus : body ? 200 : 503 }),
@@ -40,10 +43,12 @@ function run(batch: unknown, details: Record<string, unknown> = {}, batchStatus 
 describe('getPackageVulnerabilities', () => {
   it('returns unavailable evidence when the complete detail collection exceeds its deadline', async () => {
     vi.useFakeTimers();
+
     try {
       const ids = Array.from({ length: 40 }, (_, index) => `OSV-${index}`);
       let started = 0;
       const firstWaveStarted = Promise.withResolvers<void>();
+
       const client = HttpClient.make((request) => {
         if (request.method === 'POST') {
           return Effect.succeed(
@@ -53,11 +58,14 @@ describe('getPackageVulnerabilities', () => {
 
         const id = decodeURIComponent(request.url.slice(request.url.lastIndexOf('/') + 1));
         started += 1;
+
         if (started === 5) firstWaveStarted.resolve();
+
         return Effect.sleep(Duration.seconds(4)).pipe(
           Effect.as(HttpClientResponse.fromWeb(request, Response.json({ id, modified }))),
         );
       });
+
       const pending = Effect.runPromise(
         getPackageVulnerabilities('minimist', '0.0.8', '1.2.8').pipe(
           Effect.provideService(HttpClient.HttpClient, client),
@@ -100,6 +108,7 @@ describe('getPackageVulnerabilities', () => {
         C: { id: 'C', modified, withdrawn: modified },
       },
     );
+
     const comparison = await result;
 
     expect(calls[0]).toEqual({

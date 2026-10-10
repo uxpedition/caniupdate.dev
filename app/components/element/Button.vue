@@ -38,6 +38,7 @@ const buttonVariants = cva(
 );
 
 type ButtonVariantProps = VariantProps<typeof buttonVariants>;
+
 type ButtonType = 'button' | 'submit' | 'reset';
 
 interface ButtonProps extends PrimitiveProps {

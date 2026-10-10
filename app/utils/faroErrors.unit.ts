@@ -16,6 +16,7 @@ type WindowStub = {
 
 const makeBrowserWindow = (): WindowStub => {
   const listeners = new Map<string, Set<WindowHandler>>();
+
   return {
     listeners,
     onerror: null,
@@ -33,6 +34,7 @@ const makeBrowserWindow = (): WindowStub => {
 afterEach(() => vi.unstubAllGlobals());
 
 type BoundCapture = ReturnType<typeof initializeFaroErrors>;
+
 type CapturedRequest = { readonly url: string; readonly body: string };
 
 const arrangeCapture = (requests: CapturedRequest[], browserWindow: WindowStub): BoundCapture => {
@@ -41,6 +43,7 @@ const arrangeCapture = (requests: CapturedRequest[], browserWindow: WindowStub):
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
       requests.push({ url: request.url, body: await request.text() });
+
       return new Response(null, { status: 200 });
     }),
   );
@@ -51,7 +54,9 @@ const arrangeCapture = (requests: CapturedRequest[], browserWindow: WindowStub):
   expect(browserWindow.listeners.get('unhandledrejection')?.size).toBe(1);
 
   capture.captureError(new Error('oldest queued exception'));
+
   for (let index = 0; index < 31; index++) capture.captureError(new Error(`queued exception ${index}`));
+
   return capture;
 };
 
@@ -59,6 +64,7 @@ const expectDedupedVueFailure = (capture: BoundCapture): void => {
   const failure = new TypeError(
     'Render failed for alice@example.com; api_key=fixture-secret; https://user:password@example.org/view?token=third-secret',
   );
+
   expect(capture.captureError(failure, { source: 'vue', fatal: true })).toBe(true);
   expect(capture.captureError(failure, { source: 'vue', fatal: true })).toBe(true);
 };
@@ -68,15 +74,18 @@ const flushExports = async (capture: BoundCapture): Promise<void> => {
     endpoint: 'http://collector.test:4318',
     serviceName: 'can-i-update-browser',
   });
+
   await telemetry.context();
   capture.attachRuntime(telemetry);
   await telemetry.dispose();
   capture.stop();
   expect(capture.captureError(new Error('capture after teardown'))).toBe(false);
 };
+
 const rejectionEvent = (reason: string): Event => {
   const event = new Event('unhandledrejection');
   Object.defineProperty(event, 'reason', { value: reason });
+
   return event;
 };
 
@@ -88,26 +97,32 @@ describe('Faro error integration', () => {
     expectDedupedVueFailure(capture);
 
     const rejectionListener = browserWindow.listeners.get('unhandledrejection')?.values().next().value;
+
     if (typeof rejectionListener !== 'function') throw new Error('Expected Faro rejection instrumentation');
     rejectionListener(rejectionEvent('api_key=primitive-secret'));
 
     await flushExports(capture);
 
     const logsRequest = requests.find(({ url }) => url.endsWith('/v1/logs'));
+
     if (logsRequest === undefined) throw new Error('Expected an OTLP log export');
     const logs = decodeTelemetryPayload('logs', JSON.parse(logsRequest.body));
     const records = logs.resourceLogs.flatMap(({ scopeLogs }) => scopeLogs.flatMap(({ logRecords }) => logRecords));
     const serialized = JSON.stringify(logs);
+
     const failureRecords = records.filter(({ attributes }) =>
       attributes.some(({ key, value }) => key === 'exception.message' && value.stringValue.includes('Render failed')),
     );
+
     const failureRecord = failureRecords[0];
 
     expect(records).toHaveLength(32);
     expect(failureRecords).toHaveLength(1);
+
     const rejectionRecords = records.filter(({ attributes }) =>
       attributes.some(({ key, value }) => key === 'error.source' && value.stringValue === 'browser.rejection'),
     );
+
     expect(rejectionRecords).toHaveLength(1);
     expect(rejectionRecords[0]?.attributes).toEqual(
       expect.arrayContaining([

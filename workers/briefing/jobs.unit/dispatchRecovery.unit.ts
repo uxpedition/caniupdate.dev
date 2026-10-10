@@ -39,6 +39,7 @@ describe('briefing job Worker', () => {
     const hash = briefingEvidenceHash(packet);
 
     const parked = await startRuntime({ stateDir, consumer: false });
+
     try {
       expect((await parked.submit(packet)).submission?.status).toBe('queued');
       expect((await parked.jobEvent(hash))?.status).toBe('queued');
@@ -49,6 +50,7 @@ describe('briefing job Worker', () => {
 
     // The restart must observe the missing table, so this runtime does not reinstall the schema.
     const resumed = await startRuntime({ stateDir, installSchema: false });
+
     try {
       const failed = await waitForJobEvent(resumed, hash, (event) => event.status === 'unavailable', 90_000);
       expect(failed).toMatchObject({ status: 'unavailable', reason: 'cache-error' });
@@ -69,6 +71,7 @@ describe('briefing job Worker', () => {
     const hash = briefingEvidenceHash(packet);
 
     const parked = await startRuntime({ stateDir, producer: false, consumer: false });
+
     try {
       const queued = await parked.submit(packet);
       expect(queued.submission?.status).toBe('queued');
@@ -81,6 +84,7 @@ describe('briefing job Worker', () => {
     }
 
     const resumed = await startRuntime({ stateDir, installSchema: false });
+
     try {
       // The redelivery comes from the 30-second recovery alarm, so this window spans that alarm plus the generation.
       const stored = await waitForStoredBriefing(resumed.database, hash, 90_000);

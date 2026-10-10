@@ -11,5 +11,6 @@ export const getBundlephobiaSize = Effect.fn('Bundlephobia.getSize')(function* (
   const client = yield* HttpClient.HttpClient;
   const request = HttpClientRequest.get(bundlephobiaSizeUrl(packageName, version));
   const response = yield* client.pipe(HttpClient.filterStatusOk).execute(request);
+
   return yield* HttpClientResponse.schemaBodyJson(BundlephobiaBuildSchema)(response);
 }, Effect.timeout('30 seconds'));

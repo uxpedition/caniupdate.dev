@@ -37,17 +37,21 @@ import {
 } from '../test/worker.harness';
 
 let provider: ProviderFixture;
+
 let main: RuntimeFixture;
 
 const WorkerEffectLogSchema = Schema.Struct({
   message: Schema.String,
   annotations: Schema.Record(Schema.String, Schema.Unknown),
 });
+
 type WorkerEffectLog = typeof WorkerEffectLogSchema.Type;
+
 const decodeWorkerEffectLog = Schema.decodeUnknownSync(WorkerEffectLogSchema, { errors: 'all' });
 
 const parseWorkerEffectLog = (value: unknown): WorkerEffectLog | undefined => {
   if (typeof value !== 'string') return undefined;
+
   try {
     return decodeWorkerEffectLog(JSON.parse(value));
   } catch {
@@ -99,6 +103,7 @@ describe('briefing job Worker', () => {
     const packet = packetFor('trace-coalescing-fixture', '1.0.0', '1.1.0');
     const parked = await startRuntime({ stateDir, consumer: false });
     let generationContext: TraceContext | undefined;
+
     try {
       const [first, second] = await Promise.all([parked.submit(packet), parked.submit(packet)]);
       expect(first.submission?.status).toBe('queued');
@@ -113,6 +118,7 @@ describe('briefing job Worker', () => {
     }
 
     const resumed = await startRuntime({ stateDir, consumer: false, installSchema: false });
+
     try {
       const joined = await resumed.submit(packet);
       expect(joined.generationContext).toEqual(generationContext);
@@ -125,6 +131,7 @@ describe('briefing job Worker', () => {
     const stateDir = await openStateDir();
     const packet = packetFor('trace-restart-fixture', '1.0.0', '1.1.0');
     const parked = await startRuntime({ stateDir, consumer: false });
+
     try {
       expect((await parked.submit(packet)).submission?.status).toBe('queued');
     } finally {
@@ -132,14 +139,18 @@ describe('briefing job Worker', () => {
     }
 
     const resumed = await startRuntime({ stateDir, installSchema: false });
+
     try {
       const queue = resumed.queue;
+
       if (queue === undefined) throw new Error('Expected the resumed queue producer');
       await queue.send({ hash: briefingEvidenceHash(packet), generationId: 1 });
+
       const started = await waitFor(
         async () =>
           resumed.structuredLogs().flatMap((line) => {
             const record = parseWorkerEffectLog(line);
+
             return record?.message === 'briefing.generation.started' &&
               record.annotations['comparison.package.name'] === packet.packageName
               ? [record]
@@ -148,6 +159,7 @@ describe('briefing job Worker', () => {
         JOB_WAIT_MS,
         'the restarted generation start log carrying the persisted packet identity',
       );
+
       expect(started.annotations).toMatchObject({
         'comparison.package.name': packet.packageName,
         'comparison.version.from': packet.from,
@@ -164,12 +176,14 @@ describe('briefing job Worker', () => {
     const submitted = await main.submit(packet);
     const generationContext = submitted.generationContext;
     expect(generationContext).toBeDefined();
+
     if (generationContext === undefined) throw new Error('Expected accepted generation context');
 
     const started = await waitFor(
       async () =>
         main.structuredLogs().flatMap((line) => {
           const record = parseWorkerEffectLog(line);
+
           return record?.message === 'briefing.generation.started' &&
             record.annotations.traceId === generationContext.traceId
             ? [record]
@@ -178,6 +192,7 @@ describe('briefing job Worker', () => {
       JOB_WAIT_MS,
       'the generation start log linked to the accepted context',
     );
+
     expect(started.annotations).toMatchObject({
       traceId: generationContext.traceId,
       parentSpanId: generationContext.spanId,
@@ -241,6 +256,7 @@ describe('briefing job Worker', () => {
     const hash = briefingEvidenceHash(packet);
 
     const configured = await startRuntime({ stateDir });
+
     try {
       expect((await configured.submit(packet)).submission?.status).toMatch(/queued|running/);
       await waitForStoredBriefing(configured.database, hash);
@@ -250,6 +266,7 @@ describe('briefing job Worker', () => {
     }
 
     const unconfigured = await startRuntime({ stateDir, aiConfig: false, installSchema: false });
+
     try {
       const warm = await unconfigured.submit(packet);
       expect(warm.submission).toMatchObject({ status: 'available', briefing: { status: 'available', model: MODEL } });
@@ -317,6 +334,7 @@ describe('briefing job Worker', () => {
     const runtime = await startRuntime({ stateDir });
     const packet = packetFor('d1-read-fixture', '5.0.0', '5.1.0');
     const hash = briefingEvidenceHash(packet);
+
     try {
       await runtime.database.prepare('DROP TABLE package_briefings').run();
 
@@ -338,6 +356,7 @@ describe('briefing job Worker', () => {
     const runtime = await startRuntime({ stateDir });
     const packet = packetFor('d1-write-fixture', '7.0.0', '7.1.0');
     const hash = briefingEvidenceHash(packet);
+
     try {
       await runtime.database
         .prepare(
@@ -350,9 +369,11 @@ describe('briefing job Worker', () => {
       expect(failed).toMatchObject({ status: 'unavailable', reason: 'cache-error' });
       // The paid call happened; the row was refused, so the job could not become available.
       expect(provider.requestsFor(packet.packageName)).toBe(1);
+
       const rows = await runtime.database
         .prepare('SELECT count(*) AS total FROM package_briefings')
         .first<{ total: number }>();
+
       expect(rows?.total).toBe(0);
 
       await runtime.database.prepare('DROP TRIGGER package_briefings_reject_insert').run();
@@ -368,6 +389,7 @@ describe('briefing job Worker', () => {
     const packet = packetFor('invalid-output-fixture', '8.0.0', '8.1.0');
     const hash = briefingEvidenceHash(packet);
     provider.setMode({ kind: 'invalid' });
+
     try {
       expect((await main.submit(packet)).submission?.status).toBe('queued');
       const failed = await waitForJobEvent(main, hash, (event) => event.status === 'unavailable');
@@ -384,6 +406,7 @@ describe('briefing job Worker', () => {
     const packet = packetFor('http-error-fixture', '9.0.0', '9.1.0');
     const hash = briefingEvidenceHash(packet);
     provider.setMode({ kind: 'http-error' });
+
     try {
       expect((await main.submit(packet)).submission?.status).toBe('queued');
       const failed = await waitForJobEvent(main, hash, (event) => event.status === 'unavailable');
@@ -399,6 +422,7 @@ describe('briefing job Worker', () => {
     const packet = packetFor('duplicate-fixture', '10.0.0', '10.1.0');
     const hash = briefingEvidenceHash(packet);
     provider.setMode({ kind: 'stall' });
+
     try {
       expect((await main.submit(packet)).submission?.status).toBe('queued');
       await waitFor(
@@ -409,6 +433,7 @@ describe('briefing job Worker', () => {
       const running = await waitForJobEvent(main, hash, (event) => event.status === 'running');
 
       const queue = main.queue;
+
       if (queue === undefined) throw new Error('The fixture runtime has no Queue producer');
       await queue.send({ hash, generationId: 1 });
       await delay(QUIET_MS);
@@ -430,6 +455,7 @@ describe('briefing job Worker', () => {
     const packet = packetFor('stale-fixture', '11.0.0', '11.1.0');
     const hash = briefingEvidenceHash(packet);
     provider.setMode({ kind: 'stall' });
+
     try {
       expect((await main.submit(packet)).submission?.status).toBe('queued');
       await waitFor(
@@ -439,6 +465,7 @@ describe('briefing job Worker', () => {
       );
 
       const queue = main.queue;
+
       if (queue === undefined) throw new Error('The fixture runtime has no Queue producer');
       await queue.send({ hash, generationId: 0 });
       await delay(QUIET_MS);

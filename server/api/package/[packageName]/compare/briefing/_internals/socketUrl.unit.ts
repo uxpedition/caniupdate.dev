@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { browserBriefingSocketUrl } from './socketUrl';
 
 const HASH = 'a'.repeat(64);
+
 const at = (base: string): string => `${base}/api/briefings/${HASH}/events`;
 
 type Case = {

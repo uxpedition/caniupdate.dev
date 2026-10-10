@@ -5,9 +5,13 @@ import { decodeTelemetryPayload } from './telemetry.defs';
 import { sanitizeTelemetryTraces } from './telemetrySanitization';
 
 const TRACE_ID = '4bf92f3577b34da6a3ce929d0e0e4736';
+
 const ROOT_SPAN_ID = '00f067aa0ba902b7';
+
 const HTTP_SPAN_ID = '00f067aa0ba902b8';
+
 const CHILD_SPAN_ID = '00f067aa0ba902b9';
+
 const TIME = '1700000000000000000';
 
 const responseHeaders = Array.from({ length: 33 }, (_, index) => ({
@@ -45,6 +49,7 @@ const span = (
 describe('telemetry sanitization', () => {
   it('removes unreviewed oversized spans and private fields before strict bounds while retaining trace links', () => {
     const privateText = `provider-response-secret-${'x'.repeat(262_145)}`;
+
     const nativeBatch = {
       resourceSpans: [
         {

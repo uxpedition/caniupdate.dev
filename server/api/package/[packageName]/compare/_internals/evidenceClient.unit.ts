@@ -9,6 +9,7 @@ import type {
 import { getBriefingEvidence, getPackageMeasurements } from './evidenceClient';
 
 const request = { packageName: 'minimist', from: '1.0.0', to: '2.0.0' };
+
 const evidence: BriefingEvidence = {
   packageName: 'minimist',
   from: '1.0.0',
@@ -80,6 +81,7 @@ describe('package evidence client failures', () => {
         }),
       },
     };
+
     const bindingWithBrokenBody = binding(async () => responseWithBrokenBody);
 
     await expect(getBriefingEvidence(bindingWithBrokenBody, request)).rejects.toMatchObject({ reason: 'transport' });

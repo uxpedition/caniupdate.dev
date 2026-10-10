@@ -16,14 +16,18 @@ export type ValueComparison<T> = {
   fromDeclared: boolean;
   toDeclared: boolean;
 };
+
 export type DeclarationChange<T> = {
   name: string;
   kind: 'added' | 'removed' | 'changed';
   from: T | null;
   to: T | null;
 };
+
 export type DependencyRequirement = { category: 'runtime' | 'optional'; range: string };
+
 export type PeerRequirement = { range: string; optional: boolean };
+
 export type SizeComparison = {
   status: 'available' | 'partial' | 'unavailable';
   from: number | null;
@@ -32,12 +36,14 @@ export type SizeComparison = {
   percent: number | null;
   reasons: string[];
 };
+
 export type AdvisoryGroup = {
   ids: string[];
   aliases: string[];
   from: PackageAdvisory[];
   to: PackageAdvisory[];
 };
+
 export type AdvisoryComparison = {
   status: 'available' | 'partial' | 'unavailable';
   coverage: { from: PackageVulnerabilities['status']; to: PackageVulnerabilities['status'] };
@@ -50,10 +56,12 @@ export type AdvisoryComparison = {
 };
 
 type ModuleDeclaration = Pick<ParsedPackageVersion['moduleFormat'], 'type' | 'main' | 'module'>;
+
 type TypeDeclaration = Pick<ParsedPackageVersion['moduleFormat'], 'types' | 'typings' | 'typesVersions'> & {
   /** Full map retains condition context and ordering, including nested type conditions. */
   exports: ParsedPackageVersion['moduleFormat']['exports'] | null;
 };
+
 export type DeclarationComparison = {
   dependencies: DeclarationChange<DependencyRequirement>[];
   peers: DeclarationChange<PeerRequirement>[];

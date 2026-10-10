@@ -10,9 +10,13 @@ import { Headers, HttpClient, HttpClientError, HttpClientRequest, HttpClientResp
 // normal provider call rather than a fast one. The briefing shares this deadline across both generation attempts,
 // including reading and decoding their response bodies.
 export const REQUEST_TIMEOUT = Duration.seconds(75);
+
 const MAX_RESPONSE_BYTES = 128 * 1024;
+
 const MAX_OUTPUT_TOKENS = 4096;
+
 const USER_AGENT = 'can-i-update/ai-briefing';
+
 const OMITTED_REBUILT_HEADERS = ['content-encoding', 'content-length'];
 
 export type BriefingProviderTarget = {
@@ -47,8 +51,10 @@ const bufferResponseBody = (
             }),
           );
         }
+
         acc.chunks.push(chunk);
         acc.size += chunk.byteLength;
+
         return Effect.succeed(acc);
       },
     ).pipe(
@@ -60,10 +66,12 @@ const bufferResponseBody = (
 
     const body = new Uint8Array(chunks.size);
     let offset = 0;
+
     for (const chunk of chunks.chunks) {
       body.set(chunk, offset);
       offset += chunk.byteLength;
     }
+
     return body;
   });
 
@@ -75,6 +83,7 @@ const dropNullProviderFields = (body: Uint8Array<ArrayBuffer>): Uint8Array<Array
     const envelope: unknown = JSON.parse(new TextDecoder().decode(body), (_key: string, value: unknown) =>
       value === null ? undefined : value,
     );
+
     return new TextEncoder().encode(JSON.stringify(envelope));
   } catch {
     return body;
@@ -94,6 +103,7 @@ export const readBoundedResponse = (
     const successful = response.status >= 200 && response.status < 300 && !nullBodyStatus;
 
     let body: Uint8Array<ArrayBuffer> | null = null;
+
     if (successful) {
       body = dropNullProviderFields(yield* bufferResponseBody(request, response));
     }

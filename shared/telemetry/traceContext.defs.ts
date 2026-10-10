@@ -3,8 +3,11 @@ import { Schema } from 'effect';
 export type TraceContext = { readonly traceId: string; readonly spanId: string };
 
 const ZERO_TRACE_ID = '00000000000000000000000000000000';
+
 const ZERO_SPAN_ID = '0000000000000000';
+
 const TRACEPARENT_LENGTH = 55;
+
 const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/;
 
 export const TraceContextSchema: Schema.Codec<TraceContext> = Schema.Struct({
@@ -42,7 +45,9 @@ export const parseTraceparent = (value: string | null | undefined): TraceContext
   const match = TRACEPARENT.exec(value);
   const traceId = match?.[1];
   const spanId = match?.[2];
+
   if (traceId === undefined || spanId === undefined) return undefined;
+
   return decodeTraceContext({ traceId, spanId });
 };
 

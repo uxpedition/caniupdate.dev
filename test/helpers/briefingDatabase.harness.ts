@@ -6,7 +6,9 @@ import type { D1Database } from '@cloudflare/workers-types';
 import { Miniflare } from 'miniflare';
 
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL('../../migrations/', import.meta.url));
+
 const HARNESS_MODULE = 'briefing-d1-harness.js';
+
 const HARNESS_SCRIPT = 'export default { fetch() { return new Response("test harness"); } };';
 
 /** Install committed migrations into fresh or deliberately recreated schema, never a persisted restart. */
@@ -15,9 +17,12 @@ export async function installBriefingSchema(
   migrationsDirectory = MIGRATIONS_DIRECTORY,
 ): Promise<void> {
   const names = (await readdir(migrationsDirectory)).filter((name) => name.endsWith('.sql')).sort();
+
   if (names.length === 0) throw new Error('Briefing migration history is empty');
+
   for (const name of names) {
     const sql = await readFile(join(migrationsDirectory, name), 'utf8');
+
     // D1 exec splits on newlines, not SQL statement boundaries; preserve multiline statements with prepare.
     for (const statement of sql.split('--> statement-breakpoint')) {
       if (statement.trim() !== '') await database.prepare(statement).run();
@@ -55,9 +60,11 @@ export async function openBriefingD1(persistPath: string): Promise<BriefingD1> {
       },
     ],
   });
+
   try {
     const database = await runtime.getD1Database('BRIEFINGS_DB');
     await installBriefingSchema(database);
+
     return { database, dispose: () => runtime.dispose() };
   } catch (error) {
     await runtime.dispose();

@@ -16,6 +16,7 @@ const pendingMessages: Record<BriefingStatus, string> = {
   queued: 'Queued for generation. Package facts are available independently.',
   running: 'Generating the briefing. Package facts are available independently.',
 };
+
 const pendingMessage = computed(() =>
   props.status === undefined
     ? 'Generating the briefing. Package facts are available independently.'
@@ -30,11 +31,14 @@ const unavailableMessages: Record<BriefingUnavailableReason, string> = {
   timeout: 'The AI briefing took too long to complete.',
   'invalid-response': 'The AI provider returned an unusable response.',
 };
+
 /** The cited source, resolved against the briefing's own packet-ordered sources. */
 const citationFor = (number: number) => {
   const briefing = props.briefing;
+
   if (briefing?.status !== 'available') return undefined;
   const source = briefing.sources.find((candidate) => candidate.number === number);
+
   return source === undefined ? undefined : { anchorId: citationAnchorId(source.id), label: source.label };
 };
 </script>

@@ -4,6 +4,7 @@ import { TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTri
 import { ref } from 'vue';
 
 defineProps<{ label: string; explanation: string }>();
+
 const open = ref(false);
 </script>
 

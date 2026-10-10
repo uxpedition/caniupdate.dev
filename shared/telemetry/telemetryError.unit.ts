@@ -14,6 +14,7 @@ describe('error diagnostic privacy', () => {
       'exception.message',
       'Cannot render react@2.0.0 for alice@example.com; Authorization: Bearer fixture-secret; api_key=another-secret; session token=card-secret; https://user:password@example.org/a?token=third-secret',
     );
+
     expect(value).toContain('Cannot render react@2.0.0');
     expect(value).toContain('[REDACTED]');
     expect(value).not.toMatch(

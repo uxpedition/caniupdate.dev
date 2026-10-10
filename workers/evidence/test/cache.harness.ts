@@ -13,17 +13,25 @@ import { Log, LogLevel, Miniflare } from 'miniflare';
 import type { CacheFixtureCommand } from './cache.worker';
 
 const execFileAsync = promisify(execFile);
+
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+
 const CONFIG_PATH = join(ROOT, 'workers', 'evidence', 'test', 'cache.wrangler.jsonc');
+
 const WRANGLER_BIN = join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+
 const WORKER_NAME = 'can-i-update-evidence-cache-test';
+
 const BINDING_NAME = 'EVIDENCE_CACHE';
+
 const CLASS_NAME = 'EvidenceCacheFixture';
+
 const InitializedResponseSchema = Schema.Struct({
   ok: Schema.Literal(true),
   value: Schema.Struct({ initialized: Schema.Literal(true) }),
   loaderCalls: Schema.Finite,
 });
+
 const isInitializedResponse = Schema.is(InitializedResponseSchema);
 
 type WorkerModules = Record<string, { type: 'esm'; contents: string }>;
@@ -41,6 +49,7 @@ let workerBundle: Promise<WorkerModules> | undefined;
 
 async function bundleFixture(): Promise<WorkerModules> {
   const outdir = await mkdtemp(join(tmpdir(), 'evidence-cache-workerd-bundle-'));
+
   try {
     await execFileAsync(
       process.execPath,
@@ -48,10 +57,12 @@ async function bundleFixture(): Promise<WorkerModules> {
       { cwd: ROOT },
     );
     const modules: WorkerModules = {};
+
     for (const entry of await readdir(outdir)) {
       if (entry.endsWith('.js'))
         modules[entry] = { type: 'esm', contents: await readFile(join(outdir, entry), 'utf8') };
     }
+
     return modules;
   } finally {
     await rm(outdir, { recursive: true, force: true });
@@ -93,17 +104,22 @@ export async function openEvidenceCacheFixture(
     let activeRuntime = createRuntime(stateDir, modules);
     runtime = activeRuntime;
     let namespace = await activeRuntime.getDurableObjectNamespace(BINDING_NAME, WORKER_NAME);
+
     let adminStorage = await activeRuntime.unsafeGetDurableObjectStorage(WORKER_NAME, CLASS_NAME, {
       name: objectName,
     });
+
     const call = async (command: CacheFixtureCommand): Promise<unknown> => {
       const stub = namespace.get(namespace.idFromName(objectName));
+
       const response = await stub.fetch('https://cache.test/command', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(command),
       });
+
       if (response.status !== 200) throw new Error(`Evidence cache fixture returned HTTP ${response.status}`);
+
       return await response.json();
     };
 
@@ -112,6 +128,7 @@ export async function openEvidenceCacheFixture(
     }
 
     let disposed = false;
+
     return {
       call,
       async exec(sql: string, ...bindings: SqlStorageValue[]): Promise<readonly Record<string, SqlStorageValue>[]> {
@@ -128,6 +145,7 @@ export async function openEvidenceCacheFixture(
       async dispose(): Promise<void> {
         if (disposed) return;
         disposed = true;
+
         try {
           await activeRuntime.dispose();
         } finally {
@@ -141,6 +159,7 @@ export async function openEvidenceCacheFixture(
     } finally {
       await rm(stateDir, { recursive: true, force: true });
     }
+
     throw cause;
   }
 }

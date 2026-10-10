@@ -17,6 +17,7 @@ const handleTelemetryRequest = async (event: H3Event): Promise<Response> => {
   try {
     const request = toTelemetryRequest(event);
     const config = readServerTelemetryConfig(event);
+
     if (!config.enabled) {
       void request.body?.cancel().catch(() => undefined);
       throw createError({ statusCode: 404, statusMessage: 'Telemetry unavailable' });
@@ -33,6 +34,7 @@ const handleTelemetryRequest = async (event: H3Event): Promise<Response> => {
     if (error instanceof TelemetryIngressError) {
       throw createError({ statusCode: error.statusCode, statusMessage: 'Telemetry request rejected' });
     }
+
     throw error;
   }
 };

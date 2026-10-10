@@ -35,6 +35,7 @@ function advisory(id: string, aliases: string[] = []): PackageAdvisory {
     detailsStatus: 'available',
   };
 }
+
 function vulnerabilities(
   advisories: PackageAdvisory[],
   status: 'available' | 'partial' = 'available',
@@ -45,6 +46,7 @@ function vulnerabilities(
 describe('measurement and advisory comparison rules', () => {
   it('uses complete tarball inventories despite partial changelog text and handles a zero baseline', () => {
     const from = version({ dist: { tarball: '', unpackedSize: 0 } });
+
     const to = version({
       tarball: {
         status: 'partial',
@@ -57,6 +59,7 @@ describe('measurement and advisory comparison rules', () => {
         ],
       },
     });
+
     expect(compareMeasurements(from, to).sizes.unpacked).toEqual({
       status: 'available',
       from: 0,
@@ -89,6 +92,7 @@ describe('measurement and advisory comparison rules', () => {
         gzip: 50,
       },
     });
+
     const to = version({
       bundleSize: {
         ...from.bundleSize,
@@ -100,11 +104,13 @@ describe('measurement and advisory comparison rules', () => {
         gzip: 40,
       },
     });
+
     expect(compareMeasurements(from, to).sizes.bundle).toMatchObject({
       minified: { delta: 20, percent: 20 },
       gzip: { delta: -10, percent: -20 },
     });
     expect(compareMeasurements(from, to).sizes.unpacked.delta).toBeNull();
+
     const incomplete = version({
       bundleSize: {
         ...to.bundleSize,
@@ -117,6 +123,7 @@ describe('measurement and advisory comparison rules', () => {
         ignoredMissingDependencies: ['native'],
       },
     });
+
     expect(compareMeasurements(from, incomplete).sizes.bundle.minified).toMatchObject({
       status: 'partial',
       from: 100,
@@ -130,10 +137,12 @@ describe('measurement and advisory comparison rules', () => {
     const old = advisory('OLD', ['CVE-1']);
     const bridge = advisory('BRIDGE', ['CVE-1', 'CVE-2']);
     const target = advisory('TARGET', ['CVE-2']);
+
     const result = compareMeasurements(
       version({ vulnerabilities: vulnerabilities([old, advisory('FIXED')]) }),
       version({ vulnerabilities: vulnerabilities([target, bridge, advisory('NEW')]) }),
     ).advisories;
+
     expect(result.status).toBe('available');
     expect(result.both).toEqual([
       { ids: ['BRIDGE', 'OLD', 'TARGET'], aliases: ['CVE-1', 'CVE-2'], from: [old], to: [bridge, target] },

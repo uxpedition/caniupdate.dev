@@ -9,27 +9,34 @@ import type { RouterOptions } from 'vue-router';
 const ANCHOR_TIMEOUT_MS = 30_000;
 
 type RouterScrollBehavior = NonNullable<RouterOptions['scrollBehavior']>;
+
 type AnchorPosition = { el: Element; top: number; behavior: 'auto' };
 
 const findAnchor = (hash: string): Element | null => document.getElementById(hash.slice(1));
 
 const waitForAnchor = (hash: string, timeoutMs: number): Promise<Element | null> => {
   const rendered = findAnchor(hash);
+
   if (rendered) return Promise.resolve(rendered);
 
   const { promise, resolve } = Promise.withResolvers<Element | null>();
+
   const observer = new MutationObserver(() => {
     const anchor = findAnchor(hash);
+
     if (anchor === null) return;
     observer.disconnect();
     clearTimeout(timeout);
     resolve(anchor);
   });
+
   const timeout = setTimeout(() => {
     observer.disconnect();
     resolve(null);
   }, timeoutMs);
+
   observer.observe(document.documentElement, { childList: true, subtree: true });
+
   return promise;
 };
 
@@ -39,13 +46,16 @@ const scrollOffset = (anchor: Element): number =>
 
 const revealAnchor = (anchor: Element): void => {
   const disclosure = anchor.closest('details');
+
   if (disclosure !== null && !disclosure.open) disclosure.open = true;
 };
 
 const anchorPosition = async (hash: string): Promise<AnchorPosition | false> => {
   const anchor = await waitForAnchor(hash, ANCHOR_TIMEOUT_MS);
+
   if (anchor === null) return false;
   revealAnchor(anchor);
+
   return { el: anchor, top: scrollOffset(anchor), behavior: 'auto' };
 };
 
@@ -55,12 +65,16 @@ const isSamePage = (to: { path: string }, from: { path: string }): boolean =>
 const scrollBehavior: RouterScrollBehavior = async (to, from, savedPosition) => {
   if (isSamePage(to, from)) {
     if (from.hash && !to.hash) return savedPosition ?? { left: 0, top: 0 };
+
     return to.hash ? anchorPosition(to.hash) : false;
   }
 
   const scrollToTop = typeof to.meta.scrollToTop === 'function' ? to.meta.scrollToTop(to, from) : to.meta.scrollToTop;
+
   if (scrollToTop === false) return false;
+
   if (savedPosition) return savedPosition;
+
   return to.hash ? anchorPosition(to.hash) : { left: 0, top: 0 };
 };
 

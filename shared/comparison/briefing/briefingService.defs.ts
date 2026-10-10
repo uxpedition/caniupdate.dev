@@ -14,6 +14,7 @@ const BriefingServiceResultEnvelopeSchema = Schema.Struct({
   submission: Schema.Unknown,
   generationContext: Schema.optionalKey(Schema.Unknown),
 });
+
 const decodeBriefingServiceResultEnvelope = Schema.decodeUnknownSync(BriefingServiceResultEnvelopeSchema, {
   errors: 'all',
   onExcessProperty: 'error',
@@ -24,5 +25,6 @@ export const decodeBriefingServiceResult = (value: unknown): BriefingServiceResu
   const envelope = decodeBriefingServiceResultEnvelope(value);
   const submission = decodeBriefingSubmission(envelope.submission);
   const generationContext = decodeTraceContext(envelope.generationContext);
+
   return generationContext === undefined ? { submission } : { submission, generationContext };
 };

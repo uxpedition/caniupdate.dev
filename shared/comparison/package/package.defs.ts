@@ -229,6 +229,7 @@ export function toPackageVersion(manifest: RegistryVersionManifest): ParsedPacka
     installScriptCommands: Object.fromEntries(
       INSTALL_SCRIPT_NAMES.flatMap((name) => {
         const command = manifest.scripts?.[name];
+
         return command === undefined ? [] : [[name, command]];
       }),
     ),

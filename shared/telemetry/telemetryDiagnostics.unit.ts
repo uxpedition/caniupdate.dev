@@ -10,6 +10,7 @@ import {
 describe('server diagnostics privacy and outcomes', () => {
   it('exports reviewed error fields with scrubbed prose through one send per owned error', async () => {
     const sends: Array<{ body: string; attributes: Record<string, string>; waitUntil?: unknown }> = [];
+
     const send = vi.fn(async (body: string, attributes: Record<string, string>) => {
       sends.push({ body, attributes });
     });
@@ -43,10 +44,12 @@ describe('server diagnostics privacy and outcomes', () => {
     const send = vi.fn(async () => undefined);
 
     const blockedRoutes = ['/api/telemetry/v1/logs', '/api/telemetry/config'];
+
     for (const path of blockedRoutes) {
       const recursionEvent = mockEvent(path, { method: 'POST' });
       expect(isServerDiagnosticReportable(recursionEvent, new Error('recursion'), undefined)).toBe(false);
     }
+
     const opaqueRequest = mockEvent('/package/react/2.0.0..2.5.0', { method: 'GET' });
     expect(isServerDiagnosticReportable(opaqueRequest, undefined, 404)).toBe(false);
     expect(isServerDiagnosticReportable(opaqueRequest, new Error('missing'), 429)).toBe(false);
@@ -78,11 +81,13 @@ describe('server diagnostics privacy and outcomes', () => {
     expect(fallbackSpy).not.toHaveBeenCalled();
 
     const configEvent = mockEvent('/package/react/2.0.0..2.5.0', { method: 'GET' });
+
     const configSend = createServerDiagnosticSend(configEvent, {
       enabled: true,
       endpoint: 'http://127.0.0.1:1.invalid/v1',
       headers: {},
     });
+
     await expect(configSend('runtime.error', { 'error.source': 'nuxt' })).resolves.toBeUndefined();
     expect(fallbackSpy).not.toHaveBeenCalled();
     fallbackSpy.mockRestore();

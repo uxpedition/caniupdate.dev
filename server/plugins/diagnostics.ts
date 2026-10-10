@@ -7,6 +7,7 @@ import { readServerTelemetryConfig } from '../telemetry/runtimeConfig';
 const errorStatusCode = (error: unknown): number | undefined => {
   if (!(error instanceof Error)) return undefined;
   const status: unknown = Reflect.get(error, 'statusCode');
+
   return typeof status === 'number' ? status : undefined;
 };
 
@@ -14,7 +15,9 @@ const errorStatusCode = (error: unknown): number | undefined => {
 export default defineNitroPlugin((nitroApp) => {
   nitroApp.hooks.hook('error', (error, hookContext) => {
     const event = hookContext.event;
+
     if (event === undefined) return;
+
     try {
       void reportServerDiagnostic(event, {
         send: createServerDiagnosticSend(event, readServerTelemetryConfig(event)),

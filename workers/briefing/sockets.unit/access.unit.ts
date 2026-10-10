@@ -29,6 +29,7 @@ import {
 
 /** A well-formed hash no submission in these runtimes ever created. */
 const UNKNOWN_HASH = '0'.repeat(64);
+
 /** An Origin that is nobody's configured site. */
 const FOREIGN_ORIGIN = 'https://briefing-attacker.example';
 
@@ -142,6 +143,7 @@ describe('public read-only upgrade', () => {
 
       it('refuses a public POST without queueing, generating, or changing the job', async () => {
         const packet = packetFor(`posted-${environment}`, '1.0.0', '1.1.0');
+
         const response = await runtime.publicFetch(runtime.eventsUrl(hash), {
           method: 'POST',
           headers: { 'content-type': 'application/json', Origin: runtime.allowedOrigin },

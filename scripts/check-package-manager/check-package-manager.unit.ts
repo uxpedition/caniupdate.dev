@@ -7,6 +7,7 @@ const guardScript = fileURLToPath(new URL('./check-package-manager.mjs', import.
 
 function runGuard(userAgent?: string) {
   const env = { ...process.env };
+
   if (userAgent === undefined) delete env.npm_config_user_agent;
   else env.npm_config_user_agent = userAgent;
 

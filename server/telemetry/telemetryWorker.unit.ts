@@ -6,10 +6,13 @@ import { withTelemetryIngress } from './telemetryWorker';
 describe('telemetry-aware Worker entry', () => {
   it('rejects unsupported telemetry signals before the Nitro adapter', async () => {
     let delegated = false;
+
     const fetch = withTelemetryIngress(async () => {
       delegated = true;
+
       return new Response('Nitro');
     });
+
     const request = new Request('http://localhost:3000/api/telemetry/v1/metrics', {
       method: 'POST',
       headers: {
@@ -31,10 +34,13 @@ describe('telemetry-aware Worker entry', () => {
 
   it('rejects oversized OTLP bodies before delegating to Nitro’s buffering adapter', async () => {
     let delegated = false;
+
     const fetch = withTelemetryIngress(async () => {
       delegated = true;
+
       return new Response('Nitro');
     });
+
     const request = new Request('http://localhost:3000/api/telemetry/v1/traces', {
       method: 'POST',
       headers: {

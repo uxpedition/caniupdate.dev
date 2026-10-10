@@ -5,6 +5,7 @@ import type { SelectOption } from '~/components/form/select.defs';
 import { filterVersionOptions } from './versionSearch';
 
 const versions = (labels: readonly string[]): SelectOption[] => labels.map((label) => ({ value: label, label }));
+
 const labels = (options: readonly SelectOption[]) => options.map((option) => option.label);
 
 // Deliberately interleaved tiers: filtering must preserve input order within each tier.
@@ -86,6 +87,7 @@ describe('filterVersionOptions', () => {
       '0.0.0-experimental-ec9cc003-20251208',
       '0.0.0-experimental-55480b4d-20251208',
     ]);
+
     const expected = [
       '19.3.0-canary-ec9cc003-20251208',
       '19.3.0-canary-55480b4d-20251208',

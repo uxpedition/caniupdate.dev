@@ -55,6 +55,7 @@ describe('briefing job Worker', () => {
     };
 
     const resumed = await startRuntime({ stateDir, installSchema: false });
+
     try {
       // The crashed generation never committed, so the row can only come from this write.
       expect(await readStoredBriefing(resumed.database, hash)).toBeUndefined();

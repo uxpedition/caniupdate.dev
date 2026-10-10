@@ -16,7 +16,9 @@ import evidenceMigrations from './migrations.generated.json' with { type: 'json'
 export { EvidenceStorageCorruptionError, EvidenceStorageError };
 
 const CHUNK_BYTES = 128 * 1024;
+
 type RecordRow = typeof evidenceRecords.$inferSelect;
+
 type CachedValue = { found: true; value: unknown } | { found: false };
 
 const CHUNK_UTF16_UNITS = Math.floor(CHUNK_BYTES / 3);
@@ -38,14 +40,17 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
 
   async load<T>(key: string, loader: () => Promise<T>, options: ComparisonEvidenceCacheOptions<T>): Promise<T> {
     const existing = this.inFlight.get(key);
+
     if (existing !== undefined) return validateValue(await existing, options);
 
     this.cleanupExpired();
     const cached = this.read(key, Date.now());
+
     if (cached.found) return validateValue(cached.value, options);
 
     const pending = this.populate(key, loader, options);
     this.inFlight.set(key, pending);
+
     try {
       return await pending;
     } finally {
@@ -70,7 +75,9 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
     options: ComparisonEvidenceCacheOptions<T>,
   ): Promise<T> {
     const value = await loader();
+
     if (options.cacheable(value)) this.write(key, value, options.ttlMs);
+
     return value;
   }
 
@@ -78,16 +85,21 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
     const row = storageOperation('read', () =>
       this.db.select().from(evidenceRecords).where(eq(evidenceRecords.key, key)).get(),
     );
+
     if (row === undefined) return { found: false };
     validateMetadata(row);
+
     if (row.expiresAt !== null && row.expiresAt <= now) {
       this.delete(key);
+
       return { found: false };
     }
 
     const serialized = this.readSerialized(row);
+
     try {
       const value: unknown = JSON.parse(serialized);
+
       return { found: true, value };
     } catch (cause) {
       throw new EvidenceStorageCorruptionError({ detail: 'Evidence payload is not valid JSON', cause });
@@ -103,24 +115,31 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
         .orderBy(asc(evidenceChunks.chunkIndex))
         .all(),
     );
+
     if (chunks.length !== row.chunkCount)
       throw new EvidenceStorageCorruptionError({ detail: 'Evidence chunks are incomplete' });
     let serialized = '';
+
     for (let index = 0; index < chunks.length; index += 1) {
       const chunk = chunks[index];
+
       if (chunk === undefined || chunk.chunkIndex !== index || typeof chunk.payload !== 'string') {
         throw new EvidenceStorageCorruptionError({ detail: 'Evidence chunk order is invalid' });
       }
+
       serialized += chunk.payload;
     }
+
     if (Buffer.byteLength(serialized, 'utf8') !== row.byteLength) {
       throw new EvidenceStorageCorruptionError({ detail: 'Evidence payload length is invalid' });
     }
+
     return serialized;
   }
 
   private write<T>(key: string, value: T, ttlMs: number | null): void {
     const serialized = storageOperation('serialize', () => JSON.stringify(value));
+
     if (serialized === undefined)
       throw new EvidenceStorageError({
         operation: 'serialize',
@@ -134,6 +153,7 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
         tx.delete(evidenceChunks).where(eq(evidenceChunks.key, key)).run();
         tx.delete(evidenceRecords).where(eq(evidenceRecords.key, key)).run();
         tx.insert(evidenceRecords).values({ key, expiresAt, chunkCount: chunks.length, byteLength }).run();
+
         for (const [chunkIndex, payload] of chunks.entries()) {
           tx.insert(evidenceChunks).values({ key, chunkIndex, payload }).run();
         }
@@ -165,6 +185,7 @@ function storageOperation<T>(operation: StorageOperation, run: () => T): T {
 function validateValue<T>(value: unknown, options: ComparisonEvidenceCacheOptions<T>): T {
   if (!options.isValid(value))
     throw new EvidenceStorageCorruptionError({ detail: 'Evidence value does not match its schema' });
+
   return value;
 }
 
@@ -182,8 +203,10 @@ function validateMetadata(row: RecordRow): void {
 function splitUtf8(value: string, limit: number): string[] {
   const chunks: string[] = [];
   const units = Math.min(Math.floor(limit / 3), CHUNK_UTF16_UNITS);
+
   for (let start = 0; start < value.length;) {
     let end = Math.min(start + units, value.length);
+
     if (
       end < value.length &&
       end > start &&
@@ -194,8 +217,10 @@ function splitUtf8(value: string, limit: number): string[] {
     ) {
       end -= 1;
     }
+
     chunks.push(value.slice(start, end));
     start = end;
   }
+
   return chunks.length > 0 ? chunks : [''];
 }

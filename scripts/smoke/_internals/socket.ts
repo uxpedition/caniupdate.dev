@@ -26,14 +26,20 @@ const FRAME_STATUSES = ['queued', 'running', 'available', 'unavailable'];
 /** A frame the scenario should read: an object carrying this protocol's status and revision. */
 const isJobEvent = (value: unknown): value is BriefingJobEvent => {
   if (typeof value !== 'object' || value === null) return false;
+
   if (!('status' in value) || typeof value.status !== 'string') return false;
+
   if (!('revision' in value) || typeof value.revision !== 'number') return false;
+
   return FRAME_STATUSES.includes(value.status);
 };
 
 const OPCODE_TEXT = 0x1;
+
 const OPCODE_CLOSE = 0x8;
+
 const OPCODE_PING = 0x9;
+
 const OPCODE_PONG = 0xa;
 
 type Frame = {
@@ -45,17 +51,24 @@ type Frame = {
 /** The payload length and header size of the frame at the buffer's start, or `undefined` while it is incomplete. */
 const readHeader = (buffer: Buffer): { length: number; offset: number } | undefined => {
   const [first, second] = [buffer[0], buffer[1]];
+
   if (first === undefined || second === undefined) return undefined;
   const maskExtra = (second & 0x80) !== 0 ? 4 : 0;
   const short = second & 0x7f;
+
   if (short === 126) {
     if (buffer.length < 4) return undefined;
+
     return { length: buffer.readUInt16BE(2), offset: 4 + maskExtra };
   }
+
   if (short !== 127) return { length: short, offset: 2 + maskExtra };
+
   if (buffer.length < 10) return undefined;
   const wide = buffer.readBigUInt64BE(2);
+
   if (wide > BigInt(Number.MAX_SAFE_INTEGER)) throw new SocketFailure('Frame too large for this client');
+
   return { length: Number(wide), offset: 10 + maskExtra };
 };
 
@@ -63,9 +76,12 @@ const readHeader = (buffer: Buffer): { length: number; offset: number } | undefi
 const readFrame = (buffer: Buffer): { frame: Frame; rest: Buffer } | undefined => {
   const first = buffer[0];
   const header = readHeader(buffer);
+
   if (first === undefined || header === undefined) return undefined;
   const end = header.offset + header.length;
+
   if (buffer.length < end) return undefined;
+
   return {
     frame: {
       opcode: first & 0x0f,
@@ -84,20 +100,25 @@ const closeDetails = (payload: Buffer): { code: number; reason: string } => ({
 /** The bytes after the handshake terminator, or `false` while the handshake is incomplete; a non-101 status throws. */
 const readHandshake = (buffer: Buffer): { handled: true; rest: Buffer } | { handled: false } => {
   const end = buffer.indexOf('\r\n\r\n');
+
   if (end === -1) return { handled: false };
   const statusLine = buffer.subarray(0, end).toString('utf8').split('\r\n')[0] ?? '';
+
   if (!statusLine.includes('101')) throw new SocketFailure(`The socket upgrade was refused: ${statusLine}`);
+
   return { handled: true, rest: buffer.subarray(end + 4) };
 };
 
 /** Validates one text frame against this protocol and records the revision event it carried. */
 const readText = (payload: Buffer, frames: BriefingJobEvent[]): void => {
   let parsed: unknown;
+
   try {
     parsed = JSON.parse(payload.toString('utf8'));
   } catch {
     throw new SocketFailure(`The subscription sent a frame that is not JSON: ${payload.toString('utf8')}`);
   }
+
   if (!isJobEvent(parsed))
     throw new SocketFailure(`The subscription sent a frame this protocol does not define: ${payload.toString('utf8')}`);
   frames.push(parsed);
@@ -107,9 +128,11 @@ const readText = (payload: Buffer, frames: BriefingJobEvent[]): void => {
 const sendControlFrame = (socket: Socket, opcode: number, payload: Buffer): void => {
   const mask = randomBytes(4);
   const masked = Buffer.from(payload);
+
   for (let index = 0; index < masked.length; index += 1) {
     masked[index] = (masked[index] ?? 0) ^ (mask[index % 4] ?? 0);
   }
+
   socket.write(Buffer.concat([Buffer.from([0x80 | opcode, 0x80 | payload.length]), mask, masked]));
 };
 
@@ -123,13 +146,16 @@ const dispatch = (
   switch (frame.opcode) {
     case OPCODE_CLOSE:
       finish({ frames, close: closeDetails(frame.payload) });
+
       return;
     case OPCODE_TEXT:
       if (!frame.final) throw new SocketFailure('The subscription sent a fragmented message');
       readText(frame.payload, frames);
+
       return;
     case OPCODE_PING:
       sendControlFrame(socket, OPCODE_PONG, frame.payload);
+
       return;
     default:
       // A pong needs no reply, and this client never asks for an extension another opcode could use.
@@ -148,13 +174,17 @@ type Intake = {
 /** Buffers one chunk, completes the handshake once, then dispatches every complete frame in order. */
 const intakeBytes = (intake: Intake, chunk: Buffer, finish: (subscription: Subscription) => void): void => {
   intake.buffer = Buffer.concat([intake.buffer, chunk]);
+
   if (!intake.handshakeComplete) {
     const handshake = readHandshake(intake.buffer);
+
     if (!handshake.handled) return;
     intake.buffer = handshake.rest;
     intake.handshakeComplete = true;
   }
+
   let next = readFrame(intake.buffer);
+
   while (next !== undefined) {
     intake.buffer = next.rest;
     dispatch(intake.frames, intake.socket, next.frame, finish);
@@ -168,6 +198,7 @@ const intakeBytes = (intake: Intake, chunk: Buffer, finish: (subscription: Subsc
  */
 const subscribe = (socket: Socket, path: string, timeoutMs: number): Promise<Subscription> => {
   const { promise, resolve, reject } = Promise.withResolvers<Subscription>();
+
   const intake: Intake = {
     socket,
     frames: [],
@@ -221,5 +252,6 @@ export const openSubscription = async (url: string, origin: string, timeoutMs: n
       'Sec-WebSocket-Version: 13\r\n' +
       `Origin: ${origin}\r\n\r\n`,
   );
+
   return await subscription;
 };

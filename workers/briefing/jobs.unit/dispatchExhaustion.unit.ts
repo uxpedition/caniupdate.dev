@@ -21,6 +21,7 @@ import {
 } from '../test/worker.harness';
 
 let provider: ProviderFixture;
+
 let main: RuntimeFixture;
 
 beforeAll(async () => {
@@ -41,6 +42,7 @@ describe('briefing job Worker', () => {
     const hash = briefingEvidenceHash(packet);
 
     const parked = await startRuntime({ stateDir, producer: false, consumer: false });
+
     try {
       expect((await parked.submit(packet)).submission?.status).toBe('queued');
       const failed = await waitForJobEvent(parked, hash, (event) => event.status === 'unavailable', 120_000);
@@ -58,12 +60,14 @@ describe('briefing job Worker', () => {
 
     provider.setMode({ kind: 'invalid' });
     let failed: BriefingJobEvent;
+
     try {
       expect((await main.submit(packet)).submission?.status).toBe('queued');
       failed = await waitForJobEvent(main, hash, (event) => event.status === 'unavailable');
     } finally {
       provider.setMode({ kind: 'valid' });
     }
+
     expect(failed).toMatchObject({ status: 'unavailable', reason: 'invalid-response' });
     expect(provider.requestsFor(packet.packageName)).toBe(2);
 

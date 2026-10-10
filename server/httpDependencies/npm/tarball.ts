@@ -10,15 +10,23 @@ import type { RegistryVersionManifest } from '../../../shared/comparison/package
 import { inspectTarball, type TarParser } from './tarballStreaming';
 
 const MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024;
+
 const MAX_ARCHIVE_BYTES = 32 * 1024 * 1024;
+
 const MAX_ENTRIES = 10_000;
+
 const MAX_CHANGELOG_BYTES = 256 * 1024;
+
 const MAX_CHANGELOG_TOTAL_BYTES = 1024 * 1024;
+
 const TIMEOUT_MS = 10_000;
+
 const CHANGELOG_NAME = /^(changelog|changes|history)(\.(md|markdown|txt|rst))?$/i;
 
 type InspectedTarball = Omit<PackageTarball, 'url'>;
+
 type InspectionResult = Omit<InspectedTarball, 'status'>;
+
 type Outcome<T> = { ok: true; value: T } | { ok: false; cause: unknown };
 
 type ContentResult = {
@@ -48,23 +56,30 @@ function verifyIntegrity(body: Buffer, dist: Pick<RegistryVersionManifest['dist'
   if (dist.integrity !== undefined) {
     // SRI requires the strongest supported algorithm; never downgrade to shasum on failure.
     const tokens = dist.integrity.trim().split(/\s+/);
+
     for (const algorithm of ['sha512', 'sha384', 'sha256']) {
       const candidates = tokens.filter((token) => token.startsWith(`${algorithm}-`));
+
       if (candidates.length === 0) continue;
       const digest = createHash(algorithm).update(body).digest();
+
       if (
         candidates.some((token) => {
           const encoded = token.slice(algorithm.length + 1);
+
           if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) return false;
           const expected = Buffer.from(encoded, 'base64');
+
           return expected.length === digest.length && timingSafeEqual(expected, digest);
         })
       )
         return;
       throw new Error('Tarball integrity mismatch');
     }
+
     throw new Error('Unsupported or malformed tarball integrity');
   }
+
   if (
     !/^[a-f0-9]{40}$/i.test(dist.shasum) ||
     createHash('sha1').update(body).digest('hex') !== dist.shasum.toLowerCase()
@@ -75,23 +90,28 @@ function verifyIntegrity(body: Buffer, dist: Pick<RegistryVersionManifest['dist'
 
 function normalizeSafeTarballUrl(url: string): string {
   const parsed = new URL(url);
+
   if (parsed.origin !== 'https://registry.npmjs.org' || parsed.username || parsed.password || parsed.hash) {
     throw new Error('Tarball URL must use the public npm HTTPS registry');
   }
+
   return parsed.href;
 }
 
 async function downloadTarball(url: string, signal: AbortSignal): Promise<Buffer> {
   // workerd supports manual redirects; the status check below rejects them without following Location.
   const response = await fetch(normalizeSafeTarballUrl(url), { signal, redirect: 'manual' });
+
   if (!response.ok || !response.body) {
     await response.body?.cancel();
     throw new Error('Tarball request failed');
   }
+
   if (Number(response.headers.get('content-length')) > MAX_DOWNLOAD_BYTES) {
     await response.body.cancel();
     throw new Error('Tarball exceeds download byte limit');
   }
+
   return readTarballBody(response.body, signal);
 }
 
@@ -99,12 +119,15 @@ async function readTarballBody(body: ReadableStream<Uint8Array>, signal: AbortSi
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
+
   try {
     while (true) {
       signal.throwIfAborted();
       const { done, value } = await reader.read();
+
       if (done) break;
       size += value.byteLength;
+
       if (size > MAX_DOWNLOAD_BYTES) throw new Error('Tarball exceeds download byte limit');
       chunks.push(value);
     }
@@ -112,19 +135,23 @@ async function readTarballBody(body: ReadableStream<Uint8Array>, signal: AbortSi
     await reader.cancel();
     reader.releaseLock();
   }
+
   return Buffer.concat(chunks, size);
 }
 
 function hasUnsafePathCharacters(value: string): boolean {
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i);
+
     if (code < 32 || code === 127 || code === 92) return true;
   }
+
   return false;
 }
 
 function archivePath(name: string, directory: boolean): string {
   const path = directory && name.endsWith('/') ? name.slice(0, -1) : name;
+
   if (
     path.length > 4096 ||
     hasUnsafePathCharacters(path) ||
@@ -133,18 +160,24 @@ function archivePath(name: string, directory: boolean): string {
   ) {
     throw new Error('Unsafe or unsupported tarball path');
   }
+
   if (path === 'package' && !directory) throw new Error('Invalid tarball root');
+
   return path.slice('package/'.length);
 }
 
 function inspectHeader(header: Header): PublishedFile {
   const { type, size } = header;
+
   if (type !== 'file' && type !== 'directory' && type !== 'symlink' && type !== 'link') {
     throw new Error('Unsupported tarball entry type');
   }
+
   validateEntrySize(header);
   const file: PublishedFile = { path: archivePath(header.name, type === 'directory'), type, size, sha256: null };
+
   if (type === 'link' || type === 'symlink') return { ...file, linkTarget: inspectLink(header) };
+
   return file;
 }
 
@@ -152,17 +185,21 @@ function validateEntrySize({ size, type }: Header): void {
   if (!Number.isSafeInteger(size) || size < 0 || size > MAX_ARCHIVE_BYTES) {
     throw new Error('Invalid tarball entry size');
   }
+
   if (type !== 'file' && size !== 0) throw new Error('Invalid non-file tarball entry size');
 }
 
 function inspectLink(header: Header): string {
   const target = header.linkname;
+
   if (!target || target.length > 4096 || posix.isAbsolute(target) || hasUnsafePathCharacters(target)) {
     throw new Error('Unsafe tarball link');
   }
+
   // Hardlinks are archive-root-relative; symlinks are relative to their containing directory.
   const resolved = header.type === 'link' ? target : posix.join(posix.dirname(header.name), target);
   archivePath(resolved, false);
+
   return target;
 }
 
@@ -180,6 +217,7 @@ function consumeContentChunk(value: unknown, state: ContentState, signal: AbortS
   signal.throwIfAborted();
   state.actual += chunk.length;
   state.hash?.update(chunk);
+
   if (state.captured >= state.allowance) return;
   const part = chunk.subarray(0, state.allowance - state.captured);
   state.text.push(part);
@@ -199,20 +237,27 @@ async function inspectContent(
     actual: 0,
     allowance,
   };
+
   for await (const value of entry) consumeContentChunk(value, state, signal);
+
   if (state.actual !== file.size) throw new Error('Incomplete tarball entry');
+
   return { text: Buffer.concat(state.text, state.captured), sha256: state.hash?.digest('hex') ?? null };
 }
 
 function decodeChangelog(file: PublishedFile, text: Buffer, reasons: Set<string>): ShippedChangelog | null {
   const truncated = text.length < file.size;
+
   if (truncated) reasons.add('Shipped changelog text exceeded inspection limits');
+
   try {
     // Streaming decode drops an incomplete trailing UTF-8 sequence only when deliberately truncated.
     const body = new TextDecoder('utf-8', { fatal: true }).decode(text, { stream: truncated });
+
     return { path: file.path, body, truncated };
   } catch {
     reasons.add('A shipped changelog was not valid UTF-8 text');
+
     return null;
   }
 }
@@ -231,6 +276,7 @@ function createEntryState(): EntryInspectionState {
 
 function changelogAllowance(file: PublishedFile, isChangelog: boolean, reserved: number): number {
   if (!isChangelog) return 0;
+
   return Math.min(MAX_CHANGELOG_BYTES, MAX_CHANGELOG_TOTAL_BYTES - reserved, file.size);
 }
 
@@ -241,13 +287,16 @@ function inspectEntry(
   signal: AbortSignal,
 ): Promise<Outcome<EntryResult>> {
   signal.throwIfAborted();
+
   if (state.paths.size >= MAX_ENTRIES) throw new Error('Tarball exceeds entry limit');
   const file = inspectHeader(entry.header);
+
   if (state.paths.has(file.path)) throw new Error('Duplicate tarball path');
   state.paths.add(file.path);
   const isChangelog = file.type === 'file' && CHANGELOG_NAME.test(posix.basename(file.path));
   const allowance = changelogAllowance(file, isChangelog, state.changelogBytes);
   state.changelogBytes += allowance;
+
   const task: Promise<Outcome<EntryResult>> = inspectContent(entry, file, allowance, signal).then(
     ({ text, sha256 }): Outcome<EntryResult> => ({
       ok: true,
@@ -256,9 +305,11 @@ function inspectEntry(
     (cause): Outcome<EntryResult> => {
       state.firstTaskFailure ??= cause;
       parser.destroy(toError(cause));
+
       return { ok: false, cause };
     },
   );
+
   return task;
 }
 
@@ -268,6 +319,7 @@ async function collectEntryResults(
   state: EntryInspectionState,
 ): Promise<Array<Outcome<EntryResult>>> {
   for await (const entry of parser) state.tasks.push(inspectEntry(entry, state, parser, signal));
+
   return Promise.all(state.tasks);
 }
 
@@ -275,21 +327,28 @@ function finalizeEntries(results: Array<Outcome<EntryResult>>, state: EntryInspe
   for (const result of results) {
     if (!result.ok) throw result.cause;
     const { file, text, isChangelog } = result.value;
+
     if (file.path) state.files.push(file);
+
     if (isChangelog) {
       const changelog = decodeChangelog(file, text, state.reasons);
+
       if (changelog) state.changelogs.push(changelog);
     }
   }
+
   state.files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   state.changelogs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+
   return { files: state.files, changelogs: state.changelogs, reasons: [...state.reasons] };
 }
 
 async function inspectEntries(parser: TarParser, signal: AbortSignal): Promise<InspectionResult> {
   const state = createEntryState();
+
   try {
     const results = await collectEntryResults(parser, signal, state);
+
     return finalizeEntries(results, state);
   } catch (cause) {
     parser.destroy(toError(state.firstTaskFailure ?? cause));
@@ -318,6 +377,7 @@ const inspectPackageTarball = (
     try: async (signal) => {
       const body = await downloadTarball(url, signal);
       verifyIntegrity(body, dist);
+
       return body;
     },
     catch: (cause) => cause,
@@ -330,11 +390,13 @@ const inspectPackageTarball = (
 export const getPackageTarball = (manifest: RegistryVersionManifest): Effect.Effect<PackageTarball> => {
   const url = manifest.dist.tarball;
   let normalizedUrl: string;
+
   try {
     normalizedUrl = normalizeSafeTarballUrl(url);
   } catch (cause) {
     return Effect.succeed(unavailableTarball(url, cause));
   }
+
   return inspectPackageTarball(normalizedUrl, manifest.dist).pipe(
     Effect.map((result) => ({ ...result, url })),
     Effect.catch((cause) => Effect.succeed(unavailableTarball(url, cause))),

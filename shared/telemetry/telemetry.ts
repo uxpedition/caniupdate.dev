@@ -19,7 +19,9 @@ export type TelemetryRuntimeOptions = {
 };
 
 export type TelemetryServices = OtlpExporter.Flusher;
+
 export type TelemetryRuntime = ManagedRuntime.ManagedRuntime<TelemetryServices, never>;
+
 export type TelemetryWaitUntil = (promise: Promise<unknown>) => void;
 
 type TelemetryResourceOptions = {
@@ -29,19 +31,23 @@ type TelemetryResourceOptions = {
 };
 
 const EXPORT_BATCH_SIZE = 64;
+
 const EXPORT_SHUTDOWN_TIMEOUT = Duration.millis(250);
+
 const DISPOSE_TIMEOUT = Duration.seconds(1);
 
 const safeResourceOptions = (options: TelemetryRuntimeOptions) => {
   const environment = ['local', 'development', 'test', 'preview', 'production'].includes(options.environment ?? '')
     ? options.environment
     : undefined;
+
   const serviceVersion =
     options.serviceVersion !== undefined &&
     options.serviceVersion.length <= 64 &&
     /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:[-+][0-9A-Za-z.-]+)?$/.test(options.serviceVersion)
       ? options.serviceVersion
       : undefined;
+
   return {
     serviceName: options.serviceName,
     ...(serviceVersion === undefined ? {} : { serviceVersion }),
@@ -50,16 +56,19 @@ const safeResourceOptions = (options: TelemetryRuntimeOptions) => {
 };
 
 const isApprovedLogMessage = Schema.is(TelemetryLogMessageSchema);
+
 const isApprovedSpanName = Schema.is(TelemetrySpanNameSchema);
 
 const filterNativeLogger = (logger: Logger.Logger<unknown, void>): Logger.Logger<unknown, void> =>
   Logger.make((options) => {
     const message = options.message;
+
     if (Array.isArray(message)) {
       if (message.length !== 1 || !isApprovedLogMessage(message[0])) return;
     } else if (!isApprovedLogMessage(message)) {
       return;
     }
+
     logger.log(options);
   });
 
@@ -69,7 +78,9 @@ const filterNativeTracer = (tracer: Tracer.Tracer): Tracer.Tracer =>
     span(options) {
       const approved = isApprovedSpanName(options.name);
       const span = tracer.span(approved ? options : { ...options, sampled: false });
+
       if (approved || !options.sampled) return span;
+
       return {
         _tag: span._tag,
         name: span.name,
@@ -141,11 +152,13 @@ const createTracerLayer = (endpoint: string, options: TelemetryRuntimeOptions, r
 const createLayer = (options: TelemetryRuntimeOptions): Layer.Layer<TelemetryServices> => {
   const endpoint = options.endpoint?.trim().replace(/\/+$/, '');
   const baseLayer = Layer.mergeAll(ConsoleLoggerLive, OtlpExporter.layerFlusher);
+
   if (endpoint === undefined || endpoint.length === 0 || !Schema.is(TelemetryServiceNameSchema)(options.serviceName)) {
     return baseLayer;
   }
 
   const resource = safeResourceOptions(options);
+
   return Layer.mergeAll(
     createLoggerLayer(endpoint, options, resource),
     createTracerLayer(endpoint, options, resource),
@@ -169,12 +182,15 @@ const scheduleDisposal = (runtime: TelemetryRuntime, waitUntil: TelemetryWaitUnt
     () => undefined,
     () => undefined,
   );
+
   if (waitUntil === undefined) return disposal;
+
   try {
     waitUntil(disposal);
   } catch {
     // Runtime shutdown is diagnostic-only. The bounded promise still settles if the lifecycle hook refuses it.
   }
+
   return Promise.resolve();
 };
 
@@ -185,6 +201,7 @@ export const runWithTelemetry = async <A, E, R extends TelemetryServices>(
   waitUntil?: TelemetryWaitUntil,
 ): Promise<A> => {
   let runtime = createTelemetryRuntime(options);
+
   try {
     try {
       await runtime.context();
@@ -194,18 +211,23 @@ export const runWithTelemetry = async <A, E, R extends TelemetryServices>(
       } catch {
         // A diagnostic sink failure cannot prevent the console-only application runtime from starting.
       }
+
       await scheduleDisposal(runtime, waitUntil);
+
       const fallbackOptions: TelemetryRuntimeOptions = {
         serviceName: options.serviceName,
         ...(options.environment === undefined ? {} : { environment: options.environment }),
         ...(options.serviceVersion === undefined ? {} : { serviceVersion: options.serviceVersion }),
       };
+
       runtime = createTelemetryRuntime(fallbackOptions);
       await runtime.context();
     }
+
     return await runtime.runPromise(program);
   } finally {
     const disposal = scheduleDisposal(runtime, waitUntil);
+
     if (waitUntil === undefined) await disposal;
   }
 };

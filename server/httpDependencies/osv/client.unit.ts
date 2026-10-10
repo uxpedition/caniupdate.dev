@@ -10,6 +10,7 @@ function runWithStub<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, b
 
   const client = HttpClient.make((request) => {
     urls.push(request.url);
+
     return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(body, { status })));
   });
 
@@ -22,6 +23,7 @@ function runWithStub<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, b
 function runWithDelayedBody<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, body: unknown) {
   let timer: ReturnType<typeof setTimeout>;
   const started = Promise.withResolvers<void>();
+
   const client = HttpClient.make((request) => {
     const responseBody = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -35,6 +37,7 @@ function runWithDelayedBody<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpCli
         clearTimeout(timer);
       },
     });
+
     return Effect.succeed(
       HttpClientResponse.fromWeb(
         request,
@@ -59,6 +62,7 @@ const request = {
 describe('queryBatch', () => {
   it('times out while a batch response body is still streaming', async () => {
     vi.useFakeTimers();
+
     try {
       const delayed = runWithDelayedBody(queryBatch(request), { results: [{}, {}, {}] });
       await delayed.started;
@@ -66,6 +70,7 @@ describe('queryBatch', () => {
       const result = await delayed.result;
 
       expect(Result.isFailure(result)).toBe(true);
+
       if (Result.isFailure(result)) expect(Cause.isTimeoutError(result.failure)).toBe(true);
     } finally {
       vi.useRealTimers();
@@ -80,6 +85,7 @@ describe('queryBatch', () => {
         { next_page_token: 'next-page' },
       ],
     });
+
     const response = await result;
 
     expect(response.results[1]).toEqual({});
@@ -123,6 +129,7 @@ const advisory = {
 describe('getVulnerability', () => {
   it('times out while an advisory response body is still streaming', async () => {
     vi.useFakeTimers();
+
     try {
       const delayed = runWithDelayedBody(getVulnerability('GHSA-vh95-rmgr-6w4m'), advisory);
       await delayed.started;
@@ -130,6 +137,7 @@ describe('getVulnerability', () => {
       const result = await delayed.result;
 
       expect(Result.isFailure(result)).toBe(true);
+
       if (Result.isFailure(result)) expect(Cause.isTimeoutError(result.failure)).toBe(true);
     } finally {
       vi.useRealTimers();

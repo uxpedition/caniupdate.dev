@@ -17,6 +17,7 @@ export const useComparisonBriefing = (
   // The generation state the submitted job reports, published by the briefing query as it submits and follows its
   // socket. A comparison change is a different job, so the previous pair's state must not describe the new one.
   const briefingStatus = ref<BriefingStatus | undefined>(undefined);
+
   const briefingOptions = packageBriefingQueryOptions(
     requestFetch,
     packageName,
@@ -26,6 +27,7 @@ export const useComparisonBriefing = (
     pageContext,
     telemetryRuntime,
   );
+
   const briefingQuery = useQuery(briefingOptions);
   watch(briefingOptions.queryKey, () => {
     briefingStatus.value = undefined;

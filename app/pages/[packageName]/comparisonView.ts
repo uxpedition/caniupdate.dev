@@ -28,6 +28,7 @@ const formatBytes = (value: number | null): string => (value === null ? 'Unavail
 
 const formatJson = (value: unknown): string => {
   if (value === null || value === undefined) return 'Not declared';
+
   return JSON.stringify(value, null, 2) ?? 'Not declared';
 };
 
@@ -35,7 +36,9 @@ const formatEntries = (entries: readonly string[]): string => (entries.length ==
 
 const formatRequirements = (version: DeclaredPackageVersion): string => {
   const requirements = new Map<string, string>();
+
   for (const [name, range] of Object.entries(version.dependencies)) requirements.set(name, range);
+
   for (const [name, range] of Object.entries(version.optionalDependencies))
     requirements.set(name, `${range} · optional`);
 
@@ -48,6 +51,7 @@ const formatRequirements = (version: DeclaredPackageVersion): string => {
 
 const formatPeers = (version: DeclaredPackageVersion): string => {
   const optionalPeers = new Set(version.optionalPeers);
+
   return formatEntries(
     Object.entries(version.peerDependencies)
       .sort(([left], [right]) => left.localeCompare(right))
@@ -69,10 +73,14 @@ const formatModule = (version: DeclaredPackageVersion): string => {
 
 const formatTypes = (version: DeclaredPackageVersion): string => {
   const values: string[] = [];
+
   if (version.moduleFormat.types !== undefined) values.push(`types: ${version.moduleFormat.types}`);
+
   if (version.moduleFormat.typings !== undefined) values.push(`typings: ${version.moduleFormat.typings}`);
+
   if (version.moduleFormat.typesVersions !== undefined)
     values.push(`typesVersions:\n${formatJson(version.moduleFormat.typesVersions)}`);
+
   return formatEntries(values);
 };
 
@@ -86,23 +94,27 @@ const formatScripts = (version: DeclaredPackageVersion): string =>
 const formatAdvisories = (version: MeasuredPackageVersion): string => {
   const { status, count } = version.vulnerabilities;
   const countLabel = count === null ? 'count unavailable' : `${count} ${count === 1 ? 'advisory' : 'advisories'}`;
+
   return `${countLabel} · coverage ${status}`;
 };
 
 const formatTarball = (version: MeasuredPackageVersion): string => {
   const changelogLabel = version.tarball.changelogCount === 0 ? 'no shipped changelog' : 'shipped changelog';
+
   return `${version.tarball.status} · ${formatNumber(version.tarball.fileCount)} files · ${changelogLabel}`;
 };
 
 const formatDelta = (size: SizeComparison): string => {
   if (size.delta === null) {
     if (size.from === null || size.to === null) return 'A size comparison needs a measurement for both versions.';
+
     return 'Bundlephobia omitted dependencies from at least one build. The size difference would not be a like-for-like comparison.';
   }
 
   const sign = size.delta > 0 ? '+' : '';
   const percentage = size.percent === null ? '' : ` (${size.percent > 0 ? '+' : ''}${size.percent.toFixed(1)}%)`;
   const reasons = size.reasons.length === 0 ? '' : ` · ${size.reasons.join('; ')}`;
+
   return `${sign}${formatNumber(size.delta)} bytes${percentage}${reasons}`;
 };
 
@@ -236,6 +248,7 @@ const declarationRows = (
 const formatBundleSize = (bytes: number | null, version: MeasuredPackageVersion): string => {
   const build = version.bundleSize;
   const omitted = build.status === 'available' ? build.ignoredMissingDependencies : undefined;
+
   return omitted?.length
     ? `${formatBytes(bytes)}\nIncomplete estimate. Bundlephobia omitted:\n${omitted.join('\n')}`
     : formatBytes(bytes);
@@ -248,7 +261,9 @@ export const MEASUREMENT_SOURCE_IDS: readonly string[] = [
   'comparison.advisories',
   'comparison.tarball',
 ];
+
 export const MEASURING_VALUE = 'Measuring…';
+
 export const MEASUREMENTS_UNAVAILABLE_VALUE = 'Unavailable';
 
 const measured = (
@@ -276,6 +291,7 @@ const sizesUnpackedRow = (
   measurementsUnavailable: boolean,
 ): ComparisonRow => {
   const sizes = measurements?.comparison.sizes;
+
   return row(
     'comparison.sizes-unpacked',
     'Unpacked package size',
@@ -291,6 +307,7 @@ const sizesMinifiedRow = (
   measurementsUnavailable: boolean,
 ): ComparisonRow => {
   const sizes = measurements?.comparison.sizes;
+
   return row(
     'comparison.sizes-minified',
     'Estimated minified bundle',
@@ -314,6 +331,7 @@ const sizesGzipRow = (
   measurementsUnavailable: boolean,
 ): ComparisonRow => {
   const sizes = measurements?.comparison.sizes;
+
   return row(
     'comparison.sizes-gzip',
     'Estimated gzip bundle',

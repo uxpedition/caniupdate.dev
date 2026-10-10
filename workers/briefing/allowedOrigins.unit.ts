@@ -24,6 +24,7 @@ describe('briefing allowed origins', () => {
     const allowed = briefingAllowedOrigins(PAGE);
 
     expect(allowed).toContain(PAGE);
+
     for (const lookalike of [
       `${PAGE}.attacker.example`,
       `${PAGE}0`,

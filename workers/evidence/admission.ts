@@ -6,9 +6,11 @@ import type { ArchiveAdmission } from '../../server/comparison/evidence/services
 export { ArchiveCapacityError, ResponseCapacityError };
 
 export const MAX_ACTIVE_ARCHIVE_INSPECTIONS = 2;
+
 export const MAX_ACTIVE_EVIDENCE_RESPONSES = 2;
 
 type ArchiveCapacityFailure = InstanceType<typeof ArchiveCapacityError>;
+
 type ResponseCapacityFailure = InstanceType<typeof ResponseCapacityError>;
 
 /** Runs work through one isolate-scoped, reject-fast semaphore. */

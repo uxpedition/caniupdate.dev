@@ -15,6 +15,7 @@ const LOOPBACK_HOSTNAMES = ['localhost', '127.0.0.1', '[::1]'] as const;
 const browserHostnames = (addresses: readonly NetworkInterfaceInfo[]): readonly string[] =>
   addresses.flatMap((address) => {
     if (address.internal || address.address.includes('%')) return [];
+
     return [address.family === 'IPv6' ? `[${address.address}]` : address.address];
   });
 

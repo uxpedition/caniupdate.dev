@@ -92,6 +92,7 @@ const tracePayload = () => ({
 
 const parseJson = (text: string): unknown => {
   const value: unknown = JSON.parse(text);
+
   return value;
 };
 
@@ -99,10 +100,14 @@ type ForwardedRequest = { readonly input: RequestInfo | URL; readonly init?: Req
 
 const requireForwardedRequest = (forwarded: readonly ForwardedRequest[]) => {
   const request = forwarded[0];
+
   if (request === undefined) throw new Error('Expected forwarded collector request');
+
   if (request.init === undefined) throw new Error('Expected collector request options');
+
   if (typeof request.init.body !== 'string') throw new Error('Expected JSON collector request body');
   const input = request.input instanceof Request ? request.input.url : request.input.toString();
+
   return { input, init: { ...request.init, body: request.init.body } };
 };
 
@@ -123,8 +128,10 @@ const expectTraceExport = (forwarded: readonly ForwardedRequest[]): void => {
 
   const decoded = decodeTelemetryPayload('traces', parseJson(forwardedText));
   const group = decoded.resourceSpans[0];
+
   if (group === undefined) throw new Error('Expected forwarded trace resource');
   const scope = group.scopeSpans[0];
+
   if (scope === undefined) throw new Error('Expected forwarded trace scope');
   expect(group.resource.attributes).toEqual([{ key: 'service.name', value: { stringValue: 'can-i-update-browser' } }]);
   expect(group.resource.droppedAttributesCount).toBe(2);
@@ -136,10 +143,13 @@ const expectLogExport = (forwarded: readonly ForwardedRequest[]): void => {
   expect(String(input)).toBe('http://127.0.0.1:4318/v1/logs');
   const payload = decodeTelemetryPayload('logs', parseJson(String(init.body)));
   const group = payload.resourceLogs[0];
+
   if (group === undefined) throw new Error('Expected forwarded log resource');
   const scope = group.scopeLogs[0];
+
   if (scope === undefined) throw new Error('Expected forwarded log scope');
   const record = scope.logRecords[0];
+
   if (record === undefined) throw new Error('Expected forwarded log record');
   expect(group.resource.attributes).toEqual([{ key: 'service.name', value: { stringValue: 'can-i-update-browser' } }]);
   expect(group.resource.droppedAttributesCount).toBe(0);
@@ -181,6 +191,7 @@ describe('telemetry ingress', () => {
 
   it('converts a legacy H3 Node request into a cancellable bounded Web stream', async () => {
     const incoming = new PassThrough();
+
     const request = toTelemetryRequest({
       method: 'POST',
       path: '/api/telemetry/v1/traces',
@@ -192,6 +203,7 @@ describe('telemetry ingress', () => {
       req: incoming,
       node: { req: incoming },
     });
+
     incoming.end(new Uint8Array(TELEMETRY_MAX_BODY_BYTES + 1));
 
     await expect(readBoundedTelemetryBody(request)).rejects.toMatchObject({ statusCode: 413 });
@@ -202,6 +214,7 @@ describe('telemetry ingress', () => {
     const incoming = new IncomingMessage(new Socket());
     incoming.method = 'POST';
     incoming.url = '/api/telemetry/v1/traces';
+
     const request = toTelemetryRequest({
       method: 'POST',
       path: '/api/telemetry/v1/traces',
@@ -214,6 +227,7 @@ describe('telemetry ingress', () => {
       node: { req: incoming },
       context: { cloudflare: { request: new Request('http://localhost:3000/api/telemetry/v1/traces') } },
     });
+
     incoming.push('{"actual":"post"}');
     incoming.push(null);
 
@@ -225,6 +239,7 @@ describe('telemetry ingress', () => {
   it('reads client identity from legacy Node requests and Cloudflare headers', () => {
     const incoming = Object.assign(new PassThrough(), { socket: { remoteAddress: '192.0.2.21' } });
     const nodeRequest = new Request('http://localhost:3000');
+
     const cloudflareRequest = new Request('https://example.test', {
       headers: { 'cf-connecting-ip': '192.0.2.22' },
     });
@@ -240,7 +255,9 @@ describe('telemetry ingress', () => {
         this.scheduled = true;
       },
     };
+
     const waitUntil = telemetryWaitUntil(context);
+
     if (waitUntil === undefined) throw new Error('Expected Nitro lifecycle hook');
 
     waitUntil(Promise.resolve());
@@ -259,7 +276,9 @@ describe('telemetry ingress', () => {
         },
       },
     };
+
     const waitUntil = telemetryWaitUntil(context);
+
     if (waitUntil === undefined) throw new Error('Expected Cloudflare lifecycle hook');
 
     waitUntil(Promise.resolve());
@@ -278,6 +297,7 @@ describe('telemetry ingress', () => {
           'content-length': incoming.headers['content-length'] ?? '',
         }),
       });
+
       void readBoundedTelemetryBody(request)
         .then(
           () => {
@@ -291,20 +311,25 @@ describe('telemetry ingress', () => {
           outgoing.end();
         });
     });
+
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
       server.listen(0, '127.0.0.1', resolve);
     });
+
     try {
       const address = server.address();
+
       if (address === null || typeof address === 'string') throw new Error('Expected isolated HTTP listener');
       const origin = `http://127.0.0.1:${address.port}`;
+
       const response = await fetch(`${origin}/api/telemetry/v1/traces`, {
         method: 'POST',
         headers: { origin, 'content-type': 'application/json' },
         body: 'x'.repeat(TELEMETRY_MAX_BODY_BYTES + 1),
         signal: AbortSignal.timeout(5_000),
       });
+
       expect(response.status).toBe(413);
     } finally {
       server.closeAllConnections();
@@ -314,6 +339,7 @@ describe('telemetry ingress', () => {
 
   it('rejects a streamed body as soon as it exceeds the byte limit', async () => {
     let cancelled = false;
+
     const requestInit: RequestInit & { duplex: 'half' } = {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: 'http://localhost:3000' },
@@ -327,6 +353,7 @@ describe('telemetry ingress', () => {
       }),
       duplex: 'half',
     };
+
     const request = new Request('http://localhost:3000/api/telemetry/v1/traces', requestInit);
 
     await expect(readBoundedTelemetryBody(request)).rejects.toMatchObject({ statusCode: 413 });
@@ -336,6 +363,7 @@ describe('telemetry ingress', () => {
   it('cancels a stalled request body within its intake deadline', async () => {
     vi.useFakeTimers();
     let cancelled = false;
+
     const requestInit: RequestInit & { duplex: 'half' } = {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: 'http://localhost:3000' },
@@ -349,8 +377,10 @@ describe('telemetry ingress', () => {
       }),
       duplex: 'half',
     };
+
     const request = new Request('http://localhost:3000/api/telemetry/v1/traces', requestInit);
     const admission = createTelemetryAdmission();
+
     const reading = handleTelemetryIngress(request, 'traces', {
       endpoint: 'http://127.0.0.1:4318',
       admission,
@@ -364,16 +394,20 @@ describe('telemetry ingress', () => {
     expect(cancelled).toBe(true);
 
     const releases: Array<() => void> = [];
+
     for (let request = 0; request < 8; request += 1) {
       const release = admission.acquire(`192.0.2.${request + 30}`);
+
       if (release === undefined) throw new Error('Expected stalled request capacity to be released');
       releases.push(release);
     }
+
     for (const release of releases) release();
   });
 
   it('cancels a stalled upload when admission rejects it before reading', async () => {
     let cancelled = false;
+
     const requestInit: RequestInit & { duplex: 'half' } = {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: 'http://localhost:3000' },
@@ -387,11 +421,14 @@ describe('telemetry ingress', () => {
       }),
       duplex: 'half',
     };
+
     const request = new Request('http://localhost:3000/api/telemetry/v1/traces', requestInit);
     const admission = createTelemetryAdmission();
     const releases: Array<() => void> = [];
+
     for (let active = 0; active < 8; active += 1) {
       const release = admission.acquire(`192.0.2.${active + 30}`);
+
       if (release === undefined) throw new Error('Expected admission capacity to be occupied');
       releases.push(release);
     }
@@ -406,6 +443,7 @@ describe('telemetry ingress', () => {
     ).rejects.toMatchObject({ statusCode: 429 });
     await Promise.resolve();
     expect(cancelled).toBe(true);
+
     for (const release of releases) release();
   });
 
@@ -423,14 +461,19 @@ describe('telemetry ingress', () => {
     vi.useFakeTimers();
     const concurrent = createTelemetryAdmission();
     const releases: Array<() => void> = [];
+
     for (let request = 0; request < 8; request += 1) {
       const release = concurrent.acquire('192.0.2.2');
+
       if (release === undefined) throw new Error('Expected admission under the concurrent limit');
       releases.push(release);
     }
+
     expect(concurrent.acquire('192.0.2.2')).toBeUndefined();
+
     for (const release of releases) release();
     const afterRelease = concurrent.acquire('192.0.2.2');
+
     if (afterRelease === undefined) throw new Error('Expected released capacity to admit another request');
     afterRelease();
 
@@ -439,36 +482,47 @@ describe('telemetry ingress', () => {
 
     for (let request = 0; request < 200; request += 1) {
       const release = admission.acquire('192.0.2.1');
+
       if (release === undefined) {
         denied = true;
         break;
       }
+
       release();
     }
+
     expect(denied).toBe(true);
 
     const bounded = createTelemetryAdmission();
     let distinctClientDenied = false;
+
     for (let client = 0; client < 400; client += 1) {
       const release = bounded.acquire(`client-${client}`);
+
       if (release === undefined) {
         distinctClientDenied = true;
         break;
       }
+
       release();
     }
+
     expect(distinctClientDenied).toBe(true);
   });
 
   it('forwards only decoded telemetry to the fixed OTLP path with forced browser identity', async () => {
     const forwarded: { input: RequestInfo | URL; init?: RequestInit }[] = [];
     const upstream = Promise.withResolvers<Response>();
+
     const fetcher: typeof fetch = async (input, init) => {
       forwarded.push({ input, init });
+
       return upstream.promise;
     };
+
     const tasks: Promise<void>[] = [];
     const waitUntil = (task: Promise<void>) => tasks.push(task);
+
     const request = new Request('http://localhost:3000/api/telemetry/v1/traces', {
       method: 'POST',
       headers: {
@@ -488,10 +542,12 @@ describe('telemetry ingress', () => {
       waitUntil,
       fetcher,
     });
+
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('{}');
     expect(forwarded).toHaveLength(1);
     const forwarding = tasks[0];
+
     if (forwarding === undefined) throw new Error('Expected background forwarding to be registered');
     upstream.reject(new Error('collector failure private detail'));
     await forwarding;
@@ -502,11 +558,15 @@ describe('telemetry ingress', () => {
 
   it('forwards approved log records to the matching OTLP signal path', async () => {
     const forwarded: { input: RequestInfo | URL; init?: RequestInit }[] = [];
+
     const fetcher: typeof fetch = async (input, init) => {
       forwarded.push({ input, init });
+
       return new Response(null, { status: 200 });
     };
+
     const tasks: Promise<void>[] = [];
+
     const request = new Request('http://localhost:3000/api/telemetry/v1/logs', {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: 'http://localhost:3000' },
@@ -520,6 +580,7 @@ describe('telemetry ingress', () => {
       waitUntil: (task) => tasks.push(task),
       fetcher,
     });
+
     await Promise.all(tasks);
 
     expect(response.status).toBe(200);
@@ -532,6 +593,7 @@ describe('telemetry ingress', () => {
       headers: { 'content-type': 'application/json', origin: 'http://localhost:3000' },
       body: '{}',
     });
+
     const fetcher = vi.fn<typeof fetch>();
 
     await expect(
@@ -552,6 +614,7 @@ describe('telemetry ingress', () => {
       headers: { 'content-type': 'application/json', origin: 'http://attacker.example' },
       body: '{}',
     });
+
     const fetcher = vi.fn<typeof fetch>();
 
     await expect(

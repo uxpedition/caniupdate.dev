@@ -2,11 +2,17 @@ import { Data, Duration, Effect, Option, Result, Schema } from 'effect';
 import { FetchHttpClient, Headers, HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
 
 const API_ORIGIN = 'https://api.github.com';
+
 const GITHUB_API_VERSION = '2022-11-28';
+
 const GITHUB_USER_AGENT = 'can-i-update';
+
 const RELEASES_PER_PAGE = 100;
+
 const MAX_RELEASE_PAGES = 10;
+
 const REQUEST_TIMEOUT = Duration.seconds(5);
+
 const MAX_BODY_BYTES = 1_048_576;
 
 export type GithubRepository = {
@@ -59,6 +65,7 @@ const GithubResponseDecodeError = Data.TaggedError('GithubResponseDecodeError')<
 
 const encodePathSegment = (segment: string): string => {
   const encoded = encodeURIComponent(segment);
+
   return segment === '.' || segment === '..' ? encoded.replaceAll('.', '%2E') : encoded;
 };
 
@@ -91,11 +98,13 @@ const executeGithubRequest = (
 ): Effect.Effect<HttpClientResponse.HttpClientResponse, unknown> =>
   Effect.gen(function* () {
     const noRedirectClient = client.pipe(HttpClient.followRedirects(0));
+
     return yield* noRedirectClient.pipe(HttpClient.filterStatusOk).execute(request);
   }).pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: 'manual' }));
 
 const hasNextPage = (response: HttpClientResponse.HttpClientResponse): boolean => {
   const link = Option.getOrUndefined(Headers.get(response.headers, 'link'));
+
   if (link === undefined) return false;
 
   return link.split(',').some((part) => /;\s*rel\s*=\s*(?:"next"|'next'|next)(?:\s*;|\s*$)/i.test(part));
@@ -103,23 +112,28 @@ const hasNextPage = (response: HttpClientResponse.HttpClientResponse): boolean =
 
 const contentLength = (response: HttpClientResponse.HttpClientResponse): number | undefined => {
   const value = Option.getOrUndefined(Headers.get(response.headers, 'content-length'));
+
   if (value === undefined) return undefined;
 
   const parsed = Number(value);
+
   return !Number.isNaN(parsed) && parsed >= 0 ? parsed : undefined;
 };
 
 const readResponseBody = (response: HttpClientResponse.HttpClientResponse): Effect.Effect<ArrayBuffer, unknown> =>
   Effect.gen(function* () {
     const declaredLength = contentLength(response);
+
     if (declaredLength !== undefined && declaredLength > MAX_BODY_BYTES) {
       return yield* Effect.fail(new GithubResponseTooLargeError({ actual: declaredLength, limit: MAX_BODY_BYTES }));
     }
 
     const body = yield* response.arrayBuffer;
+
     if (body.byteLength > MAX_BODY_BYTES) {
       return yield* Effect.fail(new GithubResponseTooLargeError({ actual: body.byteLength, limit: MAX_BODY_BYTES }));
     }
+
     return body;
   });
 
@@ -129,6 +143,7 @@ const readResponseText = (response: HttpClientResponse.HttpClientResponse): Effe
 const readResponseJson = (response: HttpClientResponse.HttpClientResponse): Effect.Effect<unknown, unknown> =>
   Effect.gen(function* () {
     const text = yield* readResponseText(response);
+
     return yield* Effect.try({
       try: (): unknown => JSON.parse(text),
       catch: (cause) => new GithubResponseDecodeError({ cause }),
@@ -146,8 +161,10 @@ const fetchReleasePage = (
       client,
       githubRequest(releasesUrl(repository, page), 'application/vnd.github+json', token),
     );
+
     const body = yield* readResponseJson(response);
     const releases = yield* Schema.decodeUnknownEffect(GithubReleasePageSchema)(body, { errors: 'all' });
+
     return { releases, hasNext: hasNextPage(response) };
   }).pipe(Effect.timeout(REQUEST_TIMEOUT));
 
@@ -172,6 +189,7 @@ export const listGithubReleases = Effect.fn('Github.listGithubReleases')(functio
     }
 
     releases.push(...nextPage.success.releases);
+
     if (!nextPage.success.hasNext) {
       return { releases, complete: true };
     }
@@ -187,11 +205,14 @@ export const listGithubDirectory = Effect.fn('Github.listGithubDirectory')(funct
   token?: string,
 ) {
   const client = yield* HttpClient.HttpClient;
+
   const response = yield* executeGithubRequest(
     client,
     githubRequest(contentsUrl(repository, path, ref), 'application/vnd.github+json', token),
   );
+
   const body = yield* readResponseJson(response);
+
   return yield* Schema.decodeUnknownEffect(GithubDirectorySchema)(body, { errors: 'all' });
 }, Effect.timeout(REQUEST_TIMEOUT));
 
@@ -202,9 +223,11 @@ export const getGithubFile = Effect.fn('Github.getGithubFile')(function* (
   token?: string,
 ) {
   const client = yield* HttpClient.HttpClient;
+
   const response = yield* executeGithubRequest(
     client,
     githubRequest(contentsUrl(repository, path, ref), 'application/vnd.github.raw+json', token),
   );
+
   return yield* readResponseText(response);
 }, Effect.timeout(REQUEST_TIMEOUT));

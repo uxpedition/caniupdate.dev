@@ -15,6 +15,7 @@ import {
 import { useComparisonForm } from '~/composables/useComparisonForm';
 
 const props = defineProps<{ variant: 'home' | 'header' }>();
+
 const {
   draft,
   error,
@@ -33,11 +34,17 @@ const {
   relocation,
   relocationSequence,
 } = useComparisonForm();
+
 const router = useRouter();
+
 const formElement = ref<HTMLFormElement | null>(null);
+
 const versionSelectAnchor = ref<HTMLElement | null>(null);
+
 let animationFrame: number | undefined;
+
 let animationTimer: number | undefined;
+
 let removeFormNavigationGuard: (() => void) | undefined;
 
 const clearFormAnimation = () => {
@@ -116,6 +123,7 @@ const storeRelocation = ({ id, targetPath, source }: ComparisonSubmission) => {
 const completeSubmission = ({ id, targetPath }: ComparisonSubmission) => {
   if (router.currentRoute.value.path !== targetPath) {
     clearRelocation(id);
+
     return;
   }
 

@@ -30,7 +30,9 @@ export type BriefingSource = typeof BriefingSourceSchema.Type;
 export type BriefingSourceDraft = Omit<BriefingSource, 'number'>;
 
 export const BRIEFING_EVIDENCE_MAX_BYTES = 48 * 1024;
+
 const BRIEFING_EVIDENCE_MAX_SOURCES = 64;
+
 const textEncoder = new TextEncoder();
 
 const EvidenceIdentitySchema = Schema.String.check(

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { getGithubFile, listGithubDirectory, listGithubReleases } from './client';
 
 const RELEASES_PER_PAGE = 100;
+
 const MAX_BODY_BYTES = 1_048_576;
 
 type RequestCapture = {
@@ -18,6 +19,7 @@ type RequestCapture = {
 
 function runWithStub<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, responses: Response[]) {
   const calls: RequestCapture[] = [];
+
   const client = HttpClient.make((request) =>
     Effect.gen(function* () {
       const webRequest = yield* HttpClientRequest.toWeb(request).pipe(Effect.orDie);
@@ -30,9 +32,11 @@ function runWithStub<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, r
         authorization: webRequest.headers.get('authorization'),
       });
       const response = responses.shift();
+
       if (response === undefined) {
         return yield* Effect.die(new Error('stub response queue exhausted'));
       }
+
       return HttpClientResponse.fromWeb(request, response);
     }),
   );
@@ -82,6 +86,7 @@ describe('listGithubReleases', () => {
   it('uses fixed numbered pages rather than a Link URL and stops on a short page', async () => {
     const firstPage = fullReleasePage(0);
     const secondPage = [release(100)];
+
     const { calls, result } = runWithStub(listGithubReleases(repository), [
       releasesResponse(firstPage, {
         link: '<https://evil.example/releases?page=2>; rel="next"',
@@ -127,6 +132,7 @@ describe('listGithubReleases', () => {
         link: '<https://evil.example/releases?page=next>; rel="next"',
       }),
     );
+
     const { calls, result } = runWithStub(listGithubReleases(repository), tenPages);
 
     const response = await result;

@@ -35,14 +35,22 @@ import {
 
 // These globals belong to workerd; keep their types local instead of replacing Node's globals.
 type D1Database = Cloudflare.D1Database;
+
 type DurableObjectNamespace<T extends Cloudflare.Rpc.DurableObjectBranded | undefined = undefined> =
   Cloudflare.DurableObjectNamespace<T>;
+
 type Queue<T> = Cloudflare.Queue<T>;
+
 type Request = Cloudflare.Request;
+
 type Response = Cloudflare.Response;
+
 type WebSocket = Cloudflare.WebSocket;
+
 declare const Response: typeof Cloudflare.Response;
+
 declare const WebSocketPair: typeof Cloudflare.WebSocketPair;
+
 declare const WebSocket: typeof Cloudflare.WebSocket;
 
 const decodeEvidence = Schema.decodeUnknownSync(BriefingEvidenceSchema, { errors: 'all' });
@@ -87,15 +95,23 @@ export type BriefingEnv = {
 
 /** 75-second provider deadline plus a 15-second persistence margin. Neither constant may shrink to speed a test. */
 const LEASE_MS = 90_000;
+
 const DISPATCH_RECOVERY_MS = 30_000;
+
 const MAX_DISPATCH_ATTEMPTS = 3;
+
 const JOB_KEY = 'job';
+
 /** The close a settled subscriber sees: a normal closure whose reason says the stream ended, not that it broke. */
 const SOCKET_COMPLETE = 1000;
+
 const SOCKET_COMPLETE_REASON = 'briefing complete';
+
 /** The close for a socket this object accepted but could not serve, so a client does not wait on a silent stream. */
 const SOCKET_FAILURE = 1011;
+
 const SOCKET_FAILURE_REASON = 'briefing unavailable';
+
 const TEXT_HEADERS = { 'content-type': 'text/plain; charset=utf-8' };
 
 /**
@@ -147,6 +163,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     const current = Promise.withResolvers<void>();
     this.#lock = current.promise;
     await previous;
+
     try {
       return await section();
     } finally {
@@ -179,6 +196,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   /** The Queue consumer's entry point: one delivery, one generation. */
   async run(message: BriefingJobMessage): Promise<BriefingJobEvent> {
     const record = await this.#readRecord();
+
     if (!this.#isCurrentQueuedDelivery(record, message)) {
       // A duplicate delivery, a stale generation, or an already-settled job: the owner commits, not this message.
       return await this.reconciledSnapshot();
@@ -186,22 +204,29 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
 
     // D1 first. A hit is the authority and costs nothing; a read failure must never reach the provider.
     const stored = await this.#lookupStored(message.hash);
+
     if (stored.outcome === 'failed') return await this.#commitUnavailable('cache-error');
+
     if (stored.outcome === 'found') return await this.#commitAvailable(stored.briefing);
 
     const packet = record.packet;
+
     if (packet === undefined) return await this.#commitUnavailable('cache-error');
 
     const config = readBriefingConfig(this.env);
+
     if (config.status !== 'configured') return await this.#commitUnavailable(config.status);
 
     const lease = await this.#claimRunning(message.generationId, Date.now() + LEASE_MS);
+
     if (lease === undefined) return await this.reconciledSnapshot();
+
     const generated = await runWithTelemetry(
       runTracedGeneration(packet, config.value, lease.generationContext),
       briefingTelemetryOptions(this.env.OTEL_EXPORTER_OTLP_ENDPOINT, this.env.OTEL_EXPORTER_OTLP_HEADERS),
       this.#waitUntil,
     );
+
     return await this.#commitIfCurrent(lease.fence, generated);
   }
 
@@ -215,6 +240,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Upgrade Required', { status: 426, headers: TEXT_HEADERS });
     }
+
     if ((await this.#readRecord()) === undefined) {
       return new Response('Not Found', { status: 404, headers: TEXT_HEADERS });
     }
@@ -223,6 +249,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     const client = pair[0];
     const server = pair[1];
     this.ctx.acceptWebSocket(server);
+
     try {
       await this.#synchronized(async () => {
         // Reconciled, not remembered: a result D1 already holds is what the browser must see, and the lock keeps this
@@ -234,6 +261,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
       server.close(SOCKET_FAILURE, SOCKET_FAILURE_REASON);
       throw error;
     }
+
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -258,6 +286,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   #sendFrame(socket: WebSocket, event: BriefingJobEvent): void {
     if (socket.readyState !== WebSocket.READY_STATE_OPEN) return;
     socket.send(JSON.stringify(event));
+
     if (event.status === 'available' || event.status === 'unavailable') {
       socket.close(SOCKET_COMPLETE, SOCKET_COMPLETE_REASON);
     }
@@ -269,16 +298,21 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
 
     // D1 is the authority for available results: a hit is returned even when the provider settings have gone away.
     const stored = await this.#lookupStored(hash);
+
     if (stored.outcome === 'failed') throw new BriefingSubmissionError('cache-error');
+
     if (stored.outcome === 'found') return { submission: this.#availableSubmission(evidence, stored.briefing) };
 
     const config = readBriefingConfig(this.env);
+
     if (config.status !== 'configured') throw new BriefingSubmissionError(config.status);
 
     const accepted = await this.#accept(hash, evidence);
+
     // Only the submit that created the generation dispatches it, so a simultaneous second submit adds no message.
     if (accepted.created) await this.#dispatch();
     const submission = this.#pendingSubmission(accepted.record, evidence);
+
     return accepted.generationContext === undefined
       ? { submission }
       : { submission, generationContext: accepted.generationContext };
@@ -290,13 +324,17 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
    */
   #verifiedPacket(packet: BriefingEvidence): { evidence: BriefingEvidence; hash: string } {
     let evidence: BriefingEvidence;
+
     try {
       evidence = decodeEvidence(packet);
     } catch {
       throw new BriefingSubmissionError('invalid-response');
     }
+
     const hash = briefingEvidenceHash(evidence);
+
     if (this.ctx.id.name !== hash) throw new BriefingSubmissionError('invalid-response');
+
     return { evidence, hash };
   }
 
@@ -310,8 +348,10 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   ): Promise<{ record: JobRecord; created: boolean; generationContext?: TraceContext }> {
     return await this.#synchronized(async () => {
       const current = await this.#readRecord();
+
       if (current !== undefined && (current.state === 'queued' || current.state === 'running')) {
         const attached = await this.#ensureTraceContext(current, 'briefing.generation.trace_context.attached');
+
         return { ...attached, created: false };
       }
 
@@ -324,7 +364,9 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
         dispatchAttempts: 0,
         packet: evidence,
       };
+
       const accepted = await this.#ensureTraceContext(created, 'briefing.generation.accepted');
+
       return { ...accepted, created: true };
     });
   }
@@ -340,30 +382,40 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
    */
   async #currentEvent(): Promise<BriefingJobEvent> {
     const record = await this.#readRecord();
+
     if (record === undefined) throw new Error('No briefing job for this evidence hash');
+
     if (record.state === 'queued' || record.state === 'running') {
       return { status: record.state, revision: record.revision };
     }
+
     if (record.state === 'unavailable') return this.#unavailableEvent(record);
 
     // Available: the D1 row is the result, so a transient read failure must not destroy the job's state.
     const stored = await this.#lookupStored(record.hash);
+
     if (stored.outcome === 'failed') throw new Error('Briefing store is unavailable');
+
     if (stored.outcome === 'missing') {
       // Under the lock already, so the terminal path is entered directly rather than through `#commitTerminal`.
       return await this.#commitTerminalLocked({ state: 'unavailable', reason: 'cache-error' });
     }
+
     return { status: 'available', revision: record.revision, briefing: stored.briefing };
   }
 
   /** The dispatch-recovery alarm: redeliver a queued job, or settle a generation whose lease ran out. */
   async alarm(): Promise<void> {
     const record = await this.#readRecord();
+
     if (record === undefined || record.state === 'available' || record.state === 'unavailable') return;
+
     if (record.state === 'queued') {
       await this.#dispatch();
+
       return;
     }
+
     await this.#settleExpiredLease(record);
   }
 
@@ -375,22 +427,28 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
    */
   async #settleExpiredLease(record: JobRecord): Promise<void> {
     const expiresAt = record.leaseUntil ?? 0;
+
     if (Date.now() < expiresAt) {
       // Another owner may still be generating; the lease, not this alarm, decides when it is dead.
       await this.ctx.storage.setAlarm(expiresAt);
+
       return;
     }
 
     const stored = await this.#lookupStored(record.hash);
+
     switch (stored.outcome) {
       case 'found':
         await this.#commitAvailable(stored.briefing);
+
         return;
       case 'missing':
         await this.#commitUnavailable('timeout');
+
         return;
       case 'failed':
         await this.#commitUnavailable('cache-error');
+
         return;
     }
   }
@@ -410,6 +468,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   async #claimRunning(generationId: number, expiresAt: number): Promise<RunningLease | undefined> {
     return await this.#synchronized(async () => {
       const record = await this.#readRecord();
+
       if (record === undefined || record.state !== 'queued' || record.generationId !== generationId) return undefined;
 
       const traced = await this.#ensureTraceContext(record, 'briefing.generation.trace_context.attached');
@@ -423,6 +482,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
       });
       // The lease alarm is set while claiming, so a crash mid-generation is always reconciled.
       await this.ctx.storage.setAlarm(expiresAt);
+
       return traced.generationContext === undefined
         ? { fence }
         : { fence, generationContext: traced.generationContext };
@@ -432,19 +492,24 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   /** Commit a generated result only while this owner still holds the lease; a stale owner just reports the job. */
   async #commitIfCurrent(lease: number, result: PackageBriefing): Promise<BriefingJobEvent> {
     const record = await this.#readRecord();
+
     if (record === undefined || record.state !== 'running' || record.fence !== lease) {
       return await this.reconciledSnapshot();
     }
+
     if (result.status === 'unavailable') return await this.#commitUnavailable(result.reason);
 
     // The row is written and read back before any terminal event is committed: a refused write is never success.
     let stored: AvailablePackageBriefing;
+
     try {
       stored = await saveBriefing(this.env.BRIEFINGS_DB, record.hash, result);
     } catch (cause) {
       if (!isBriefingStoreFailure(cause)) throw cause;
+
       return await this.#commitUnavailable('cache-error');
     }
+
     return await this.#commitAvailable(stored);
   }
 
@@ -459,7 +524,9 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
    */
   async #commitTerminalLocked(outcome: TerminalOutcome): Promise<BriefingJobEvent> {
     const record = await this.#readRecord();
+
     if (record === undefined) throw new Error(`No briefing job to settle as ${outcome.state}`);
+
     if (record.state === 'available' || record.state === 'unavailable') return await this.#terminalEvent(record);
 
     const settled: JobRecord = {
@@ -471,6 +538,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
       ...(record.fence === undefined ? {} : { fence: record.fence }),
       ...(outcome.state === 'unavailable' ? { reason: outcome.reason } : {}),
     };
+
     await this.ctx.storage.put(JOB_KEY, settled);
     await this.ctx.storage.deleteAlarm();
 
@@ -478,7 +546,9 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
       outcome.state === 'available'
         ? { status: 'available', revision: settled.revision, briefing: outcome.briefing }
         : this.#unavailableEvent(settled);
+
     for (const socket of this.ctx.getWebSockets()) this.#sendFrame(socket, event);
+
     return event;
   }
 
@@ -489,19 +559,24 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   async #dispatch(): Promise<void> {
     const plan = await this.#synchronized(async (): Promise<DispatchPlan> => {
       const record = await this.#readRecord();
+
       if (record === undefined || record.state !== 'queued') return { action: 'skip' };
       const attempts = record.dispatchAttempts + 1;
+
       if (attempts > MAX_DISPATCH_ATTEMPTS) return { action: 'exhausted' };
 
       // A dispatch attempt is internal bookkeeping, not a client-visible transition, so the revision does not move.
       await this.ctx.storage.put(JOB_KEY, { ...record, dispatchAttempts: attempts });
       await this.ctx.storage.setAlarm(Date.now() + DISPATCH_RECOVERY_MS);
+
       return { action: 'send', hash: record.hash, generationId: record.generationId, attempts };
     });
 
     if (plan.action === 'skip') return;
+
     if (plan.action === 'exhausted') {
       await this.#commitUnavailable('provider-error');
+
       return;
     }
 
@@ -520,9 +595,11 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   async #lookupStored(hash: string): Promise<StoredLookup> {
     try {
       const briefing = await readStoredBriefing(this.env.BRIEFINGS_DB, hash);
+
       return briefing === undefined ? { outcome: 'missing' } : { outcome: 'found', briefing };
     } catch (cause) {
       if (!isBriefingStoreFailure(cause)) throw cause;
+
       return { outcome: 'failed' };
     }
   }
@@ -530,7 +607,9 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   async #terminalEvent(record: JobRecord): Promise<BriefingJobEvent> {
     if (record.state === 'unavailable') return this.#unavailableEvent(record);
     const stored = await this.#lookupStored(record.hash);
+
     if (stored.outcome !== 'found') throw new Error('The stored briefing for this job disappeared');
+
     return { status: 'available', revision: record.revision, briefing: stored.briefing };
   }
 

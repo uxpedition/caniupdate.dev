@@ -10,15 +10,18 @@ import { inspectTarball } from './tarballStreaming';
 async function archiveWithEntry(body: Buffer): Promise<Buffer> {
   const output = pack();
   const chunks: Buffer[] = [];
+
   const reading = (async () => {
     for await (const chunk of output) {
       if (!Buffer.isBuffer(chunk)) throw new Error('Invalid fixture chunk');
       chunks.push(chunk);
     }
   })();
+
   output.entry({ name: 'package/payload', size: body.length }, body);
   output.finalize();
   await reading;
+
   return gzipSync(Buffer.concat(chunks));
 }
 
@@ -27,6 +30,7 @@ function runInspection<T, E>(inspection: Effect.Effect<T, E>) {
     void Promise.resolve(inspection).catch(() => undefined);
     throw new Error('Tarball inspection must return an Effect');
   }
+
   return Effect.runFork(inspection);
 }
 
@@ -34,9 +38,11 @@ describe('tarball inspection lifecycle', () => {
   it('registers entry inspection before malformed gzip can close the parser', async () => {
     const body = Buffer.from('not gzip');
     let startedWithLiveParser = false;
+
     const outcome = await Effect.runPromiseExit(
       inspectTarball(body, async (parser) => {
         startedWithLiveParser = !parser.destroyed;
+
         return undefined;
       }),
     );
@@ -47,13 +53,17 @@ describe('tarball inspection lifecycle', () => {
 
   it('inspects a populated archive successfully', async () => {
     const body = await archiveWithEntry(Buffer.from('payload'));
+
     const entries = await Effect.runPromise(
       inspectTarball(body, async (parser) => {
         const names: string[] = [];
+
         for await (const entry of parser) {
           names.push(entry.header.name);
+
           for await (const chunk of entry) void chunk;
         }
+
         return names;
       }),
     );
@@ -66,12 +76,14 @@ describe('tarball inspection lifecycle', () => {
     const cleanupGate = Promise.withResolvers<void>();
     let cleanupStarted = false;
     let inspectorSettled = false;
+
     const outcome = Effect.runPromise(
       inspectTarball(body, async (parser) => {
         try {
           for await (const entry of parser) {
             for await (const chunk of entry) void chunk;
           }
+
           throw new Error('Inspection failed after reading the archive');
         } finally {
           cleanupStarted = true;
@@ -90,6 +102,7 @@ describe('tarball inspection lifecycle', () => {
     } finally {
       cleanupGate.resolve();
     }
+
     expect((await outcome).ok).toBe(false);
     expect(inspectorSettled).toBe(true);
   });
@@ -107,13 +120,16 @@ describe('tarball inspection lifecycle', () => {
     const fiber = runInspection(
       inspectTarball(body, async (_parser, signal) => {
         started = true;
+
         try {
           await new Promise<never>((_resolve, reject) => {
             if (signal.aborted) {
               signalAborted = true;
               reject(signal.reason);
+
               return;
             }
+
             signal.addEventListener(
               'abort',
               () => {
@@ -133,15 +149,18 @@ describe('tarball inspection lifecycle', () => {
     );
 
     await vi.waitFor(() => expect(started).toBe(true));
+
     const interruption = Effect.runPromise(Fiber.interrupt(fiber)).then(() => {
       interruptionFinished = true;
     });
+
     try {
       await vi.waitFor(() => expect(cleanupStarted).toBe(true));
       interruptedAfterCleanup = !interruptionFinished;
     } finally {
       cleanupGate.resolve();
     }
+
     await interruption;
 
     expect(signalAborted).toBe(true);

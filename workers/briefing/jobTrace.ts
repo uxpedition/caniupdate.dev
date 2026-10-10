@@ -20,15 +20,18 @@ export interface GenerationTraceStorage {
 type TraceableRecord = { traceContext?: TraceContext; packet?: BriefingEvidence };
 
 export type GenerationTraceEvent = 'briefing.generation.accepted' | 'briefing.generation.trace_context.attached';
+
 export type RunningLease = { readonly fence: number; readonly generationContext?: TraceContext };
 
 const telemetryHeadersFrom = (input?: string): Record<string, string> | undefined => {
   const decoded = decodeTelemetryHeaders(input);
+
   return Object.keys(decoded).length === 0 ? undefined : decoded;
 };
 
 export const briefingTelemetryOptions = (endpoint?: string, headers?: string): TelemetryRuntimeOptions => {
   const decodedHeaders = telemetryHeadersFrom(headers);
+
   return {
     ...(endpoint === undefined ? {} : { endpoint }),
     ...(decodedHeaders === undefined ? {} : { headers: decodedHeaders }),
@@ -49,18 +52,22 @@ export const ensureGenerationTraceContext = async <T extends TraceableRecord>(
   readonly generationContext?: TraceContext;
 }> => {
   const existing = decodeTraceContext(record.traceContext);
+
   if (existing !== undefined) return { record, generationContext: existing };
 
   const withoutTraceContext = { ...record };
   delete withoutTraceContext.traceContext;
   const identityAttributes = record.packet === undefined ? {} : comparisonTelemetryAttributes(record.packet);
+
   const eventProgram = Effect.gen(function* () {
     const span = yield* Effect.currentSpan;
     const generationContext = decodeTraceContext({ traceId: span.traceId, spanId: span.spanId });
+
     if (generationContext === undefined) {
       if (event === 'briefing.generation.accepted') {
         yield* Effect.tryPromise({ try: () => storage.put(key, withoutTraceContext), catch: (cause) => cause });
       }
+
       return { record: withoutTraceContext };
     }
 
@@ -70,6 +77,7 @@ export const ensureGenerationTraceContext = async <T extends TraceableRecord>(
       Effect.annotateLogs({ ...generationContext, ...identityAttributes }),
       Effect.ignore,
     );
+
     return { record: tracedRecord, generationContext };
   }).pipe(Effect.withSpan(event, { root: true, attributes: identityAttributes }));
 
@@ -78,6 +86,7 @@ export const ensureGenerationTraceContext = async <T extends TraceableRecord>(
   } catch {
     // A trace-context write is optional, but the new job record itself is mandatory and must still fail normally.
     if (event === 'briefing.generation.accepted') await storage.put(key, withoutTraceContext);
+
     return { record: withoutTraceContext };
   }
 };
@@ -90,7 +99,9 @@ export const runTracedGeneration = (
 ) => {
   const generationParent =
     generationContext === undefined ? undefined : Tracer.externalSpan({ ...generationContext, sampled: true });
+
   const identityAttributes = comparisonTelemetryAttributes(packet);
+
   const spanOptions = {
     ...(generationParent === undefined ? { root: true } : { parent: generationParent }),
     attributes: identityAttributes,
@@ -107,6 +118,7 @@ export const runTracedGeneration = (
       }),
       Effect.ignore,
     );
+
     return yield* generateBriefing(packet, config).pipe(
       Effect.provideService(HttpClient.TracerPropagationEnabled, false),
       Effect.provide(FetchHttpClient.layer),

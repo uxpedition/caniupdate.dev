@@ -1,6 +1,7 @@
 import type { SelectOption } from '~/components/form/select.defs';
 
 const NUMERIC_TERM_PATTERN = /^[\d.]+$/;
+
 const NUMERIC_SEGMENT_PATTERN = /^\d+$/;
 
 const numericSkeleton = (text: string) =>
@@ -8,6 +9,7 @@ const numericSkeleton = (text: string) =>
     .split(/[.-]/)
     .filter((segment) => NUMERIC_SEGMENT_PATTERN.test(segment))
     .join('.');
+
 const termRank = (text: string, term: string): number | null => {
   const target = NUMERIC_TERM_PATTERN.test(term) ? numericSkeleton(text) : text;
 
@@ -29,6 +31,7 @@ const termRank = (text: string, term: string): number | null => {
 
   return text.includes(term) ? 2 : null;
 };
+
 const optionTermRank = (option: SelectOption, term: string): number | null => {
   const labelRank = termRank(option.label.toLowerCase(), term);
 
@@ -44,6 +47,7 @@ const optionTermRank = (option: SelectOption, term: string): number | null => {
 
   return Math.min(labelRank, descriptionRank);
 };
+
 export const filterVersionOptions = (options: readonly SelectOption[], rawTerm: string): readonly SelectOption[] => {
   const term = rawTerm.trim().toLowerCase();
 

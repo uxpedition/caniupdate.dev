@@ -10,6 +10,7 @@ import {
 /** The SSR app owns its runtime config; no Nitro bundle import is required to reach it. */
 const telemetryFromRuntime = (runtime: unknown): ServerTelemetryBaseConfig => {
   const config: unknown = runtime;
+
   const nested = (path: string, fallback?: unknown): unknown =>
     path
       .split('.')
@@ -18,7 +19,9 @@ const telemetryFromRuntime = (runtime: unknown): ServerTelemetryBaseConfig => {
           typeof value === 'object' && value !== null && Reflect.has(value, key) ? Reflect.get(value, key) : fallback,
         config,
       );
+
   const endpoint = nested('otelEndpoint');
+
   return {
     enabled: nested('public.telemetryEnabled') === true && typeof endpoint === 'string' && endpoint.trim() !== '',
     endpoint: typeof endpoint === 'string' ? endpoint : '',
@@ -36,7 +39,9 @@ const telemetryFromNuxtApp = (): ServerTelemetryBaseConfig => {
 
 const reportServerFailure = (nuxtApp: NuxtApp, source: string, error: unknown): void => {
   const event = nuxtApp.ssrContext?.event;
+
   if (event === undefined) return;
+
   try {
     void reportServerDiagnostic(event, {
       send: createServerDiagnosticSend(event, telemetryFromNuxtApp()),

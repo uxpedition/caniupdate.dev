@@ -7,9 +7,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { syncMigrations } from './sync-migrations';
 
 let directory: string;
+
 let source: string;
+
 let target: string;
+
 const first = '20261004000000_initial';
+
 const second = '20261004000001_next';
 
 beforeEach(async () => {

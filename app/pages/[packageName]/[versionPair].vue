@@ -11,11 +11,14 @@ import { useComparisonRoute } from '~/composables/useComparisonRoute';
 definePageMeta({ layout: 'site' });
 
 const route = useRoute();
+
 const telemetry = useNuxtApp().$telemetry;
+
 const pageTraceContext = ref<TraceContext>();
 
 // Route-only content can stream before declarations; the description streams with ComparisonDetails.
 const { packageName, fromVersion, toVersion } = useComparisonRoute();
+
 useSeoMeta({
   title: computed(() => `${packageName.value} ${fromVersion.value} -> ${toVersion.value} · Can I Update?`),
 });

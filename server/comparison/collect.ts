@@ -42,12 +42,15 @@ import { compareMeasurements } from './measurements/compare';
 import { getPackageVulnerabilities } from './measurements/vulnerabilities';
 
 export const EVIDENCE_CACHE_MAX_AGE_MS = 300_000;
+
 export const EVIDENCE_COLLECTOR_REVISION = 'comparison-evidence-v1';
+
 export const ARCHIVE_INSPECTOR_REVISION = 'archive-inspector-v2';
 
 const cacheKey = (scope: string, input: unknown): string => {
   const serialized = JSON.stringify(input) ?? 'undefined';
   const digest = createHash('sha256').update(serialized).digest('hex');
+
   return `${scope}:${digest}`;
 };
 
@@ -58,14 +61,17 @@ const runCached = <T>(
   options: ComparisonEvidenceCacheOptions<T>,
 ): Effect.Effect<T, PackageEvidenceFailure, HttpClient.HttpClient> => {
   const cache = services?.cache;
+
   if (cache === undefined) {
     return effect.pipe(
       Effect.mapError(toPackageEvidenceFailure),
       Effect.catchDefect((cause) => Effect.fail(new EvidenceCollectionError({ cause }))),
     );
   }
+
   return Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient;
+
     return yield* Effect.tryPromise({
       try: () =>
         cache.load(
@@ -88,6 +94,7 @@ const runCached = <T>(
 const safeTarballUrl = (url: string): boolean => {
   try {
     const parsed = new URL(url);
+
     return (
       parsed.origin === 'https://registry.npmjs.org' &&
       parsed.username === '' &&
@@ -110,6 +117,7 @@ const withArchiveAdmission = (
 ): Effect.Effect<PackageTarball, PackageEvidenceFailure, HttpClient.HttpClient> => {
   const inspect = getPackageTarball(manifest).pipe(Effect.mapError(toPackageEvidenceFailure));
   const admission = services?.archiveAdmission;
+
   return admission === undefined ? inspect : admission.withPermit(inspect);
 };
 
@@ -118,6 +126,7 @@ const withArchiveAdmission = (
 const registryVersionManifestRequest = (packageName: string, version: string) =>
   Effect.gen(function* () {
     const response = yield* getRegistryJson(`/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`);
+
     return yield* Schema.decodeUnknownEffect(RegistryVersionManifestSchema)(response, { errors: 'all' });
   }).pipe(Effect.mapError((cause) => new RegistryRequestError({ cause })));
 
@@ -125,12 +134,14 @@ const registryVersionManifestRequest = (packageName: string, version: string) =>
 // so each tarball can start as soon as its own manifest resolves.
 const getManifest = (packageName: string, version: string, services?: ComparisonEvidenceServices) => {
   const request = registryVersionManifestRequest(packageName, version);
+
   const cached = runCached(
     cacheKey('manifest', { revision: EVIDENCE_COLLECTOR_REVISION, packageName, version }),
     request,
     services,
     { ttlMs: EVIDENCE_CACHE_MAX_AGE_MS, cacheable: () => true, isValid: Schema.is(RegistryVersionManifestSchema) },
   );
+
   return Effect.cached(cached);
 };
 
@@ -159,6 +170,7 @@ const declarationsFrom = (packageName: string, lookups: ManifestLookups) =>
     const manifests = yield* resolveManifestPair(lookups);
     const fromVersion = toPackageVersion(manifests.from);
     const toVersion = toPackageVersion(manifests.to);
+
     return {
       packageName,
       from: fromVersion,
@@ -176,6 +188,7 @@ export function getComparisonDeclarations(
 ): Effect.Effect<PackageDeclarationsResponse, PackageEvidenceFailure, HttpClient.HttpClient> {
   return Effect.gen(function* () {
     const lookups = yield* allocateManifestLookups(packageName, from, to, services);
+
     return yield* declarationsFrom(packageName, lookups);
   });
 }
@@ -185,10 +198,13 @@ const cachedTarball = (
   services?: ComparisonEvidenceServices,
 ): Effect.Effect<PackageTarball, PackageEvidenceFailure, HttpClient.HttpClient> => {
   const validUrl = safeTarballUrl(manifest.dist.tarball);
+
   const inspect = (validUrl ? withArchiveAdmission(manifest, services) : getPackageTarball(manifest)).pipe(
     Effect.mapError(toPackageEvidenceFailure),
   );
+
   if (services?.cache === undefined || !validUrl) return inspect;
+
   const result = runCached(
     cacheKey('archive', {
       revision: ARCHIVE_INSPECTOR_REVISION,
@@ -198,6 +214,7 @@ const cachedTarball = (
     services,
     { ttlMs: null, cacheable: (value) => value.status !== 'unavailable', isValid: Schema.is(PackageTarballSchema) },
   );
+
   return result.pipe(Effect.map((value) => ({ ...value, url: manifest.dist.tarball })));
 };
 
@@ -264,6 +281,7 @@ const collectMeasurementEvidence = (
     isExactSemver(from) && isExactSemver(to)
       ? Effect.succeed({ from, to })
       : resolveManifestPair(lookups).pipe(Effect.map((pair) => ({ from: pair.from.version, to: pair.to.version })));
+
   return Effect.all(
     {
       tarballs: Effect.all(
@@ -302,18 +320,21 @@ const collectMeasurements = (
   Effect.gen(function* () {
     const evidence = yield* collectMeasurementEvidence(packageName, from, to, lookups, services);
     const resolvedManifests = yield* resolveManifestPair(lookups);
+
     const fromVersion = {
       ...toPackageVersion(resolvedManifests.from),
       vulnerabilities: evidence.vulnerabilities.from,
       bundleSize: evidence.bundleSize.from,
       tarball: evidence.tarballs.from,
     };
+
     const toVersion = {
       ...toPackageVersion(resolvedManifests.to),
       vulnerabilities: evidence.vulnerabilities.to,
       bundleSize: evidence.bundleSize.to,
       tarball: evidence.tarballs.to,
     };
+
     return { from: fromVersion, to: toVersion, comparison: compareMeasurements(fromVersion, toVersion) };
   });
 
@@ -339,11 +360,13 @@ export function getComparisonMeasurements(
 ): Effect.Effect<PackageMeasurementsResponse, PackageEvidenceFailure, HttpClient.HttpClient> {
   return Effect.gen(function* () {
     const lookups = yield* allocateManifestLookups(packageName, from, to, services);
+
     const {
       from: fromVersion,
       to: toVersion,
       comparison,
     } = yield* collectMeasurements(packageName, from, to, lookups, services);
+
     return {
       packageName,
       from: toMeasuredVersion(fromVersion),
@@ -365,6 +388,7 @@ export function getComparisonFacts(
 ): Effect.Effect<ComparisonFacts, PackageEvidenceFailure, HttpClient.HttpClient> {
   return Effect.gen(function* () {
     const lookups = yield* allocateManifestLookups(packageName, from, to, services);
+
     const { declarations, measurements, releaseNotes } = yield* Effect.all(
       {
         declarations: declarationsFrom(packageName, lookups),
@@ -375,6 +399,7 @@ export function getComparisonFacts(
       },
       { concurrency: 3 },
     );
+
     return {
       packageName,
       releaseNotes,

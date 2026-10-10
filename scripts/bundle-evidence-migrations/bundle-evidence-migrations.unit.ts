@@ -9,13 +9,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { bundleEvidenceMigrations } from './bundle-evidence-migrations';
 
 const first = '20261005000000_evidence_initial';
+
 const second = '20261005000001_next';
+
 const initial = await readFile(
   new URL('../../workers/evidence/drizzle/20261005055201_evidence_initial/migration.sql', import.meta.url),
   'utf8',
 );
+
 let directory: string;
+
 let source: string;
+
 let output: string;
 
 beforeEach(async () => {
@@ -56,12 +61,15 @@ describe('evidence migration bundle', () => {
     await generated(first);
     await bundleEvidenceMigrations(source, output);
     const sql = (await bundled())[first];
+
     if (sql === undefined) throw new Error('Missing bootstrap');
     const db = new DatabaseSync(':memory:');
+
     try {
       for (const statement of sql.split('--> statement-breakpoint')) db.exec(statement);
       db.exec(`INSERT INTO evidence_records VALUES ('old', NULL, 1, 5);
         INSERT INTO evidence_chunks VALUES ('old', 0, '"old"');`);
+
       for (const statement of sql.split('--> statement-breakpoint')) db.exec(statement);
       expect(db.prepare('SELECT * FROM evidence_records').all()).toEqual([
         { key: 'old', expires_at: null, chunk_count: 1, byte_length: 5 },
@@ -98,10 +106,14 @@ describe('evidence migration bundle', () => {
       await generated(second, 'CREATE TABLE next (id TEXT);\n');
       await bundleEvidenceMigrations(source, output);
       const before = await readFile(output, 'utf8');
+
       if (kind === 'changed')
         await writeFile(join(source, first, 'migration.sql'), initial.replace('byte_length', 'other_length'));
+
       if (kind === 'removed' || kind === 'renamed') await rm(join(source, first), { recursive: true });
+
       if (kind === 'renamed') await generated('20261005000000_renamed');
+
       if (kind === 'backdated') await generated('20261004000000_earlier');
       await expect(bundleEvidenceMigrations(source, output)).rejects.toThrow();
       expect(await readFile(output, 'utf8')).toBe(before);
@@ -122,20 +134,27 @@ describe('evidence migration bundle', () => {
     'rejects %s before publication',
     async (kind) => {
       await generated(first);
+
       if (kind === 'unsupported')
         await writeFile(join(source, first, 'migration.sql'), initial.replace('CREATE INDEX', 'DROP INDEX'));
+
       if (kind === 'duplicate')
         await writeFile(
           join(source, first, 'migration.sql'),
           initial.replace('CREATE TABLE `evidence_records`', 'CREATE TABLE `evidence_chunks`'),
         );
+
       if (kind === 'missing snapshot') await rm(join(source, first, 'snapshot.json'));
+
       if (kind === 'bad snapshot') await writeFile(join(source, first, 'snapshot.json'), '{"version":"6"}');
+
       if (kind === 'empty history') await rm(join(source, first), { recursive: true });
+
       if (kind === 'nonregular SQL') {
         await rm(join(source, first, 'migration.sql'));
         await mkdir(join(source, first, 'migration.sql'));
       }
+
       await expect(bundleEvidenceMigrations(source, output)).rejects.toThrow();
       await expect(readFile(output)).rejects.toMatchObject({ code: 'ENOENT' });
     },
@@ -154,13 +173,16 @@ describe('evidence migration bundle', () => {
 
   it.each(['directory', 'symlink'])('rejects a %s occupying the bundle path', async (kind) => {
     await generated(first);
+
     if (kind === 'directory') await mkdir(output);
     else {
       const victim = join(directory, 'victim');
       await writeFile(victim, 'untouched');
       await symlink(victim, output);
     }
+
     await expect(bundleEvidenceMigrations(source, output)).rejects.toThrow();
+
     if (kind === 'symlink') expect(await readFile(join(directory, 'victim'), 'utf8')).toBe('untouched');
   });
 });

@@ -20,14 +20,19 @@ export const getRegistryJson = Effect.fn('Registry.getJson')(function* (
   options: RegistryJsonOptions = {},
 ) {
   const url = new URL(`https://registry.npmjs.org${path}`);
+
   for (const [name, value] of Object.entries(options.query ?? {})) {
     url.searchParams.set(name, String(value));
   }
+
   let request = HttpClientRequest.get(url.href);
+
   if (options.accept !== undefined) {
     request = HttpClientRequest.setHeader(request, 'accept', options.accept);
   }
+
   const client = yield* HttpClient.HttpClient;
   const response = yield* client.pipe(HttpClient.filterStatusOk).execute(request);
+
   return yield* response.json;
 }, Effect.timeout('5 minutes'));

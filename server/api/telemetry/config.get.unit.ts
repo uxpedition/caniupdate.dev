@@ -12,6 +12,7 @@ const requestConfig = async (enabled?: string) => {
       NUXT_OTEL_HEADERS: '{"authorization":"Bearer private-collector-secret"}',
     },
   };
+
   return handler(event);
 };
 

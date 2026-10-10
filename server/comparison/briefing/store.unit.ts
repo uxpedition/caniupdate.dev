@@ -15,11 +15,13 @@ const briefing = {
 };
 
 let directory: string;
+
 let runtime: BriefingD1 | undefined;
 
 // Miniflare startup dominates this suite, so every test shares one runtime and an explicitly emptied table.
 function database() {
   if (runtime === undefined) throw new Error('D1 setup failed');
+
   return runtime.database;
 }
 
@@ -41,6 +43,7 @@ afterAll(async () => {
 describe('package briefing store', () => {
   it('preserves one canonical success across competing writes', async () => {
     const alternative = { ...briefing, model: 'another-model' };
+
     const results = await Promise.all([
       saveBriefing(database(), 'same-evidence', briefing),
       saveBriefing(database(), 'same-evidence', alternative),
@@ -58,6 +61,7 @@ describe('package briefing store', () => {
     };
 
     const failure = await saveBriefing(database(), 'invalid-evidence', invalid).catch((cause: unknown) => cause);
+
     if (!(failure instanceof BriefingStoreValidationError)) throw new Error('Expected a tagged validation failure');
     expect(failure.cause).toBeInstanceOf(Error);
     await expect(
@@ -74,8 +78,10 @@ describe('package briefing store', () => {
         "CREATE TRIGGER reject_briefing_insert BEFORE INSERT ON package_briefings BEGIN SELECT RAISE(FAIL, 'briefing insert refused'); END;",
       )
       .run();
+
     try {
       const failure = await saveBriefing(database(), 'rejected-evidence', briefing).catch((cause: unknown) => cause);
+
       if (!(failure instanceof BriefingStoreError)) throw new Error('Expected a tagged storage failure');
       expect(failure.operation).toBe('write');
       expect(failure.cause).toBeInstanceOf(Error);
@@ -101,6 +107,7 @@ describe('package briefing store', () => {
 
   it('distinguishes a D1 operation failure from an absent row', async () => {
     await database().prepare('DROP TABLE package_briefings').run();
+
     try {
       await expect(readStoredBriefing(database(), 'missing-evidence')).rejects.toMatchObject({
         _tag: 'BriefingStoreError',

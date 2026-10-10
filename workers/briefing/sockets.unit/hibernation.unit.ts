@@ -44,6 +44,7 @@ describe('hibernating subscribers', () => {
     const provider = providerFixture();
     provider.setMode({ kind: 'stall' });
     const runtime = await startRuntime({ stateDir });
+
     try {
       expect((await runtime.submit(packet)).submission?.status).toBe('queued');
       await waitFor(
@@ -80,6 +81,7 @@ describe('hibernating subscribers', () => {
     const packet = packetFor('socket-completed', '3.0.0', '3.1.0');
     const hash = briefingEvidenceHash(packet);
     const runtime = await startRuntime({ stateDir });
+
     try {
       expect((await runtime.submit(packet)).submission?.status).toBe('queued');
       const stored = await waitForStoredBriefing(runtime.database, hash);
@@ -104,6 +106,7 @@ describe('hibernating subscribers', () => {
 
     let durable: { revision: number; briefing: AvailablePackageBriefing } | undefined;
     const before = await startRuntime({ stateDir });
+
     try {
       expect((await before.submit(packet)).submission?.status).toBe('queued');
       const briefing = await waitForStoredBriefing(before.database, hash);
@@ -114,10 +117,12 @@ describe('hibernating subscribers', () => {
     } finally {
       await before.dispose();
     }
+
     if (durable === undefined) throw new Error('The first runtime never settled this job');
 
     // A fresh runtime against the same persistence directory: the object that owned the job is gone.
     const after = await startRuntime({ stateDir, installSchema: false });
+
     try {
       expect(after.queueDeliveries()).toBe(0);
       const subscription = await subscribe(after, hash);
@@ -141,6 +146,7 @@ describe('hibernating subscribers', () => {
     const provider = providerFixture();
     provider.setMode({ kind: 'stall' });
     const runtime = await startRuntime({ stateDir });
+
     try {
       expect((await runtime.submit(packet)).submission?.status).toBe('queued');
       await waitFor(
@@ -187,6 +193,7 @@ describe('hibernating subscribers', () => {
     const provider = providerFixture();
     provider.setMode({ kind: 'stall' });
     const runtime = await startRuntime({ stateDir });
+
     try {
       expect((await runtime.submit(packet)).submission?.status).toBe('queued');
       await waitFor(

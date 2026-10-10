@@ -6,10 +6,13 @@ import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 import type { ParsedPackageMetadata } from '#shared/comparison/package/package.defs';
 
 export const PACKAGE_METADATA_QUERY_KEY_PREFIX = ['npm', 'packages', 'metadata'] as const;
+
 export const PACKAGE_METADATA_STALE_TIME = 60_000;
 
 type NuxtRequestFetch = H3Event$Fetch | $Fetch;
+
 type PackageMetadataQueryKey = readonly [...typeof PACKAGE_METADATA_QUERY_KEY_PREFIX, string];
+
 type PackageMetadataQueryContext = QueryFunctionContext<PackageMetadataQueryKey>;
 
 export const packageMetadataQueryOptions = (

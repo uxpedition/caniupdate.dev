@@ -22,6 +22,7 @@ export const PACKAGE_BRIEFING_QUERY_KEY_PREFIX = ['npm', 'packages', 'briefing']
 type NuxtRequestFetch = H3Event$Fetch | $Fetch;
 
 type PackageBriefingQueryKey = readonly [...typeof PACKAGE_BRIEFING_QUERY_KEY_PREFIX, string, string, string];
+
 type PackageBriefingQueryContext = QueryFunctionContext<PackageBriefingQueryKey>;
 
 export type PackageBriefingResponse = {
@@ -36,12 +37,14 @@ export type BriefingStatus = 'queued' | 'running';
 
 /** One second, two, then four: the whole backoff one subscription may spend before it gives up. */
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000] as const;
+
 const SUBSCRIPTION_DEADLINE = Duration.seconds(180);
 
 const subscriptionAbortReason = (signal: AbortSignal): unknown => {
   if (signal.reason !== undefined) return signal.reason;
   const abortError = new Error('The briefing subscription was aborted');
   abortError.name = 'AbortError';
+
   return abortError;
 };
 
@@ -55,6 +58,7 @@ const SUBMISSION_RETRY_DELAY_MS = 250;
  */
 const isSanitizedSubmissionFailure = (error: unknown): boolean => {
   if (typeof error !== 'object' || error === null) return false;
+
   return ('status' in error && error.status === 503) || ('statusCode' in error && error.statusCode === 503);
 };
 
@@ -62,19 +66,25 @@ const isSanitizedSubmissionFailure = (error: unknown): boolean => {
 const pauseBeforeResubmission = (signal: AbortSignal): Promise<void> => {
   const { promise, resolve, reject } = Promise.withResolvers<void>();
   const abort = () => reject(signal.reason ?? new Error('The briefing submission was aborted'));
+
   if (signal.aborted) {
     abort();
+
     return promise;
   }
+
   const onAbort = () => {
     clearTimeout(timer);
     abort();
   };
+
   const timer = setTimeout(() => {
     signal.removeEventListener('abort', onAbort);
     resolve();
   }, SUBMISSION_RETRY_DELAY_MS);
+
   signal.addEventListener('abort', onAbort, { once: true });
+
   return promise;
 };
 
@@ -90,10 +100,12 @@ const runBriefingSubmissionAttempt = (
 ): Promise<BriefingSubmission> => {
   const parent = pageContext === undefined ? undefined : Tracer.externalSpan({ ...pageContext, sampled: true });
   const attributes = comparisonTelemetryAttributes({ packageName, from, to });
+
   const spanOptions =
     parent === undefined
       ? { kind: 'client' as const, root: true, attributes }
       : { kind: 'client' as const, parent, attributes };
+
   const operation = Effect.gen(function* () {
     const span = yield* Effect.currentSpan;
     const traceContext = { traceId: span.traceId, spanId: span.spanId };
@@ -104,6 +116,7 @@ const runBriefingSubmissionAttempt = (
         ...attributes,
       }),
     );
+
     return yield* Effect.tryPromise({
       try: () =>
         requestFetch<BriefingSubmission>(url, {
@@ -116,6 +129,7 @@ const runBriefingSubmissionAttempt = (
       catch: (cause) => cause,
     });
   }).pipe(Effect.withSpan('briefing.submit', spanOptions));
+
   return telemetryRuntime === undefined ? Effect.runPromise(operation) : telemetryRuntime.runPromise(operation);
 };
 
@@ -135,19 +149,24 @@ const submitBriefing = async (
   telemetryRuntime?: TelemetryRuntime,
 ): Promise<BriefingSubmission> => {
   const url = `/api/package/${encodeURIComponent(packageName)}/compare/briefing`;
+
   const submit = () =>
     runBriefingSubmissionAttempt(requestFetch, url, packageName, from, to, signal, pageContext, telemetryRuntime);
+
   try {
     return await submit();
   } catch (error) {
     if (!isSanitizedSubmissionFailure(error)) throw error;
     await pauseBeforeResubmission(signal);
+
     return await submit();
   }
 };
 
 type CompletedBriefing = { readonly _tag: 'completed'; readonly briefing: PackageBriefing; readonly revision: number };
+
 type SocketOutcome = { readonly _tag: 'disconnected'; readonly revision: number } | CompletedBriefing;
+
 type SocketMessage =
   | { readonly _tag: 'invalid' }
   | { readonly _tag: 'ignored' }
@@ -156,14 +175,19 @@ type SocketMessage =
 
 const decodeJobEventMessage = (data: unknown, highest: number): SocketMessage => {
   let frame: BriefingJobEvent | undefined;
+
   if (typeof data === 'string') {
     try {
       frame = decodeBriefingJobEvent(JSON.parse(data));
     } catch {}
   }
+
   if (frame === undefined) return { _tag: 'invalid' };
+
   if (frame.revision <= highest) return { _tag: 'ignored' };
+
   if (frame.status === 'available') return { _tag: 'completed', briefing: frame.briefing, revision: frame.revision };
+
   if (frame.status === 'unavailable') {
     return {
       _tag: 'completed',
@@ -171,12 +195,14 @@ const decodeJobEventMessage = (data: unknown, highest: number): SocketMessage =>
       revision: frame.revision,
     };
   }
+
   return { _tag: 'status', status: frame.status, revision: frame.revision };
 };
 
 const reportBriefingStatus = (onStatus: (state: BriefingStatus) => void, state: BriefingStatus): Error | undefined => {
   try {
     onStatus(state);
+
     return undefined;
   } catch (cause) {
     return cause instanceof Error ? cause : new Error('The briefing status could not be updated', { cause });
@@ -191,28 +217,40 @@ const listenForJobEvents = (
   Effect.callback<SocketOutcome, Error>((resume) => {
     let highest = revision;
     let resumed = false;
+
     function onMessage(event: MessageEvent): void {
       const message = decodeJobEventMessage(event.data, highest);
+
       if (message._tag === 'ignored') return;
+
       if (message._tag === 'invalid') {
         complete(Effect.fail(new Error('The briefing stream sent a frame the page cannot read')));
+
         return;
       }
+
       highest = message.revision;
+
       if (message._tag === 'completed') {
         complete(Effect.succeed(message));
+
         return;
       }
+
       const statusError = reportBriefingStatus(onStatus, message.status);
+
       if (statusError !== undefined) complete(Effect.fail(statusError));
     }
+
     function onClose(): void {
       complete(Effect.succeed({ _tag: 'disconnected', revision: highest }));
     }
+
     function detachListeners(): void {
       socket.removeEventListener('message', onMessage);
       socket.removeEventListener('close', onClose);
     }
+
     function complete(effect: Effect.Effect<SocketOutcome, Error>): void {
       if (resumed) return;
       // Effect.callback runs its returned cleanup on interruption only; normal resumption detaches listeners here.
@@ -223,6 +261,7 @@ const listenForJobEvents = (
 
     socket.addEventListener('message', onMessage);
     socket.addEventListener('close', onClose);
+
     return Effect.sync(detachListeners);
   });
 
@@ -242,6 +281,7 @@ const readJobEventSocket = (
         }),
         (socket) => Effect.sync(() => socket.close()),
       );
+
       return yield* listenForJobEvents(socket, revision, onStatus);
     }),
   );
@@ -259,19 +299,24 @@ export const waitForJobEvent = async (
   if (signal.aborted) throw subscriptionAbortReason(signal);
 
   let highest = revision;
+
   const subscription = Effect.gen(function* () {
     let attempts = 0;
+
     while (true) {
       const outcome = yield* readJobEventSocket(url, highest, onStatus);
       highest = outcome.revision;
+
       if (outcome._tag === 'completed') return outcome.briefing;
       const delay = RECONNECT_DELAYS_MS.at(attempts);
+
       if (delay === undefined)
         return yield* Effect.fail(new Error('The briefing stream closed before it reported a result'));
       attempts += 1;
       yield* Effect.sleep(Duration.millis(delay));
     }
   });
+
   const boundedSubscription = Effect.timeoutOrElse(subscription, {
     duration: SUBSCRIPTION_DEADLINE,
     orElse: () => Effect.fail(new Error('The briefing subscription exceeded its 180-second deadline')),
@@ -298,9 +343,11 @@ const fetchBriefingResponse = async (
   // comparison swap, an unmount — and the subscription below closes on that abort. That is why nothing here calls
   // the socket off explicitly.
   const response = await submitBriefing(requestFetch, packageName, from, to, signal, pageContext, telemetryRuntime);
+
   if (response.status === 'available') return response;
   onStatus?.(response.status);
   const briefing = await waitForJobEvent(response.eventsUrl, response.revision, signal, (state) => onStatus?.(state));
+
   return { packageName: response.packageName, from: response.from, to: response.to, briefing };
 };
 

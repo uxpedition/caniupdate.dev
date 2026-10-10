@@ -8,11 +8,14 @@ import { once } from 'node:events';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
 export const MODEL = 'test-model';
+
 export const FIXTURE_API_KEY = 'fixture-key';
+
 const PROVIDER_PATH = '/v1/chat/completions';
 
 /** The evidence id the fixture packet carries at position one; the canned answer cites that position. */
 export const SOURCE_ID = 'comparison.node';
+
 export const SOURCE_NUMBER = 1;
 
 export const validBullets = [
@@ -66,8 +69,10 @@ function respond(response: ServerResponse, mode: ProviderMode): void {
   if (mode.kind === 'http-error') {
     response.writeHead(503, { 'content-type': 'application/json' });
     response.end(JSON.stringify({ error: 'fixture provider unavailable' }));
+
     return;
   }
+
   response.writeHead(200, { 'content-type': 'application/json' });
   response.end(providerResponse(mode.kind === 'invalid' ? [] : validBullets));
 }
@@ -80,6 +85,7 @@ let provider: ProviderFixture | undefined;
 
 export function providerFixture(): ProviderFixture {
   if (provider === undefined) throw new Error('Start the provider fixture before starting a runtime');
+
   return provider;
 }
 
@@ -105,8 +111,10 @@ export async function startProviderFixture(options: { readonly port?: number } =
 
       if (mode.kind === 'stall') {
         stalled.push(response);
+
         return;
       }
+
       respond(response, mode);
     })();
   });
@@ -116,6 +124,7 @@ export async function startProviderFixture(options: { readonly port?: number } =
     server.listen(options.port ?? 0, '127.0.0.1', resolve);
   });
   const address = server.address();
+
   if (address === null || typeof address === 'string')
     throw new Error('Expected the fixture provider to bind a TCP port');
   const { port } = address;
@@ -156,5 +165,6 @@ export async function startProviderFixture(options: { readonly port?: number } =
         server.close(() => resolve());
       }),
   };
+
   return provider;
 }

@@ -21,6 +21,7 @@ const manifest = (version: string) => ({
 const validTarball = async (): Promise<Buffer> => {
   const archive = pack();
   const chunks: Buffer[] = [];
+
   const complete = new Promise<Buffer>((resolve, reject) => {
     archive.on('data', (chunk: unknown) => {
       if (!Buffer.isBuffer(chunk)) throw new TypeError('Expected tar stream bytes');
@@ -29,8 +30,10 @@ const validTarball = async (): Promise<Buffer> => {
     archive.on('error', reject);
     archive.on('end', () => resolve(gzipSync(Buffer.concat(chunks))));
   });
+
   archive.entry({ name: 'package/index.js', type: 'file', size: 11 }, Buffer.from('hello world'));
   archive.finalize();
+
   return complete;
 };
 
@@ -45,18 +48,23 @@ class RecordingCache implements ComparisonEvidenceCache {
   async load<T>(key: string, loader: () => Promise<T>, options: ComparisonEvidenceCacheOptions<T>): Promise<T> {
     this.keys.push(key);
     const current = this.values.get(key);
+
     if (current !== undefined && (current.expiresAt === null || current.expiresAt > this.now)) {
       if (!options.isValid(current.value)) throw new Error('Invalid cached fixture value');
+
       return current.value;
     }
+
     const value = await loader();
     this.loaderCalls.set(key, (this.loaderCalls.get(key) ?? 0) + 1);
+
     if (options.cacheable(value)) {
       this.values.set(key, {
         value,
         expiresAt: options.ttlMs === null ? null : this.now + options.ttlMs,
       });
     }
+
     return value;
   }
 }
@@ -80,12 +88,15 @@ beforeEach(() => {
   // Registry manifests are served from the fetch boundary; tarballs (`/-/`) and evidence providers stay with fetchMock.
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(new Request(input, init).url);
+
     if (url.origin === 'https://registry.npmjs.org' && !url.pathname.includes('/-/')) {
       return Response.json(await registry.json(url.pathname));
     }
+
     return fetchMock(input, init);
   });
 });
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -102,7 +113,9 @@ describe('comparison facts release-note scheduling', () => {
     fetchMock.mockImplementation(async (input, init) => {
       const request = new Request(input, init);
       calls.push(request.url);
+
       if (request.url.startsWith('https://api.osv.dev/')) return osvGate.promise;
+
       if (new URL(request.url).pathname.endsWith('/releases')) {
         return Response.json([
           {
@@ -115,9 +128,11 @@ describe('comparison facts release-note scheduling', () => {
           },
         ]);
       }
+
       return Response.json({ message: 'Not Found' }, { status: 404 });
     });
     const pending = startFacts('0.0.8', target);
+
     try {
       await vi.waitFor(() => {
         expect(calls.some((url) => url.includes('api.osv.dev'))).toBe(true);
@@ -128,6 +143,7 @@ describe('comparison facts release-note scheduling', () => {
       osvGate.resolve(Response.json({ results: [{}, {}] }));
       await pending;
     }
+
     expect(await pending).toMatchObject({
       releaseNotes: { status: 'partial', releases: [{ version: '1.2.8', body: 'Release fixes' }] },
       to: { version: '1.2.8', vulnerabilities: { status: 'available', count: 0 } },
@@ -142,6 +158,7 @@ describe('comparison facts release-note scheduling', () => {
     const calls: string[] = [];
     fetchMock.mockImplementation(async (input, init) => {
       calls.push(new Request(input, init).url);
+
       return Response.json({ results: [{}, {}] });
     });
     expect(await startFacts('0.0.8', '1.2.8')).toMatchObject({
@@ -162,18 +179,24 @@ describe('comparison facts release-note scheduling', () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = new Request(input, init).url;
       calls.push(url);
+
       if (url.includes('api.osv.dev')) return Response.json({ results: [{}, {}] });
+
       if (new URL(url).pathname.endsWith('/releases')) return releasesGate.promise;
+
       if (new URL(url).pathname.endsWith('/CHANGELOG.md')) return new Response('Version history');
+
       return Response.json([{ name: 'CHANGELOG.md', path: 'CHANGELOG.md', type: 'file' }]);
     });
     const pending = startFacts('0.0.8', '1.2.8');
+
     try {
       await vi.waitFor(() => expect(calls.some((url) => url.includes('/CHANGELOG.md?'))).toBe(true));
     } finally {
       releasesGate.resolve(Response.json([]));
       await pending;
     }
+
     expect(await pending).toMatchObject({ releaseNotes: { changelog: { body: 'Version history' } } });
   });
 
@@ -197,6 +220,7 @@ describe('comparison facts release-note scheduling', () => {
     }));
     fetchMock.mockImplementation(async (input, init) => {
       const url = new Request(input, init).url;
+
       return url.startsWith('https://api.github.com/')
         ? Response.json({ message: 'API rate limit exceeded' }, { status: 403 })
         : Response.json({ results: [{}, {}] });
@@ -214,11 +238,15 @@ describe('comparison evidence cache services', () => {
     registry.json.mockImplementation(async (path) => manifest(path.endsWith('/0.0.8') ? '0.0.8' : '1.2.8'));
     fetchMock.mockImplementation(async (input, init) => {
       const url = new URL(new Request(input, init).url);
+
       if (url.hostname === 'api.osv.dev') return Response.json({ results: [{}, {}] });
+
       if (url.hostname === 'bundlephobia.com') {
         const version = url.searchParams.get('package')?.split('@').at(-1) ?? '';
+
         return Response.json({ name: 'minimist', version, size: 100, gzip: 50 });
       }
+
       return Response.json({ malformed: true });
     });
 
@@ -238,6 +266,7 @@ describe('comparison evidence cache services', () => {
     const shasum = createHash('sha1').update(body).digest('hex');
     registry.json.mockImplementation(async (path) => {
       const version = path.endsWith('/1.0.0') ? '1.0.0' : '2.0.0';
+
       return {
         name: 'widget',
         version,
@@ -249,12 +278,17 @@ describe('comparison evidence cache services', () => {
     });
     fetchMock.mockImplementation(async (input, init) => {
       const url = new URL(new Request(input, init).url);
+
       if (url.hostname === 'registry.npmjs.org') return new Response(new Uint8Array(body));
+
       if (url.hostname === 'api.osv.dev') return Response.json({ results: [{}, {}] });
+
       if (url.hostname === 'bundlephobia.com') {
         const version = url.searchParams.get('package')?.split('@').at(-1) ?? '';
+
         return Response.json({ name: 'widget', version, size: 100, gzip: 50 });
       }
+
       return new Response(null, { status: 404 });
     });
 
@@ -269,6 +303,7 @@ describe('comparison evidence cache services', () => {
     let integrity: string | undefined = 'malformed-sri';
     registry.json.mockImplementation(async (path) => {
       const base = manifest(path.endsWith('/0.0.8') ? '0.0.8' : '1.2.8');
+
       return integrity === undefined ? base : { ...base, dist: { ...base.dist, integrity } };
     });
     fetchMock.mockResolvedValue(Response.json({ malformed: true }));
@@ -290,11 +325,15 @@ describe('comparison evidence cache services', () => {
     registry.json.mockImplementation(async (path) => manifest(path.endsWith('/0.0.8') ? '0.0.8' : '1.2.8'));
     fetchMock.mockImplementation(async (input, init) => {
       const url = new URL(new Request(input, init).url);
+
       if (url.hostname === 'api.osv.dev') return Response.json({ results: [{}, {}] });
+
       if (url.hostname === 'bundlephobia.com') {
         const version = url.searchParams.get('package')?.split('@').at(-1) ?? '';
+
         return Response.json({ name: 'minimist', version, size: 100, gzip: 50 });
       }
+
       return Response.json({ malformed: true });
     });
 
@@ -313,9 +352,11 @@ describe('comparison evidence cache services', () => {
     registry.json.mockImplementation(async (path) => manifest(path.endsWith('/0.0.8') ? '0.0.8' : '1.2.8'));
     fetchMock.mockImplementation(async (input, init) => {
       const url = new URL(new Request(input, init).url);
+
       if (url.hostname === 'api.osv.dev') {
         return Response.json({ results: [{ vulns: [{ id: '\uD800', modified: '2026-01-01T00:00:00Z' }] }, {}] });
       }
+
       return Response.json({ malformed: true });
     });
 
@@ -331,6 +372,7 @@ describe('comparison evidence cache services', () => {
         throw new Error('SQLite unavailable');
       },
     };
+
     await expect(startMeasurements('0.0.8', '1.2.8', { cache: failedCache })).rejects.toMatchObject({
       _tag: 'EvidenceCacheError',
     });

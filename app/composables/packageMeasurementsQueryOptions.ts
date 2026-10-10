@@ -10,7 +10,9 @@ import { PACKAGE_COMPARISON_STALE_TIME } from './packageComparisonQueryOptions';
 export const PACKAGE_MEASUREMENTS_QUERY_KEY_PREFIX = ['npm', 'packages', 'measurements'] as const;
 
 type NuxtRequestFetch = H3Event$Fetch | $Fetch;
+
 type PackageMeasurementsQueryKey = readonly [...typeof PACKAGE_MEASUREMENTS_QUERY_KEY_PREFIX, string, string, string];
+
 type PackageMeasurementsQueryContext = QueryFunctionContext<PackageMeasurementsQueryKey>;
 
 export const packageMeasurementsQueryOptions = (

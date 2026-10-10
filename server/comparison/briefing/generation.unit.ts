@@ -13,8 +13,11 @@ import type { BriefingProviderTarget } from './provider';
 // D1 rows, so they are pinned rather than recomputed here. Numbering sources by packet position re-keyed every packet
 // that carries one, so rows stored under the earlier digest are unreachable by design.
 const MINIMIST_DIGEST = 'b637f83283a13491f7fee3cd9a108ab6ea20994d00a95a6646ba7a1bd48818b4';
+
 const CITING_DIGEST = 'e2155eb97008517cbcccba3ec8a6bad5185f31aadc09503b01a2ec7e7b2e5989';
+
 const SESSION_DIGEST = 'b167eb4a9d136b9104bfb75397a2c28179ae2b3709684ee08df9b13b2eb507ab';
+
 const ENDPOINT = 'https://briefing.example/v1/chat/completions';
 
 const minimistPacket: BriefingEvidence = { packageName: 'minimist', from: '1.2.0', to: '1.2.8', sources: [], gaps: [] };
@@ -159,6 +162,7 @@ describe('generateBriefing', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     const call = fetchMock.mock.calls[0];
+
     if (call === undefined) throw new Error('Expected one provider request');
     const request = new Request(call[0], call[1]);
     expect(request.url).toBe(ENDPOINT);
@@ -184,6 +188,7 @@ describe('generateBriefing', () => {
     const result = await run(gappedPacket());
 
     expect(result).toMatchObject({ status: 'available', bullets: [{ evidenceNumbers: [0] }] });
+
     if (result.status !== 'available') throw new Error('Expected an available briefing');
     expect(result.sources.map(({ number, id }) => [number, id])).toEqual([
       [0, 'release.1.2.8'],
@@ -316,6 +321,7 @@ describe('generateBriefing', () => {
       ],
       usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
     };
+
     fetchMock.mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }));
 
     await expect(run(citingPacket())).resolves.toMatchObject({ status: 'available', model: 'test-model' });
@@ -342,6 +348,7 @@ describe('generateBriefing', () => {
           controller.close();
         },
       });
+
       return new Response(stream, { status: 200 });
     });
 
@@ -353,6 +360,7 @@ describe('generateBriefing', () => {
     vi.useFakeTimers();
     fetchMock.mockImplementation((_input, init) => {
       const signal = init?.signal;
+
       return new Promise<Response>((_, reject) => {
         signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
       });
@@ -376,6 +384,7 @@ describe('generateBriefing', () => {
       .mockImplementationOnce(() => firstResponse.promise)
       .mockImplementation((_input, init) => {
         const signal = init?.signal;
+
         return new Promise<Response>((_, reject) => {
           signal?.addEventListener(
             'abort',
@@ -441,6 +450,7 @@ describe('readBriefingConfig', () => {
     for (const endpoint of invalid) {
       expect(readBriefingConfig({ ...complete, AI_BRIEFING_ENDPOINT: endpoint })).toEqual({ status: 'invalid-config' });
     }
+
     expect(readBriefingConfig(complete)).toEqual({
       status: 'configured',
       value: { apiUrl: 'https://briefing.example/v1', apiKey: 'test-key', model: 'test-model' },

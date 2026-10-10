@@ -73,8 +73,11 @@ const selectedValue = computed<string | null>({
 });
 
 const open = ref(false);
+
 const searchTerm = ref('');
+
 const searchInputRef = ref<HTMLInputElement | null>(null);
+
 const listboxRef = ref<HTMLElement | null>(null);
 
 watch(
@@ -87,6 +90,7 @@ watch(
 watch(open, (isOpen) => {
   if (!isOpen) {
     searchTerm.value = '';
+
     return;
   }
 
@@ -94,7 +98,9 @@ watch(open, (isOpen) => {
 });
 
 const optionsByValue = computed(() => new Map(props.options.map((option) => [option.value, option])));
+
 const searchPlaceholder = computed(() => props.search?.placeholder ?? 'Search options');
+
 const visibleOptions = computed(() => {
   const search = props.search;
 
@@ -104,20 +110,26 @@ const visibleOptions = computed(() => {
 
   return search.filter(props.options, searchTerm.value);
 });
+
 const visibleOptionValues = computed(() => visibleOptions.value.map((option) => option.value));
+
 const hasSeparator = (index: number) =>
   searchTerm.value.trim().length === 0 && index > 0 && (visibleOptions.value[index]?.separatorBefore ?? false);
+
 const focusListbox = () => {
   const scope = listboxRef.value;
+
   const target =
     scope?.querySelector<HTMLElement>('[data-highlighted]') ?? scope?.querySelector<HTMLElement>('[role="listbox"]');
 
   target?.focus();
 };
+
 const selectValue = (value: unknown) => {
   selectedValue.value = typeof value === 'string' ? value : null;
   open.value = false;
 };
+
 const selectedOption = computed(() => props.options.find((option) => option.value === selectedValue.value));
 </script>
 

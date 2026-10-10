@@ -8,12 +8,14 @@ import { decodePackageComparisonQuery, decodePackageComparisonRouterParams } fro
 export default defineEventHandler(async (event) => {
   const { packageName } = await getValidatedRouterParams(event, decodePackageComparisonRouterParams);
   const { from, to } = await getValidatedQuery(event, decodePackageComparisonQuery);
+
   try {
     return await getPackageMeasurements(event.context.cloudflare?.env?.PACKAGE_EVIDENCE, { packageName, from, to });
   } catch (error) {
     if (error instanceof PackageEvidenceClientError) {
       throw createError({ statusCode: 503, statusMessage: 'Evidence service unavailable' });
     }
+
     throw error;
   }
 });
