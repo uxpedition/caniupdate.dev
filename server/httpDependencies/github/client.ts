@@ -145,7 +145,11 @@ const readResponseJson = (response: HttpClientResponse.HttpClientResponse): Effe
     const text = yield* readResponseText(response);
 
     return yield* Effect.try({
-      try: (): unknown => JSON.parse(text),
+      try: () => {
+        const parsed: unknown = JSON.parse(text);
+
+        return parsed;
+      },
       catch: (cause) => new GithubResponseDecodeError({ cause }),
     });
   });

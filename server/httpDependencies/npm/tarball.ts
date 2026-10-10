@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 import { createHash, timingSafeEqual, type Hash } from 'node:crypto';
 import { posix } from 'node:path';
 
-import { Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 import { type Header } from 'tar-stream';
 
 import type { PackageTarball, PublishedFile, ShippedChangelog } from '../../../shared/comparison/evidence/tarball.defs';
@@ -211,6 +211,7 @@ type ContentState = {
   allowance: number;
 };
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Tar entry stream feeds arbitrary chunk values; the Buffer check validates each one.
 function consumeContentChunk(value: unknown, state: ContentState, signal: AbortSignal): void {
   if (!Buffer.isBuffer(value)) throw new Error('Invalid tarball content chunk');
   const chunk = value;
@@ -358,8 +359,10 @@ async function inspectEntries(parser: TarParser, signal: AbortSignal): Promise<I
 }
 
 function toError(cause: unknown, fallback = 'Tarball stream failed'): Error {
-  return cause instanceof Error ? cause : new Error(typeof cause === 'string' ? cause : fallback);
+  return cause instanceof Error ? cause : new Error(isTarballCauseText(cause) ? cause : fallback);
 }
+
+const isTarballCauseText = Schema.is(Schema.String);
 
 const unavailableTarball = (url: string, cause: unknown): PackageTarball => ({
   url,

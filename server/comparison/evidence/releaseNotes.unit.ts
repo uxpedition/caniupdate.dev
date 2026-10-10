@@ -24,7 +24,12 @@ const manifest = (version: string, options: ManifestOptions = {}): TestManifest 
   ...options,
 });
 
-type ReleaseOptions = { readonly name?: string | null; readonly body?: string | null; readonly draft?: boolean; readonly prerelease?: boolean };
+type ReleaseOptions = {
+  readonly name?: string | null;
+  readonly body?: string | null;
+  readonly draft?: boolean;
+  readonly prerelease?: boolean;
+};
 
 const release = (tag: string, options: ReleaseOptions = {}) => ({
   tag_name: tag,
@@ -35,12 +40,7 @@ const release = (tag: string, options: ReleaseOptions = {}) => ({
   prerelease: options.prerelease ?? false,
 });
 
-function run(
-  from: TestManifest,
-  to: TestManifest,
-  responses: (request: Request) => Response,
-  packageName = 'widget',
-) {
+function run(from: TestManifest, to: TestManifest, responses: (request: Request) => Response, packageName = 'widget') {
   const calls: string[] = [];
 
   const client = HttpClient.make((request) => {

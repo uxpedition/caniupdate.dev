@@ -9,7 +9,9 @@ import type {
 } from '#shared/comparison/comparison.defs';
 
 /** Any container in the conditional export tree: plain records and arrays both branch the walker below. */
-const isExportContainer = Schema.is(Schema.Union([Schema.Record(Schema.String, Schema.Unknown), Schema.Array(Schema.Unknown)]));
+const isExportContainer = Schema.is(
+  Schema.Union([Schema.Record(Schema.String, Schema.Unknown), Schema.Array(Schema.Unknown)]),
+);
 
 // Keep object order for conditional exports and typesVersions: first matching conditions win.
 const equal = <T>(from: T, to: T): boolean => JSON.stringify(from) === JSON.stringify(to);

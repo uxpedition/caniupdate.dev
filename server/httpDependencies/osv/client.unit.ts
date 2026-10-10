@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { getVulnerability, queryBatch } from './client';
 
 /** Runs an OSV effect against a stub client that replies with `body`, capturing outgoing request URLs. */
+// oxlint-disable-next-line rules/no-unknown-parameters -- Transport stub returning arbitrary OSV JSON; the client decodes every response.
 function runWithStub<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, body: unknown, status = 200) {
   const urls: Array<string> = [];
 
@@ -20,6 +21,7 @@ function runWithStub<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, b
   };
 }
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Transport stub returning arbitrary OSV JSON after a delay; the client decodes every response.
 function runWithDelayedBody<T, E>(effect: Effect.Effect<T, E, HttpClient.HttpClient>, body: unknown) {
   let timer: ReturnType<typeof setTimeout>;
   const started = Promise.withResolvers<void>();

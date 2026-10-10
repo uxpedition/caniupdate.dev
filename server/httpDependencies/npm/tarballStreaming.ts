@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { createGunzip, type Gunzip } from 'node:zlib';
 
-import { Cause, Effect, Exit, Fiber, Queue, Scope, Stream } from 'effect';
+import { Cause, Effect, Exit, Fiber, Queue, Schema, Scope, Stream } from 'effect';
 import { extract, type Extract as TarStreamExtract } from 'tar-stream';
 
 const MAX_ARCHIVE_BYTES = 32 * 1024 * 1024;
@@ -47,11 +47,13 @@ function readinessSignal(): ReadinessSignal {
 }
 
 function toError(cause: unknown, fallback = 'Tarball stream failed'): Error {
-  return cause instanceof Error ? cause : new Error(typeof cause === 'string' ? cause : fallback);
+  return cause instanceof Error ? cause : new Error(isStreamCauseText(cause) ? cause : fallback);
 }
 
+const isStreamCauseText = Schema.is(Schema.String);
+
 function destroyStream(
-  stream: { destroy(error?: Error): unknown; listenerCount(event: 'error'): number },
+  stream: { destroy(error?: Error): void; listenerCount(event: 'error'): number },
   error?: Error,
 ): void {
   try {
@@ -200,6 +202,7 @@ function feedCompressed(gunzip: Gunzip, events: EventAdapter, body: Buffer): Eff
   });
 }
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Gunzip output feeds arbitrary chunk values; the Buffer/Uint8Array checks validate each one.
 function requireBufferChunk(value: unknown): Buffer {
   if (Buffer.isBuffer(value)) return value;
 
@@ -241,6 +244,7 @@ function decompressedChunks(gunzip: Gunzip, signalReady: () => void): Stream.Str
         Effect.sync(() => {
           let ended = false;
 
+          // oxlint-disable-next-line rules/no-unknown-parameters -- Gunzip output feeds arbitrary chunk values; the queue consumer validates each one.
           const onData = (chunk: unknown) => {
             gunzip.pause();
 
