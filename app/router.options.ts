@@ -1,3 +1,4 @@
+import { Predicate } from 'effect';
 import type { RouterOptions } from 'vue-router';
 
 /**
@@ -69,8 +70,7 @@ const scrollBehavior: RouterScrollBehavior = async (to, from, savedPosition) => 
     return to.hash ? anchorPosition(to.hash) : false;
   }
 
-  // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating vue-router's declared boolean | function meta union, not unparsed input.
-  const scrollToTop = typeof to.meta.scrollToTop === 'function' ? to.meta.scrollToTop(to, from) : to.meta.scrollToTop;
+  const scrollToTop = Predicate.isFunction(to.meta.scrollToTop) ? to.meta.scrollToTop(to, from) : to.meta.scrollToTop;
 
   if (scrollToTop === false) return false;
 
