@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/vue-query';
-import type { NitroFetchRequest } from 'nitropack/types';
 import { Schema } from 'effect';
+import type { NitroFetchRequest } from 'nitropack/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref, toValue } from 'vue';
 

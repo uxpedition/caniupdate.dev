@@ -69,7 +69,7 @@ const emit = defineEmits<{
 
 const selectedValue = computed<string | null>({
   get: () => props.modelValue ?? null,
-  set: (value) => emit('update:modelValue', typeof value === 'string' ? value : null),
+  set: (value) => emit('update:modelValue', value ?? null),
 });
 
 const open = ref(false);
@@ -125,7 +125,9 @@ const focusListbox = () => {
   target?.focus();
 };
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Reka-UI emits AcceptableValue selections; the string acceptance is the guarded contract.
 const selectValue = (value: unknown) => {
+  // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating Reka-UI's declared AcceptableValue selection union, not unparsed input.
   selectedValue.value = typeof value === 'string' ? value : null;
   open.value = false;
 };

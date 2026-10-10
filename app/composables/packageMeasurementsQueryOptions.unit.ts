@@ -4,8 +4,7 @@ import { ref, toValue } from 'vue';
 
 import { packageMeasurementsQueryOptions } from './packageMeasurementsQueryOptions';
 
-const requestFetch = <T, R extends NitroFetchRequest>(_url: R): Promise<T> =>
-  Promise.reject(new Error('not called'));
+const requestFetch = <T, R extends NitroFetchRequest>(_url: R): Promise<T> => Promise.reject(new Error('not called'));
 
 describe('packageMeasurementsQueryOptions', () => {
   it('uses a separate key for normalized measurement route values', () => {

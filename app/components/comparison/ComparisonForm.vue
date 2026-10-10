@@ -218,6 +218,7 @@ const startPendingRelocation = () => {
 };
 
 const isComparisonRoute = (route: RouteLocationNormalized) =>
+  // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating vue-router's declared string | string[] param union, not unparsed input.
   typeof route.params.packageName === 'string' && typeof route.params.versionPair === 'string';
 
 const shouldCaptureFormRelocation = (to: RouteLocationNormalized, from: RouteLocationNormalized) => {
