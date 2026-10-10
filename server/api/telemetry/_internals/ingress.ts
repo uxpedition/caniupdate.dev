@@ -7,10 +7,10 @@ export interface TelemetryRequest {
   readonly url: string;
   readonly headers: Pick<Headers, 'get'>;
   readonly body: {
-    cancel(reason?: unknown): Promise<void>;
+    cancel(): Promise<void>;
     getReader(): {
       read(): Promise<{ done: false; value: Uint8Array } | { done: true; value?: Uint8Array | undefined }>;
-      cancel(reason?: unknown): Promise<void>;
+      cancel(): Promise<void>;
       releaseLock(): void;
     };
   } | null;
@@ -184,7 +184,14 @@ const readTelemetryChunksWithinDeadline = async (reader: TelemetryBodyReader): P
   }
 };
 
-const decodeTelemetryBody = ({ chunks, totalBytes }: TelemetryBodyChunks): unknown => {
+// oxlint-disable-next-line rules/no-unknown-returns -- Parse step before the signal decode: JSON yields unknown by nature, and the only production consumer decodes it immediately.
+export const readBoundedTelemetryBody = async (request: TelemetryRequest): Promise<unknown> => {
+  validateAndCancelOnFailure(request);
+
+  if (request.body === null) throw new TelemetryIngressError(400);
+
+  const { chunks, totalBytes } = await readTelemetryChunksWithinDeadline(request.body.getReader());
+
   const bytes = new Uint8Array(totalBytes);
   let offset = 0;
 
@@ -201,14 +208,6 @@ const decodeTelemetryBody = ({ chunks, totalBytes }: TelemetryBodyChunks): unkno
   } catch {
     throw new TelemetryIngressError(400);
   }
-};
-
-export const readBoundedTelemetryBody = async (request: TelemetryRequest): Promise<unknown> => {
-  validateAndCancelOnFailure(request);
-
-  if (request.body === null) throw new TelemetryIngressError(400);
-
-  return decodeTelemetryBody(await readTelemetryChunksWithinDeadline(request.body.getReader()));
 };
 
 const BROWSER_SERVICE_ATTRIBUTE: TelemetryResource['attributes'][number] = {

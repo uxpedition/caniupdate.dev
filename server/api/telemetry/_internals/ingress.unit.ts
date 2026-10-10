@@ -90,6 +90,7 @@ const tracePayload = () => ({
   ],
 });
 
+// oxlint-disable-next-line rules/no-unknown-returns -- Test JSON helper feeding decoders; parsed values are untyped input data for the boundary under test.
 const parseJson = (text: string): unknown => {
   const value: unknown = JSON.parse(text);
 
@@ -105,6 +106,7 @@ const requireForwardedRequest = (forwarded: readonly ForwardedRequest[]) => {
 
   if (request.init === undefined) throw new Error('Expected collector request options');
 
+  // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating the declared BodyInit union for the JSON body the collector contract requires.
   if (typeof request.init.body !== 'string') throw new Error('Expected JSON collector request body');
   const input = request.input instanceof Request ? request.input.url : request.input.toString();
 
@@ -303,7 +305,7 @@ describe('telemetry ingress', () => {
           () => {
             outgoing.statusCode = 204;
           },
-          (error: unknown) => {
+          (error) => {
             outgoing.statusCode = error instanceof TelemetryIngressError ? error.statusCode : 500;
           },
         )
@@ -320,6 +322,7 @@ describe('telemetry ingress', () => {
     try {
       const address = server.address();
 
+      // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating the declared AddressInfo | string | null union to require the port-bearing arm.
       if (address === null || typeof address === 'string') throw new Error('Expected isolated HTTP listener');
       const origin = `http://127.0.0.1:${address.port}`;
 
