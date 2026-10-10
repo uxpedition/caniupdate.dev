@@ -2,17 +2,24 @@ import { mockEvent } from 'h3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MeasuredPackageVersion, PackageMeasurementsResponse } from '#shared/comparison/comparison.defs';
-import type { PackageEvidenceNamespace, PackageEvidenceObject } from '#shared/comparison/evidence/packageEvidence.defs';
+import type {
+  PackageEvidenceNamespace,
+  PackageEvidenceObject,
+  PackageEvidenceObjectId,
+} from '#shared/comparison/evidence/packageEvidence.defs';
 
 import handler from './index.get';
 
 const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
 
-const idFromName = vi.fn((name: string) => ({ name }));
+/** The mock id fabricates the opaque identity the namespace hands back; structurally it carries only a string. */
+const mockObjectId = (name: string): PackageEvidenceObjectId => ({ toString: () => name });
+
+const idFromName = vi.fn(mockObjectId);
 
 const objectFetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
 
-const getObject = vi.fn<(id: object) => PackageEvidenceObject>(() => ({ fetch: objectFetch }));
+const getObject = vi.fn<(id: PackageEvidenceObjectId) => PackageEvidenceObject>(() => ({ fetch: objectFetch }));
 
 const namespace: PackageEvidenceNamespace = { idFromName, get: getObject };
 

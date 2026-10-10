@@ -334,16 +334,19 @@ const sanitizeResourceAttribute = (attribute: OtlpAttribute): TelemetryResourceA
 
       return value === undefined ? undefined : { key: 'service.name', value };
     }
+
     case 'service.version': {
       const value = Result.getOrUndefined(decodeServiceVersion(attribute.value));
 
       return value === undefined ? undefined : { key: 'service.version', value };
     }
+
     case 'deployment.environment.name': {
       const value = Result.getOrUndefined(decodeEnvironment(attribute.value));
 
       return value === undefined ? undefined : { key: 'deployment.environment.name', value };
     }
+
     default:
       return undefined;
   }

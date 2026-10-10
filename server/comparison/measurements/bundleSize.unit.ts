@@ -5,7 +5,14 @@ import { describe, expect, it } from 'vitest';
 import { bundlephobiaSizeUrl } from '../../httpDependencies/bundlephobia/client';
 import { getPackageBundleSize } from './bundleSize';
 
-const measurements: Record<string, unknown> = {
+type FixtureMeasurement = {
+  readonly name: string;
+  readonly version: string;
+  readonly size: number;
+  readonly gzip: number;
+};
+
+const measurements: Record<string, FixtureMeasurement> = {
   '1.0.0': { name: 'widget', version: '1.0.0', size: 100, gzip: 50 },
   '2.0.0': { name: 'widget', version: '2.0.0', size: 250, gzip: 90 },
 };

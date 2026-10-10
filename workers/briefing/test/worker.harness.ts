@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import type { D1Database, Queue } from '@cloudflare/workers-types';
+import { Schema } from 'effect';
 import { Log, LogLevel, Miniflare, type DispatchFetch, type WebSocket as RuntimeWebSocket } from 'miniflare';
 
 import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
@@ -29,7 +30,6 @@ import {
 import { decodeBriefingServiceResult } from '#shared/comparison/briefing/briefingService.defs';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
-import { Schema } from 'effect';
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
 import { readStoredBriefing } from '../../../server/comparison/briefing/store';
 import { installBriefingSchema } from '../../../test/helpers/briefingDatabase.harness';

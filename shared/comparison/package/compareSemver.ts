@@ -1,3 +1,5 @@
+import { Schema } from 'effect';
+
 type PrereleaseIdentifier = number | string;
 
 type ParsedSemver = {
@@ -37,18 +39,14 @@ const parseSemver = (value: string): ParsedSemver | null => {
   };
 };
 
+const isNumericIdentifier = Schema.is(Schema.Number);
+
 const comparePrereleaseIdentifiers = (left: PrereleaseIdentifier, right: PrereleaseIdentifier): number => {
-  if (typeof left === 'number' && typeof right === 'number') {
-    return left - right;
-  }
+  if (isNumericIdentifier(left) && isNumericIdentifier(right)) return left - right;
 
-  if (typeof left === 'number') {
-    return -1;
-  }
+  if (isNumericIdentifier(left)) return -1;
 
-  if (typeof right === 'number') {
-    return 1;
-  }
+  if (isNumericIdentifier(right)) return 1;
 
   return left < right ? -1 : left > right ? 1 : 0;
 };

@@ -35,6 +35,7 @@ const findRequest = (requests: ReadonlyArray<{ url: string; body: string }>, sig
   return request;
 };
 
+// oxlint-disable-next-line rules/no-unknown-returns -- Test fixture passthrough mirrors live export bytes; the strict telemetry schema decodes immediately after.
 const parseJson = (body: string): unknown => {
   const value: unknown = JSON.parse(body);
 

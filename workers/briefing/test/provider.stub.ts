@@ -6,6 +6,7 @@
 
 import { once } from 'node:events';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+
 import { Schema } from 'effect';
 
 const isScalarString = Schema.is(Schema.String);
@@ -129,8 +130,7 @@ export async function startProviderFixture(options: { readonly port?: number } =
   });
   const address = server.address();
 
-  if (address === null || isScalarString(address))
-    throw new Error('Expected the fixture provider to bind a TCP port');
+  if (address === null || isScalarString(address)) throw new Error('Expected the fixture provider to bind a TCP port');
   const { port } = address;
 
   provider = {

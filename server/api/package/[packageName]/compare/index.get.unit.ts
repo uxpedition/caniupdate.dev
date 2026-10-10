@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import handler from './index.get';
 
+// oxlint-disable-next-line rules/no-unknown-returns -- The mock serves hand-rolled registry manifests the route's strict manifest schema decodes itself.
 const registry = { json: vi.fn<(path: string) => Promise<unknown>>() };
 
 const manifest = (version: string) => ({

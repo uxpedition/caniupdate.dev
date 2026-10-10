@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { RegistryVersionManifestSchema, toPackageVersion } from './package.defs';
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Fixtures mirror live registry payloads; the strict manifest schema decodes inside.
 const curate = (fixture: unknown) =>
   toPackageVersion(Schema.decodeUnknownSync(RegistryVersionManifestSchema)(fixture, { errors: 'all' }));
 
