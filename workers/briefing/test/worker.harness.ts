@@ -29,6 +29,7 @@ import {
 import { decodeBriefingServiceResult } from '#shared/comparison/briefing/briefingService.defs';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
+import { Schema } from 'effect';
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
 import { readStoredBriefing } from '../../../server/comparison/briefing/store';
 import { installBriefingSchema } from '../../../test/helpers/briefingDatabase.harness';
@@ -36,6 +37,11 @@ import type { BriefingJobMessage } from '../job';
 import { FIXTURE_API_KEY, MODEL, SOURCE_ID, providerFixture } from './provider.stub';
 
 const execFileAsync = promisify(execFile);
+
+/** Any non-null, non-function container: the gate before probing unconverted wire bodies. */
+const isContainerObject = Schema.is(Schema.Struct({}));
+
+const isScalarString = Schema.is(Schema.String);
 
 export const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 
@@ -251,12 +257,16 @@ export type RuntimeFixture = {
   structuredLogs(): readonly string[];
   /** One request against the public hostname, through the real runtime, exactly as a browser sends it. */
   publicFetch: DispatchFetch;
+  // The harness adapter reports packets and response bodies unconverted: asserting the wire contract itself is the
+  // point, so it publishes unknown at these ports and the fixture decoders validate the response shapes they use.
+  // oxlint-disable rules/no-unknown-parameters
   submit(packet: unknown): Promise<SubmitResult>;
   /** The same real service-binding call, reported unconverted so a test can assert the wire contract itself. */
   rawSubmit(packet: unknown): Promise<RawSubmission>;
   submitToJob(hash: string, packet: unknown): Promise<SubmitResult>;
   jobEvent(hash: string): Promise<BriefingJobEvent | undefined>;
   publicPost(url: string, body: unknown): Promise<{ status: number; text: string }>;
+  // oxlint-enable rules/no-unknown-parameters
   /**
    * Miniflare's real object eviction: workerd deactivates the object and, because hibernation is requested, keeps its
    * accepted sockets attached for whatever wakes it next. This is the eviction a production runtime performs on its
@@ -326,6 +336,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
   const structuredLogs: string[] = [];
 
   // Miniflare 5 declares every environment entry as a binding, so plain variables use the `text` variant.
+  // oxlint-disable-next-line rules/no-unsafe-dictionary-type -- Miniflare's binding envelope is heterogeneous (d1 objects and text values) by its own contract.
   const briefingEnv: Record<string, unknown> = {
     BRIEFINGS_DB: { type: 'd1', id: D1_ID },
     BRIEFING_PUBLIC_URL: { type: 'text', value: environment.publicUrl },
@@ -391,6 +402,9 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
 
     if (options.installSchema !== false) await installBriefingSchema(database);
 
+    // These helpers pass wire bodies through to and from the real runtime unconverted; the wrapped decoders below
+    // validate only the shapes a test asserts on (BriefingServiceResult / RawSubmission), never the transport itself.
+    // oxlint-disable rules/no-unknown-parameters
     const callHarness = async (path: string, body: unknown): Promise<{ status: number; body: unknown }> => {
       const response = await harness.fetch(`https://harness.test${path}`, {
         method: 'POST',
@@ -414,18 +428,19 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
     };
 
     const readRawSubmission = (status: number, body: unknown): RawSubmission => {
-      if (status !== 200 || typeof body !== 'object' || body === null) {
+      if (status !== 200 || !isContainerObject(body)) {
         return { httpStatus: status, kind: undefined, symbols: [], text: undefined, error: rejectionReason(body) };
       }
 
       return {
         httpStatus: status,
-        kind: 'kind' in body && typeof body.kind === 'string' ? body.kind : undefined,
+        kind: 'kind' in body && isScalarString(body.kind) ? body.kind : undefined,
         symbols: 'symbols' in body && Array.isArray(body.symbols) ? body.symbols.map((symbol) => String(symbol)) : [],
-        text: 'text' in body && typeof body.text === 'string' ? body.text : undefined,
+        text: 'text' in body && isScalarString(body.text) ? body.text : undefined,
         error: undefined,
       };
     };
+    // oxlint-enable rules/no-unknown-parameters
 
     return {
       database,
@@ -435,6 +450,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
       queueDeliveries: (): number => log.lines.filter((line) => QUEUE_DELIVERY.test(line.replace(ANSI, ''))).length,
       structuredLogs: (): readonly string[] => structuredLogs,
       publicFetch: (input, init) => runtime.dispatchFetch(input, init),
+      // oxlint-disable rules/no-unknown-parameters -- The adapter passes packets and post bodies through unconverted (see the fixture contract above).
       async submit(packet: unknown): Promise<SubmitResult> {
         const { status, body } = await callHarness('/submit', packet);
 
@@ -466,6 +482,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
 
         return { status: response.status, text: await response.text() };
       },
+      // oxlint-enable rules/no-unknown-parameters
       async evictJob(hash: string): Promise<void> {
         await runtime.unsafeEvictDurableObject(WORKER_NAME, 'BriefingJob', { name: hash, webSockets: 'hibernate' });
       },
@@ -478,8 +495,9 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
 }
 
 /** The harness reports a rejected submission as a sanitized `{ error }` body; anything else is an empty reason. */
+// oxlint-disable-next-line rules/no-unknown-parameters -- Rejected-submission bodies are runtime-owned; the container guard below validates the shape it reads.
 function rejectionReason(body: unknown): string {
-  if (typeof body === 'object' && body !== null && 'error' in body) return String(body.error);
+  if (isContainerObject(body) && 'error' in body) return String(body.error);
 
   return '';
 }
@@ -625,7 +643,7 @@ export async function subscribe(
   const closed = Promise.withResolvers<{ code: number; reason: string }>();
   socket.accept();
   socket.addEventListener('message', (event) => {
-    frames.push(typeof event.data === 'string' ? event.data : '[binary]');
+    frames.push(isScalarString(event.data) ? event.data : '[binary]');
   });
   socket.addEventListener('close', (event) => {
     closed.resolve({ code: event.code, reason: event.reason });

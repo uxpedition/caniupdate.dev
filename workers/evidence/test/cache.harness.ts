@@ -37,6 +37,7 @@ const isInitializedResponse = Schema.is(InitializedResponseSchema);
 type WorkerModules = Record<string, { type: 'esm'; contents: string }>;
 
 export type EvidenceCacheFixture = {
+  // oxlint-disable-next-line rules/no-unknown-returns -- Fixture call results are runtime-owned; individual suites assert on their own command shapes.
   call(command: CacheFixtureCommand): Promise<unknown>;
   exec(sql: string, ...bindings: SqlStorageValue[]): Promise<readonly Record<string, SqlStorageValue>[]>;
   restart(): Promise<void>;
@@ -109,6 +110,8 @@ export async function openEvidenceCacheFixture(
       name: objectName,
     });
 
+    // Fixture call results are runtime-owned; individual suites assert on their own command shapes.
+    // oxlint-disable-next-line rules/no-unknown-returns
     const call = async (command: CacheFixtureCommand): Promise<unknown> => {
       const stub = namespace.get(namespace.idFromName(objectName));
 

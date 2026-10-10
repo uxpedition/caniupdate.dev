@@ -73,6 +73,13 @@ const CacheFixtureCommandSchema = Schema.Union([
 
 const decodeCacheFixtureCommand = Schema.decodeUnknownSync(CacheFixtureCommandSchema, { errors: 'all' });
 
+const isContainerObject = Schema.is(Schema.Struct({}));
+
+const isScalarString = Schema.is(Schema.String);
+
+const isSelfContainer = Schema.is(Schema.Struct({ self: Schema.Unknown }));
+
+// oxlint-disable-next-line rules/no-unknown-parameters -- Fixture command results are runtime-owned; the capture parent inspects raw shapes.
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
     status,
@@ -80,21 +87,23 @@ function jsonResponse(value: unknown, status = 200): Response {
   });
 }
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Failure cause chains are runtime-owned; the container walk below validates each level.
 function stringProperty(value: unknown, key: string): string | undefined {
-  if (typeof value !== 'object' || value === null || !(key in value)) return undefined;
+  if (!isContainerObject(value) || !(key in value)) return undefined;
   const property: unknown = Reflect.get(value, key);
 
-  return typeof property === 'string' ? property : undefined;
+  return isScalarString(property) ? property : undefined;
 }
 
+// oxlint-disable-next-line rules/no-unknown-parameters rules/no-unknown-returns -- Failure cause chains are runtime-owned; the container walk below validates each level it reads.
 function innermostCause(value: unknown): unknown {
-  if (typeof value !== 'object' || value === null) return undefined;
+  if (!isContainerObject(value)) return undefined;
   let current: unknown = Reflect.get(value, 'cause');
 
   if (current === undefined) return undefined;
   const seen = new Set<object>();
 
-  while (typeof current === 'object' && current !== null) {
+  while (isContainerObject(current)) {
     if (seen.has(current)) return undefined;
     seen.add(current);
     const nested: unknown = Reflect.get(current, 'cause');
@@ -179,6 +188,7 @@ export class EvidenceCacheFixture extends DurableObject {
     return this.cache;
   }
 
+  // oxlint-disable-next-line rules/no-unknown-returns -- Fixture command results are runtime-owned; the capture parent inspects raw shapes.
   private async execute(command: CacheFixtureCommand): Promise<unknown> {
     switch (command.operation) {
       case 'initialize':
@@ -189,7 +199,7 @@ export class EvidenceCacheFixture extends DurableObject {
         const options: ComparisonEvidenceCacheOptions<string> = {
           ttlMs: command.ttlMs,
           cacheable: () => command.cacheable,
-          isValid: (value: unknown): value is string => command.validation === 'string' && typeof value === 'string',
+          isValid: (value: unknown): value is string => command.validation === 'string' && isScalarString(value),
         };
 
         return await this.cacheClient.load(
@@ -211,7 +221,7 @@ export class EvidenceCacheFixture extends DurableObject {
         const options: ComparisonEvidenceCacheOptions<string> = {
           ttlMs: command.ttlMs,
           cacheable: () => true,
-          isValid: (value: unknown): value is string => typeof value === 'string',
+          isValid: (value: unknown): value is string => isScalarString(value),
         };
 
         return await this.cacheClient.load(
@@ -233,6 +243,7 @@ export class EvidenceCacheFixture extends DurableObject {
     }
   }
 
+  // oxlint-disable-next-line rules/no-unknown-returns -- Fixture command results are runtime-owned; the capture parent inspects raw shapes.
   private async coalesce(command: Extract<CacheFixtureCommand, { operation: 'coalesce' }>): Promise<unknown> {
     let releaseLoader: ((value: string) => void) | undefined;
 
@@ -243,13 +254,13 @@ export class EvidenceCacheFixture extends DurableObject {
     const firstOptions: ComparisonEvidenceCacheOptions<string> = {
       ttlMs: null,
       cacheable: () => true,
-      isValid: (value: unknown): value is string => typeof value === 'string',
+      isValid: (value: unknown): value is string => isScalarString(value),
     };
 
     const secondOptions: ComparisonEvidenceCacheOptions<string> = {
       ttlMs: null,
       cacheable: () => true,
-      isValid: (value: unknown): value is string => !command.rejectSecond && typeof value === 'string',
+      isValid: (value: unknown): value is string => !command.rejectSecond && isScalarString(value),
     };
 
     const first = this.cacheClient.load(
@@ -281,6 +292,7 @@ export class EvidenceCacheFixture extends DurableObject {
     };
   }
 
+  // oxlint-disable-next-line rules/no-unknown-returns -- Fixture command results are runtime-owned; the capture parent inspects raw shapes.
   private async serialize(command: Extract<CacheFixtureCommand, { operation: 'serialization' }>): Promise<unknown> {
     if (command.kind === 'undefined') {
       const options: ComparisonEvidenceCacheOptions<undefined> = {
@@ -307,7 +319,7 @@ export class EvidenceCacheFixture extends DurableObject {
       ttlMs: null,
       cacheable: () => true,
       isValid: (candidate: unknown): candidate is { self?: unknown } =>
-        typeof candidate === 'object' && candidate !== null && 'self' in candidate,
+        isSelfContainer(candidate) && 'self' in candidate,
     };
 
     return await this.cacheClient.load(

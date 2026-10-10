@@ -6,6 +6,8 @@
 import { randomBytes } from 'node:crypto';
 import { createConnection, type Socket } from 'node:net';
 
+import { Schema } from 'effect';
+
 export class SocketFailure extends Error {
   override readonly name = 'SocketFailure';
 }
@@ -21,15 +23,20 @@ export type Subscription = {
   readonly close: { readonly code: number; readonly reason: string };
 };
 
+/** Any non-null, non-function container: the gate before probing a socket frame object. */
+const isContainerObject = Schema.is(Schema.Struct({}));
+
+const isScalarString = Schema.is(Schema.String);
+
+const isJsonNumber = Schema.is(Schema.Number);
+
 const FRAME_STATUSES = ['queued', 'running', 'available', 'unavailable'];
 
 /** A frame the scenario should read: an object carrying this protocol's status and revision. */
 const isJobEvent = (value: unknown): value is BriefingJobEvent => {
-  if (typeof value !== 'object' || value === null) return false;
+  if (!isContainerObject(value) || !('status' in value) || !isScalarString(value.status)) return false;
 
-  if (!('status' in value) || typeof value.status !== 'string') return false;
-
-  if (!('revision' in value) || typeof value.revision !== 'number') return false;
+  if (!('revision' in value) || !isJsonNumber(value.revision)) return false;
 
   return FRAME_STATUSES.includes(value.status);
 };
@@ -217,10 +224,10 @@ const subscribe = (socket: Socket, path: string, timeoutMs: number): Promise<Sub
     resolve(subscription);
   };
 
-  const fail = (error: unknown) => {
+  const fail = (cause: unknown) => {
     clearTimeout(timer);
     socket.destroy();
-    reject(error instanceof Error ? error : new SocketFailure(String(error)));
+    reject(cause instanceof Error ? cause : new SocketFailure(String(cause)));
   };
 
   socket.on('data', (chunk: Buffer) => {

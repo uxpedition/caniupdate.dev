@@ -6,6 +6,9 @@
 
 import { once } from 'node:events';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { Schema } from 'effect';
+
+const isScalarString = Schema.is(Schema.String);
 
 export const MODEL = 'test-model';
 
@@ -53,6 +56,7 @@ export type ProviderFixture = {
   close(): Promise<void>;
 };
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- The provider fixture serializes call-site-shaped bullets; the service decoder validates the response.
 const providerResponse = (bullets: unknown): string =>
   JSON.stringify({
     id: 'chatcmpl-fixture',
@@ -105,8 +109,8 @@ export async function startProviderFixture(options: { readonly port?: number } =
       await once(request, 'end');
       requests.push({
         body: Buffer.concat(chunks).toString('utf8'),
-        ...(typeof request.headers.traceparent === 'string' ? { traceparent: request.headers.traceparent } : {}),
-        ...(typeof request.headers.b3 === 'string' ? { b3: request.headers.b3 } : {}),
+        ...(isScalarString(request.headers.traceparent) ? { traceparent: request.headers.traceparent } : {}),
+        ...(isScalarString(request.headers.b3) ? { b3: request.headers.b3 } : {}),
       });
 
       if (mode.kind === 'stall') {
@@ -125,7 +129,7 @@ export async function startProviderFixture(options: { readonly port?: number } =
   });
   const address = server.address();
 
-  if (address === null || typeof address === 'string')
+  if (address === null || isScalarString(address))
     throw new Error('Expected the fixture provider to bind a TCP port');
   const { port } = address;
 

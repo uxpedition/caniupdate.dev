@@ -14,7 +14,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { NodeRuntime, NodeServices } from '@effect/platform-node';
-import { Deferred, Effect, PlatformError, Scope, Stream, Data } from 'effect';
+import { Deferred, Effect, PlatformError, Result, Scope, Schema, Stream, Data } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 
 import { browserOrigins } from './_internals/browserOrigins.ts';
@@ -237,29 +237,23 @@ const processIsAlive = (pid: number): boolean => {
   }
 };
 
-type LockHolder = { readonly pid?: number; readonly mode?: string };
-
 /** A malformed or empty lock is treated as a stale one: only a readable pid can claim the root. */
+const LockHolderSchema = Schema.Struct({ pid: Schema.optional(Schema.Number), mode: Schema.optional(Schema.String) });
+
+type LockHolder = typeof LockHolderSchema.Type;
+
+const decodeLockHolder = Schema.decodeUnknownResult(LockHolderSchema, { errors: 'all', onExcessProperty: 'ignore' });
+
 const readLockHolder = async (lockPath: string): Promise<LockHolder | undefined> => {
   const contents = await readFile(lockPath, 'utf8').catch(() => undefined);
 
   if (contents === undefined) return undefined;
-  let parsed: unknown;
 
   try {
-    parsed = JSON.parse(contents);
+    return Result.getOrUndefined(decodeLockHolder(JSON.parse(contents)));
   } catch {
     return {};
   }
-
-  if (typeof parsed !== 'object' || parsed === null) return {};
-  const holder: { -readonly [K in keyof LockHolder]: LockHolder[K] } = {};
-
-  if ('pid' in parsed && typeof parsed.pid === 'number') holder.pid = parsed.pid;
-
-  if ('mode' in parsed && typeof parsed.mode === 'string') holder.mode = parsed.mode;
-
-  return holder;
 };
 
 /**
@@ -273,7 +267,7 @@ const acquireStateLock = (launch: Options) =>
         const lockPath = lockPathFor(launch.persistTo);
         const holder = await readLockHolder(lockPath);
 
-        if (holder !== undefined && typeof holder.pid === 'number' && processIsAlive(holder.pid)) {
+        if (holder !== undefined && holder.pid !== undefined && processIsAlive(holder.pid)) {
           throw new StateInUseError({
             message:
               `Another launcher (${holder.mode ?? 'unknown'}, pid ${holder.pid}) already owns ${launch.persistTo}. ` +

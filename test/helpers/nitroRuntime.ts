@@ -1,5 +1,5 @@
 /** Standalone Vitest substitute for Nitro's virtual runtime-config import. */
-export const useRuntimeConfig = (_event?: unknown) => ({
+export const useRuntimeConfig = () => ({
   otelEndpoint: '',
   otelHeaders: {},
   public: { telemetryEnabled: false },

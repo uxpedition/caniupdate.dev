@@ -15,6 +15,8 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { Schema } from 'effect';
+
 import { startProviderFixture, type ProviderFixture } from '../../workers/briefing/test/provider.stub.ts';
 import {
   FRONTEND_ORIGIN,
@@ -31,6 +33,8 @@ import {
 import { startLauncher, portsAreFree, waitForHealth, type Launcher } from './_internals/launcher.ts';
 import { runMeasurements } from './_internals/measure.ts';
 import { describeFrames, submit, submitColdPair, submitFromDevice, waitForAvailable } from './_internals/submission.ts';
+
+const isScalarString = Schema.is(Schema.String);
 
 /**
  * The provider port comes from the briefing Worker's own local settings, so the scenario cannot drift from the
@@ -120,10 +124,11 @@ const assertBuiltPreview = async (preview: boolean): Promise<void> => {
 };
 
 /** Reports whatever the scenario threw: classified throwables render fully, the rest serialize as diagnostic JSON. */
-const describeFailure = (failure: unknown): string => {
-  if (failure instanceof Error) return failure.stack ?? failure.message;
+// oxlint-disable-next-line rules/no-unknown-parameters -- Captured scenario failures are runtime-owned; classification below decides the rendering contract.
+const describeFailure = (cause: unknown): string => {
+  if (cause instanceof Error) return cause.stack ?? cause.message;
 
-  return typeof failure === 'string' ? failure : JSON.stringify(failure);
+  return isScalarString(cause) ? cause : JSON.stringify(cause);
 };
 
 /** One fixture-backed run: temporary root, loopback provider, scenario, optional measurement, and full cleanup. */

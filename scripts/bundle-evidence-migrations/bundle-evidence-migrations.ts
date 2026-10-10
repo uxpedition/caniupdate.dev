@@ -7,6 +7,12 @@ import { Schema } from 'effect';
 
 const MIGRATION_FOLDER = /^\d{14}_[a-z0-9_-]+$/i;
 
+/** Any non-null, non-function container: the gate before probing a thrown node-fs failure cause. */
+const isContainerObject = Schema.is(Schema.Struct({}));
+
+const isEnoentCause = (cause: unknown): boolean =>
+  isContainerObject(cause) && 'code' in cause && cause.code === 'ENOENT';
+
 const BREAKPOINT = '--> statement-breakpoint';
 
 const SnapshotMetadata = Schema.Struct({
@@ -59,7 +65,7 @@ async function existingBundle(
   try {
     if (!(await lstat(outputPath)).isFile()) throw new Error('Migration bundle path is not a regular file');
   } catch (cause) {
-    if (typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === 'ENOENT') return undefined;
+    if (isEnoentCause(cause)) return undefined;
     throw cause;
   }
 

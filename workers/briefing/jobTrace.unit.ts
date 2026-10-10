@@ -34,8 +34,11 @@ const packet: BriefingEvidence = {
   gaps: [],
 };
 
+const isScalarString = Schema.is(Schema.String);
+
+// oxlint-disable-next-line rules/no-unknown-parameters -- Captured console values are runtime-owned; the string guard and strict decoder below validate each one.
 const parseConsoleLog = (line: unknown): typeof ConsoleLogSchema.Type | undefined => {
-  if (typeof line !== 'string') return undefined;
+  if (!isScalarString(line)) return undefined;
 
   try {
     const value: unknown = JSON.parse(line);
@@ -51,6 +54,7 @@ describe('generation trace persistence', () => {
     let persisted: LegacyRecord | undefined;
 
     const storage = {
+      // oxlint-disable-next-line rules/no-unknown-parameters -- Storage stubs receive driver-owned values; decodeLegacyRecord validates each one.
       put: async (_key: string, value: unknown) => {
         persisted = decodeLegacyRecord(value);
       },
