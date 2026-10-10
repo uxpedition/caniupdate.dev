@@ -1,4 +1,4 @@
-import { Schema } from 'effect';
+import { Predicate, Schema } from 'effect';
 
 import { TelemetryIngressError } from '../api/telemetry/_internals/ingress';
 
@@ -40,27 +40,31 @@ interface LegacyNodeResponse {
   once(event: 'finish' | 'close', listener: () => void): void;
 }
 
-// oxlint-disable rules/no-runtime-typeof -- Node stream duck-typing: platform streams are runtime objects with callables, which no schema can assert.
+const isLegacyNodeRequestFields = Schema.is(
+  Schema.Struct({
+    on: Schema.Unknown,
+    pause: Schema.Unknown,
+    resume: Schema.Unknown,
+    destroy: Schema.Unknown,
+  }),
+);
+
+const isLegacyNodeResponseFields = Schema.is(
+  Schema.Struct({
+    writableFinished: Schema.Boolean,
+    once: Schema.Unknown,
+  }),
+);
+
 const isLegacyNodeRequest = (value: unknown): value is LegacyNodeRequest =>
-  typeof value === 'object' &&
-  value !== null &&
-  'on' in value &&
-  typeof value.on === 'function' &&
-  'pause' in value &&
-  typeof value.pause === 'function' &&
-  'resume' in value &&
-  typeof value.resume === 'function' &&
-  'destroy' in value &&
-  typeof value.destroy === 'function';
+  isLegacyNodeRequestFields(value) &&
+  Predicate.isFunction(value.on) &&
+  Predicate.isFunction(value.pause) &&
+  Predicate.isFunction(value.resume) &&
+  Predicate.isFunction(value.destroy);
 
 const isLegacyNodeResponse = (value: unknown): value is LegacyNodeResponse =>
-  typeof value === 'object' &&
-  value !== null &&
-  'writableFinished' in value &&
-  typeof value.writableFinished === 'boolean' &&
-  'once' in value &&
-  typeof value.once === 'function';
-// oxlint-enable rules/no-runtime-typeof
+  isLegacyNodeResponseFields(value) && Predicate.isFunction(value.once);
 
 const nodeResponseFromEvent = (event: EventContainer): LegacyNodeResponse | undefined => {
   const node = event.node;

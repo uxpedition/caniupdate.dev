@@ -1,4 +1,4 @@
-import { Effect, Schema, Tracer } from 'effect';
+import { Effect, Predicate, Schema, Tracer } from 'effect';
 import {
   createError,
   defineEventHandler,
@@ -34,12 +34,9 @@ type DisposableRpcResult = object & { [Symbol.dispose](): void };
 
 // Cloudflare adds this documented lifecycle hook to every object returned over RPC. It is the sole runtime-owned
 // property permitted at this boundary; all application fields remain subject to the strict protocol decoder below.
-// oxlint-disable rules/no-runtime-typeof -- The RPC dispose lifecycle hook is a runtime-owned platform contract, not a decodable payload shape.
 const isDisposableRpcResult = (value: unknown): value is DisposableRpcResult =>
-  typeof value === 'object' &&
-  value !== null &&
-  typeof Object.getOwnPropertyDescriptor(value, Symbol.dispose)?.value === 'function';
-// oxlint-enable rules/no-runtime-typeof
+  Predicate.isObjectOrArray(value) &&
+  Predicate.isFunction(Object.getOwnPropertyDescriptor(value, Symbol.dispose)?.value);
 
 const RpcResultDataSchema = Schema.Record(Schema.String, Schema.Unknown);
 
