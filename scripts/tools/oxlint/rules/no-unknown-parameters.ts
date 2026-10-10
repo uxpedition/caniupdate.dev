@@ -25,19 +25,24 @@ function isTypePredicateSubject(owner: ParameterOwner, parameterName: string): b
   );
 }
 
-/** Disallow unknown inputs except explicitly named error-cause enrichment. */
+/** Require typed inputs, except error causes and subjects narrowed by concrete type predicates. */
 export const noUnknownParametersRule = defineRule({
   meta: {
     type: 'problem',
     docs: {
       description:
-        "Disallow explicitly unknown function parameters except `cause` and type-predicate subjects; decode unknown input at its I/O boundary instead. A guard's narrowed subject may be unknown, but it must assert a concrete type.",
+        'Require typed input contracts instead of explicit unknown parameter annotations, including unions containing unknown. Decode external values at their I/O boundary; preserve the caller\'s type for unchanged forwarding. Error-cause parameters named cause and type-predicate subjects may remain unknown, but predicates must assert a concrete type.',
     },
     messages: {
       unknownParameter:
-        'Parameter `{{parameter}}` leaves input unparsed. Accept a named domain type; run the expected schema or parser at the I/O boundary before calling this function.',
+        'expected a typed input contract for parameter `{{parameter}}`, found `unknown`' +
+        '\nhelp: for external input, use a schema-generated decoder such as `Schema.decodeUnknownResult(DomainSchema)`, then pass the decoded domain type to this function' +
+        '\nhelp: if this function only forwards the value unchanged, use a type parameter such as `T` to preserve the caller\'s type' +
+        '\nnote: `unknown` is allowed for error-cause parameters named `cause` and for the subject narrowed by a type predicate',
       unknownPredicateResult:
-        'A guard must narrow its subject to a concrete type; asserting `unknown` discards all evidence.',
+        'expected a concrete type in this type predicate, found `unknown`' +
+        '\nhelp: assert the type established by the guard, such as `value is User`' +
+        '\nnote: `value is unknown` does not narrow the value; a union containing `unknown` also loses its type information',
     },
   },
   createOnce(context) {
