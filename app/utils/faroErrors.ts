@@ -13,7 +13,7 @@ import type {
   Faro,
   TransportItem,
 } from '@grafana/faro-web-sdk';
-import { Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 
 import type { TelemetryRuntime } from '#shared/telemetry/telemetry';
 import { isErrorAttributeKey, sanitizeErrorAttribute, sanitizeErrorFrame } from '#shared/telemetry/telemetryError';
@@ -41,6 +41,8 @@ export type FaroErrorsAdapter = {
 };
 
 const QUEUE_LIMIT = 32;
+
+const isScalarString = Schema.is(Schema.String);
 
 const STATE_KEY = 'can-i-update-faro-errors';
 
@@ -71,8 +73,9 @@ hot?.dispose((data) => {
   data[STATE_KEY] = state;
 });
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Faro SDK payload attributes arrive untyped; each value is guarded before sanitization.
 const addErrorAttribute = (attributes: Record<string, string>, key: string, value: unknown): void => {
-  if (!isErrorAttributeKey(key) || typeof value !== 'string') return;
+  if (!isErrorAttributeKey(key) || !isScalarString(value)) return;
   const sanitized = sanitizeErrorAttribute(key, value);
 
   if (sanitized !== undefined && sanitized.length > 0) attributes[key] = sanitized;
@@ -80,14 +83,14 @@ const addErrorAttribute = (attributes: Record<string, string>, key: string, valu
 
 /** Exception payloads are the only API events carrying a string `value`; the transport decides by item type. */
 const isExceptionEvent = (payload: APIEvent): payload is ExceptionEventExtended =>
-  'value' in payload && typeof payload.value === 'string';
+  'value' in payload && isScalarString(payload.value);
 
 const safeStackFrames = (frames: ReadonlyArray<ExceptionStackFrame> | undefined): ExceptionStackFrame[] => {
   if (frames === undefined) return [];
   const safe: ExceptionStackFrame[] = [];
 
   for (const frame of frames.slice(0, 20)) {
-    if (typeof frame.filename !== 'string' || frame.lineno === undefined || frame.colno === undefined) continue;
+    if (!isScalarString(frame.filename) || frame.lineno === undefined || frame.colno === undefined) continue;
     const location = sanitizeErrorFrame(frame.filename, frame.lineno, frame.colno);
 
     if (location === undefined) continue;
@@ -107,11 +110,9 @@ const safeStackFrames = (frames: ReadonlyArray<ExceptionStackFrame> | undefined)
 };
 
 const safeExceptionEvent = (event: ExceptionEventExtended): ExceptionEvent => {
-  const type =
-    sanitizeErrorAttribute('exception.type', typeof event.type === 'string' ? event.type : 'Error') ?? 'Error';
+  const type = sanitizeErrorAttribute('exception.type', isScalarString(event.type) ? event.type : 'Error') ?? 'Error';
 
-  const message =
-    typeof event.value === 'string' ? sanitizeErrorAttribute('exception.message', event.value) : undefined;
+  const message = isScalarString(event.value) ? sanitizeErrorAttribute('exception.message', event.value) : undefined;
 
   const stackFrames = safeStackFrames(event.stacktrace?.frames);
 
@@ -141,7 +142,7 @@ const safeExceptionEvent = (event: ExceptionEventExtended): ExceptionEvent => {
         );
 
   return {
-    timestamp: typeof event.timestamp === 'string' ? event.timestamp : '',
+    timestamp: isScalarString(event.timestamp) ? event.timestamp : '',
     type,
     value: message ?? '',
     ...(retainedFrames.length === 0 ? {} : { stacktrace: { frames: retainedFrames } }),
@@ -217,7 +218,7 @@ class FaroErrorTransport extends BaseTransport {
 const retainedRejectionEvent = (event: ExceptionEventExtended): TransportItem | null => {
   // Faro's rejection instrumentation labels primitive promise rejections; Error rejections keep their exception name.
   const prose =
-    typeof event.value === 'string' && event.value.startsWith('Non-Error promise rejection captured with value:')
+    isScalarString(event.value) && event.value.startsWith('Non-Error promise rejection captured with value:')
       ? event.value
       : undefined;
 
@@ -282,7 +283,7 @@ const makeHandle = (): FaroErrorsAdapter => ({
       state.faro.api.pushError(error, {
         originalError: error,
         skipDedupe: true,
-        ...(typeof options.fatal === 'boolean' ? { fatal: options.fatal } : {}),
+        ...(options.fatal !== undefined ? { fatal: options.fatal } : {}),
       });
 
       return true;

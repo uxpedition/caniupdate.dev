@@ -12,15 +12,15 @@ export type TelemetryErrorReporter = (
 ) => void;
 
 export type TelemetryErrorHookHandlers = {
-  'vue:error': (error: unknown) => void;
-  'app:error': (error: unknown) => void;
+  'vue:error': (cause: unknown) => void;
+  'app:error': (cause: unknown) => void;
   'app:chunkError': (options: { error: unknown }) => void;
 };
 
 export const createTelemetryErrorHooks = (report: TelemetryErrorReporter): TelemetryErrorHookHandlers => {
-  const capture = (body: TelemetryErrorBody, source: 'vue' | 'app' | 'chunk', thrown: unknown): void => {
+  const capture = (body: TelemetryErrorBody, source: 'vue' | 'app' | 'chunk', cause: unknown): void => {
     try {
-      const error = thrown instanceof Error ? thrown : undefined;
+      const error = cause instanceof Error ? cause : undefined;
       report(body, sanitizedErrorAttributes(source, error) ?? {}, source, error);
     } catch {
       // Error telemetry must not alter Vue or Nuxt error handling.

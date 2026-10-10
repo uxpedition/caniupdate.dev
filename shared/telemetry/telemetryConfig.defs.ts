@@ -44,7 +44,5 @@ export const decodeTelemetryHeaders = (input: unknown): Record<string, string> =
 
   return record === undefined
     ? {}
-    : Object.fromEntries(
-        Object.entries(record).filter((entry): entry is [string, string] => isScalarString(entry[1])),
-      );
+    : Object.fromEntries(Object.entries(record).filter((entry): entry is [string, string] => isScalarString(entry[1])));
 };

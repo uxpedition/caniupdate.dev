@@ -1,5 +1,4 @@
 import { Schema } from 'effect';
-
 import { defineNitroPlugin } from 'nitropack/runtime';
 
 import { createServerDiagnosticSend, reportServerDiagnostic } from '#shared/telemetry/telemetryDiagnostics';

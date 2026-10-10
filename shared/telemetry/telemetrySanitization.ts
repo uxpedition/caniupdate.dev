@@ -1,7 +1,7 @@
 import { Result, Schema } from 'effect';
 import type { OtlpLogger, OtlpTracer } from 'effect/observability';
-import type { OtlpAttribute } from './telemetry.schema';
 
+import type { OtlpAttribute } from './telemetry.schema';
 import {
   HexSpanIdSchema,
   HexTraceIdSchema,
@@ -103,9 +103,7 @@ const decodeNativeValueString = Schema.decodeUnknownResult(Schema.Struct({ strin
 
 const projectedDroppedCount = (original: number | undefined, inputCount: number, outputCount: number): number => {
   const initial =
-    original !== undefined && Number.isInteger(original) && original >= 0
-      ? Math.min(original, MAX_DROPPED_COUNT)
-      : 0;
+    original !== undefined && Number.isInteger(original) && original >= 0 ? Math.min(original, MAX_DROPPED_COUNT) : 0;
 
   return Math.min(MAX_DROPPED_COUNT, initial + inputCount - outputCount);
 };

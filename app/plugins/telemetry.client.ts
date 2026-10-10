@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 
 import type { NuxtApp } from '#app';
 import { defineNuxtPlugin } from '#imports';
@@ -46,7 +46,11 @@ type TelemetryPluginState = {
   disposed: boolean;
 };
 
-type TelemetryHotData = Record<string, unknown> & { telemetryClientApps?: Map<NuxtApp, TelemetryPluginState> };
+const HotRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
+
+type HotRecord = typeof HotRecordSchema.Type;
+
+type TelemetryHotData = HotRecord & { telemetryClientApps?: Map<NuxtApp, TelemetryPluginState> };
 
 type TelemetryHotModule = {
   readonly data: TelemetryHotData;
