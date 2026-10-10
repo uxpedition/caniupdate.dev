@@ -47,7 +47,7 @@ export const EVIDENCE_COLLECTOR_REVISION = 'comparison-evidence-v1';
 
 export const ARCHIVE_INSPECTOR_REVISION = 'archive-inspector-v2';
 
-const cacheKey = (scope: string, input: unknown): string => {
+const cacheKey = <T>(scope: string, input: T): string => {
   const serialized = JSON.stringify(input) ?? 'undefined';
   const digest = createHash('sha256').update(serialized).digest('hex');
 

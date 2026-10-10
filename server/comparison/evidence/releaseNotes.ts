@@ -12,6 +12,8 @@ import {
   type GithubRepository,
 } from '../../httpDependencies/github/client';
 
+const isScalarString = Schema.is(Schema.String);
+
 type Source = { repository: GithubRepository; directory: string };
 
 type SourceResult = { ok: true; value: Source } | { ok: false; reason: string };
@@ -97,7 +99,7 @@ function normalizeManifestRepository(manifest: RegistryVersionManifest): SourceR
   if (manifest.repository == null) return { ok: false, reason: 'missing repository metadata' };
 
   const decoded = decodeRepository(
-    typeof manifest.repository === 'string' ? { url: manifest.repository } : manifest.repository,
+    isScalarString(manifest.repository) ? { url: manifest.repository } : manifest.repository,
   );
 
   if (Result.isFailure(decoded)) return { ok: false, reason: 'malformed repository metadata' };
@@ -252,7 +254,13 @@ const verifyPackageTag = Effect.fn('Github.verifyPackageTag')(function* (
   token?: string,
 ) {
   const identity = yield* getGithubFile(source.repository, `${source.directory}/package.json`, tag, token).pipe(
-    Effect.flatMap((text) => Effect.try((): unknown => JSON.parse(text))),
+    Effect.flatMap((text) =>
+      Effect.try(() => {
+        const parsed: unknown = JSON.parse(text);
+
+        return parsed;
+      }),
+    ),
     Effect.flatMap(Schema.decodeUnknownEffect(PackageIdentitySchema)),
     Effect.result,
   );
@@ -331,7 +339,7 @@ export const getPackageReleaseNotes = Effect.fn('Github.getPackageReleaseNotes')
       changelog: null,
     } satisfies PackageReleaseNotes;
   // Only a commit hash from npm can start a pinned changelog independently of release discovery.
-  const ref = typeof to.gitHead === 'string' && /^[a-f0-9]{40}$/i.test(to.gitHead) ? to.gitHead : null;
+  const ref = isScalarString(to.gitHead) && /^[a-f0-9]{40}$/i.test(to.gitHead) ? to.gitHead : null;
 
   const { listing, pinned } = yield* Effect.all(
     {

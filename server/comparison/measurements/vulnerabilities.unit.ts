@@ -8,6 +8,7 @@ const modified = '2026-03-13T22:11:31.390433Z';
 
 const match = (id: string) => ({ id, modified });
 
+// oxlint-disable-next-line rules/no-unknown-parameters rules/no-unsafe-dictionary-type -- Transport stub returning arbitrary OSV JSON fixtures keyed by endpoint; the service decodes every response.
 function run(batch: unknown, details: Record<string, unknown> = {}, batchStatus = 200) {
   const calls: { method: string; url: string; body?: unknown }[] = [];
 

@@ -10,6 +10,7 @@ import { ArchiveCapacityError } from '../../workers/evidence/admission';
 import { getComparisonFacts, getComparisonMeasurements } from './collect';
 import type { ComparisonEvidenceCache, ComparisonEvidenceCacheOptions } from './evidence/services';
 
+// oxlint-disable-next-line rules/no-unknown-returns -- Test registry stub returning arbitrary JSON responses; the collector decodes each endpoint.
 const registry = { json: vi.fn<(path: string) => Promise<unknown>>() };
 
 const manifest = (version: string) => ({
@@ -23,7 +24,7 @@ const validTarball = async (): Promise<Buffer> => {
   const chunks: Buffer[] = [];
 
   const complete = new Promise<Buffer>((resolve, reject) => {
-    archive.on('data', (chunk: unknown) => {
+    archive.on('data', (chunk) => {
       if (!Buffer.isBuffer(chunk)) throw new TypeError('Expected tar stream bytes');
       chunks.push(chunk);
     });

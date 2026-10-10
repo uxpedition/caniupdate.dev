@@ -45,6 +45,7 @@ export class PackageEvidenceClientError extends Error {
   }
 }
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Exported evidence request decode boundary; the request schema above runs on every call.
 export const decodePackageEvidenceRequest = (value: unknown): PackageEvidenceRequest => {
   try {
     return Schema.decodeUnknownSync(EvidenceRequestSchema)(value, { errors: 'all' });
@@ -53,6 +54,7 @@ export const decodePackageEvidenceRequest = (value: unknown): PackageEvidenceReq
   }
 };
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Exported evidence payload decode boundary; the briefing schema above runs on every call.
 export const decodeBriefingEvidence = (value: unknown): BriefingEvidence => {
   try {
     return Schema.decodeUnknownSync(BriefingEvidenceSchema)(value, { errors: 'all' });
@@ -61,14 +63,20 @@ export const decodeBriefingEvidence = (value: unknown): BriefingEvidence => {
   }
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
 
-const isCompactTarball = (value: unknown): value is Record<string, unknown> =>
+type UnknownRecord = typeof UnknownRecordSchema.Type;
+
+const isRecord = Schema.is(UnknownRecordSchema);
+
+const isScalarString = Schema.is(Schema.String);
+
+const isCompactTarball = (value: unknown): value is UnknownRecord =>
   isRecord(value) && !Object.hasOwn(value, 'files') && !Object.hasOwn(value, 'changelogs');
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Guarded structural member of the compact envelope; the record gate above validates access.
 const isCompactMeasuredVersion = (value: unknown, requested: string): boolean => {
-  if (!isRecord(value) || typeof value.version !== 'string') return false;
+  if (!isRecord(value) || !isScalarString(value.version)) return false;
 
   if (isExactSemver(requested) && value.version !== requested) return false;
 
@@ -164,6 +172,7 @@ const readResponseBody = async (body: PackageEvidenceResponseBody, maxBytes?: nu
   }
 };
 
+// oxlint-disable-next-line rules/no-unknown-returns -- Parse step: JSON yields unknown by nature, and the protocol decoders consume it immediately.
 const parseJson = (bytes: Uint8Array): unknown => {
   try {
     const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
@@ -174,6 +183,7 @@ const parseJson = (bytes: Uint8Array): unknown => {
   }
 };
 
+// oxlint-disable-next-line rules/no-unknown-returns -- Parse step boundary; every consumer decodes through request or evidence schemas immediately.
 const readJson = async (response: PackageEvidenceResponse, maxBytes?: number): Promise<unknown> => {
   if (maxBytes !== undefined && !hasAcceptableContentLength(response, maxBytes)) {
     await cancelBody(response);
@@ -190,6 +200,7 @@ const readJson = async (response: PackageEvidenceResponse, maxBytes?: number): P
 const requestEvidence = async (
   namespace: PackageEvidenceNamespace | undefined,
   path: PackageEvidencePath,
+  // oxlint-disable-next-line rules/no-unknown-parameters -- The handler forwards the raw request values; the request schema decodes them first.
   rawRequest: unknown,
 ): Promise<{ readonly request: PackageEvidenceRequest; readonly value: unknown }> => {
   const request = decodePackageEvidenceRequest(rawRequest);

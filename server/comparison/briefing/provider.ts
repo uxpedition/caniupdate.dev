@@ -77,14 +77,11 @@ const bufferResponseBody = (
 // tool calls, so metadata nulls are dropped before decoding. Model text is a string and is never altered.
 const dropNullProviderFields = (body: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> => {
   try {
-    const envelope: unknown = JSON.parse(
-      new TextDecoder().decode(body),
-      (_key, value) => {
-        const next: unknown = value;
+    const envelope: unknown = JSON.parse(new TextDecoder().decode(body), (_key, value) => {
+      const next: unknown = value;
 
-        return value === null || value === undefined ? undefined : next;
-      },
-    );
+      return value === null || value === undefined ? undefined : next;
+    });
 
     return new TextEncoder().encode(JSON.stringify(envelope));
   } catch {

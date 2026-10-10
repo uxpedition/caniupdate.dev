@@ -3,7 +3,11 @@ import type {
   BriefingInput,
   BriefingSourceDraft,
 } from '../../../../shared/comparison/briefing/briefing.defs';
-import type { AdvisoryComparison, AdvisoryGroup, PackageComparison } from '../../../../shared/comparison/comparison.defs';
+import type {
+  AdvisoryComparison,
+  AdvisoryGroup,
+  PackageComparison,
+} from '../../../../shared/comparison/comparison.defs';
 import type { PackageAdvisory } from '../../../../shared/comparison/evidence/osv.defs';
 import { buildMaintainerCandidates } from './changelog';
 import { packBriefingEvidence, type BriefingEvidenceCandidate } from './packing';

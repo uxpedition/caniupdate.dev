@@ -24,7 +24,9 @@ const manifest = (version: string, options: ManifestOptions = {}): TestManifest 
   ...options,
 });
 
-const release = (tag: string, options: Partial<Record<'name' | 'body' | 'draft' | 'prerelease', unknown>> = {}) => ({
+type ReleaseOptions = { readonly name?: string | null; readonly body?: string | null; readonly draft?: boolean; readonly prerelease?: boolean };
+
+const release = (tag: string, options: ReleaseOptions = {}) => ({
   tag_name: tag,
   name: options.name === undefined ? tag : options.name,
   body: options.body === undefined ? `Notes for ${tag}` : options.body,
@@ -34,8 +36,8 @@ const release = (tag: string, options: Partial<Record<'name' | 'body' | 'draft' 
 });
 
 function run(
-  from: ReturnType<typeof manifest>,
-  to: ReturnType<typeof manifest>,
+  from: TestManifest,
+  to: TestManifest,
   responses: (request: Request) => Response,
   packageName = 'widget',
 ) {
@@ -57,6 +59,7 @@ function run(
   };
 }
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Test release page stub returning a decoded JSON list; the release decoders validate its members.
 function releaseAndChangelogResponses(releases: unknown, changelog: string | Response = '# Changelog\n') {
   return (request: Request) => {
     const url = new URL(request.url);

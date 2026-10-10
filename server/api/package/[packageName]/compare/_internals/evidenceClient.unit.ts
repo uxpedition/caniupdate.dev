@@ -27,6 +27,7 @@ const evidence: BriefingEvidence = {
   gaps: [],
 };
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Test response factory returning arbitrary JSON bodies; the client decodes every body.
 const response = (value: unknown, status = 200): PackageEvidenceResponse => Response.json(value, { status });
 
 const binding = (fetch: () => Promise<PackageEvidenceResponse>): PackageEvidenceNamespace => ({

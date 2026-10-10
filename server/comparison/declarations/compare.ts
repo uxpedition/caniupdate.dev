@@ -1,3 +1,5 @@
+import { Schema } from 'effect';
+
 import type {
   DeclaredPackageVersion,
   DeclarationChange,
@@ -6,8 +8,11 @@ import type {
   ValueComparison,
 } from '#shared/comparison/comparison.defs';
 
+/** Any container in the conditional export tree: plain records and arrays both branch the walker below. */
+const isExportContainer = Schema.is(Schema.Union([Schema.Record(Schema.String, Schema.Unknown), Schema.Array(Schema.Unknown)]));
+
 // Keep object order for conditional exports and typesVersions: first matching conditions win.
-const equal = (from: unknown, to: unknown): boolean => JSON.stringify(from) === JSON.stringify(to);
+const equal = <T>(from: T, to: T): boolean => JSON.stringify(from) === JSON.stringify(to);
 
 const compareValue = <T>(from: T | undefined, to: T | undefined): ValueComparison<T> => ({
   changed: !equal(from, to),
@@ -65,8 +70,9 @@ function moduleDeclaration(version: DeclaredPackageVersion) {
   };
 }
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Recursive walk over registry-declared conditional export trees; the container gate checks each level.
 function hasTypeCondition(value: unknown): boolean {
-  if (value === null || typeof value !== 'object') return false;
+  if (value === null || !isExportContainer(value)) return false;
 
   return Object.entries(value).some(
     ([key, child]) => key === 'types' || key.startsWith('types@') || hasTypeCondition(child),

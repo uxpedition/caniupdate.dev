@@ -156,9 +156,7 @@ const parseJson = (content: string): Effect.Effect<unknown, BriefingInvalidRespo
     catch: () => invalidResponse(),
   });
 
-const hasValidContentShape = (
-  value: unknown,
-): value is RecordContainer & { readonly bullets: readonly unknown[] } => {
+const hasValidContentShape = (value: unknown): value is RecordContainer & { readonly bullets: readonly unknown[] } => {
   if (!hasExactKeys(value, ['bullets']) || !Array.isArray(value.bullets)) return false;
 
   if (value.bullets.length < MIN_BULLETS || value.bullets.length > MAX_BULLETS) return false;
@@ -238,7 +236,10 @@ const collectResponseEvidence = (
 // Provider decoding failures surface as `AiError` with an `InvalidOutputError` reason; local citation and shape
 // failures use this module's own tags. Everything else, including HTTP status failures, stays a provider error.
 const isInvalidProviderOutput = (cause: unknown): boolean => {
-  if (Predicate.isTagged(cause, 'BriefingInvalidResponseError') || Predicate.isTagged(cause, 'BriefingResponseTooLargeError')) {
+  if (
+    Predicate.isTagged(cause, 'BriefingInvalidResponseError') ||
+    Predicate.isTagged(cause, 'BriefingResponseTooLargeError')
+  ) {
     return true;
   }
 
