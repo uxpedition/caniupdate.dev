@@ -1,11 +1,14 @@
-import { flow, Result, Schema } from 'effect';
+import { Result, Schema } from 'effect';
 
 import {
   BRIEFING_EVIDENCE_MAX_BYTES,
   BriefingEvidenceSchema,
   type BriefingEvidence,
 } from '#shared/comparison/briefing/briefing.defs';
-import type { PackageMeasurementsResponse } from '#shared/comparison/comparison.defs';
+import {
+  PackageMeasurementsResponseSchema,
+  type PackageMeasurementsResponse,
+} from '#shared/comparison/comparison.defs';
 import type {
   PackageEvidenceBodyReadResult,
   PackageEvidenceBodyReader,
@@ -53,49 +56,25 @@ export const decodePackageEvidenceRequest = (value: PackageEvidenceRequest): Pac
   }
 };
 
-export const decodeBriefingEvidence = flow(
-  Schema.decodeUnknownResult(BriefingEvidenceSchema, { errors: 'all' }),
-  (result): BriefingEvidence => {
-    if (Result.isFailure(result)) throw new PackageEvidenceClientError('protocol');
+const decodeBriefingEvidenceJson = Schema.decodeResult(Schema.fromJsonString(BriefingEvidenceSchema));
 
-    return result.success;
-  },
-);
+const decodeBriefingEvidence = (text: string): BriefingEvidence => {
+  const result = decodeBriefingEvidenceJson(text, { errors: 'all' });
 
-const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
+  if (Result.isFailure(result)) throw new PackageEvidenceClientError('protocol');
 
-type UnknownRecord = typeof UnknownRecordSchema.Type;
-
-const isRecord = Schema.is(UnknownRecordSchema);
-
-const isScalarString = Schema.is(Schema.String);
-
-const isCompactTarball = (value: unknown): value is UnknownRecord =>
-  isRecord(value) && !Object.hasOwn(value, 'files') && !Object.hasOwn(value, 'changelogs');
-
-const isCompactMeasuredVersion = (value: UnknownRecord, requested: string): boolean => {
-  if (!isScalarString(value.version)) return false;
-
-  if (isExactSemver(requested) && value.version !== requested) return false;
-
-  return isCompactTarball(value.tarball);
+  return result.success;
 };
 
-// Measurement responses are produced by the typed backend collector. This boundary check only enforces the public
-// envelope and the critical no-inventory contract; it deliberately does not duplicate every provider field schema.
-const isCompactMeasurementsResponse = (
-  value: unknown,
-  request: PackageEvidenceRequest,
-): value is PackageMeasurementsResponse => {
-  if (!isRecord(value) || value.packageName !== request.packageName || !isRecord(value.comparison)) return false;
-  const { from, to } = value;
+const decodeMeasurementsJson = Schema.decodeResult(Schema.fromJsonString(PackageMeasurementsResponseSchema));
 
-  return (
-    isRecord(from) &&
-    isRecord(to) &&
-    isCompactMeasuredVersion(from, request.from) &&
-    isCompactMeasuredVersion(to, request.to)
-  );
+// Excess keys fail: the compact tarball summary must not carry per-file or changelog inventory.
+const decodeMeasurements = (text: string): PackageMeasurementsResponse => {
+  const result = decodeMeasurementsJson(text, { errors: 'all', onExcessProperty: 'error' });
+
+  if (Result.isFailure(result)) throw new PackageEvidenceClientError('protocol');
+
+  return result.success;
 };
 
 const cancelBody = async (response: PackageEvidenceResponse): Promise<void> => {
@@ -176,19 +155,7 @@ const readResponseBody = async (body: PackageEvidenceResponseBody, maxBytes?: nu
   }
 };
 
-// oxlint-disable-next-line rules/no-unknown-returns -- Parse step: JSON yields unknown by nature, and the protocol decoders consume it immediately.
-const parseJson = (bytes: Uint8Array): unknown => {
-  try {
-    const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
-
-    return value;
-  } catch {
-    throw new PackageEvidenceClientError('protocol');
-  }
-};
-
-// oxlint-disable-next-line rules/no-unknown-returns -- Parse step boundary; every consumer decodes through the evidence schemas immediately.
-const readJson = async (response: PackageEvidenceResponse, maxBytes?: number): Promise<unknown> => {
+const readText = async (response: PackageEvidenceResponse, maxBytes?: number): Promise<string> => {
   if (maxBytes !== undefined && !hasAcceptableContentLength(response, maxBytes)) {
     await cancelBody(response);
     throw new PackageEvidenceClientError('protocol');
@@ -198,14 +165,14 @@ const readJson = async (response: PackageEvidenceResponse, maxBytes?: number): P
 
   if (body === null) throw new PackageEvidenceClientError('protocol');
 
-  return parseJson(await readResponseBody(body, maxBytes));
+  return new TextDecoder().decode(await readResponseBody(body, maxBytes));
 };
 
 const requestEvidence = async (
   namespace: PackageEvidenceNamespace | undefined,
   path: PackageEvidencePath,
   rawRequest: PackageEvidenceRequest,
-): Promise<{ readonly request: PackageEvidenceRequest; readonly value: unknown }> => {
+): Promise<{ readonly request: PackageEvidenceRequest; readonly text: string }> => {
   const request = decodePackageEvidenceRequest(rawRequest);
 
   if (namespace === undefined) throw new PackageEvidenceClientError('binding-unavailable');
@@ -227,7 +194,7 @@ const requestEvidence = async (
 
     const maxBytes = path === 'briefing-evidence' ? BRIEFING_EVIDENCE_MAX_BYTES : undefined;
 
-    return { request, value: await readJson(response, maxBytes) };
+    return { request, text: await readText(response, maxBytes) };
   } catch (error) {
     if (error instanceof PackageEvidenceClientError) throw error;
     throw new PackageEvidenceClientError('transport');
@@ -238,19 +205,28 @@ export async function getPackageMeasurements(
   namespace: PackageEvidenceNamespace | undefined,
   request: PackageEvidenceRequest,
 ): Promise<PackageMeasurementsResponse> {
-  const { request: decodedRequest, value } = await requestEvidence(namespace, 'measurements', request);
+  const { request: decodedRequest, text } = await requestEvidence(namespace, 'measurements', request);
+  const measurements = decodeMeasurements(text);
 
-  if (!isCompactMeasurementsResponse(value, decodedRequest)) throw new PackageEvidenceClientError('protocol');
+  if (measurements.packageName !== decodedRequest.packageName) throw new PackageEvidenceClientError('protocol');
 
-  return value;
+  if (isExactSemver(decodedRequest.from) && measurements.from.version !== decodedRequest.from) {
+    throw new PackageEvidenceClientError('protocol');
+  }
+
+  if (isExactSemver(decodedRequest.to) && measurements.to.version !== decodedRequest.to) {
+    throw new PackageEvidenceClientError('protocol');
+  }
+
+  return measurements;
 }
 
 export async function getBriefingEvidence(
   namespace: PackageEvidenceNamespace | undefined,
   request: PackageEvidenceRequest,
 ): Promise<BriefingEvidence> {
-  const { value } = await requestEvidence(namespace, 'briefing-evidence', request);
-  const evidence = decodeBriefingEvidence(value);
+  const { text } = await requestEvidence(namespace, 'briefing-evidence', request);
+  const evidence = decodeBriefingEvidence(text);
 
   if (evidence.packageName !== request.packageName) throw new PackageEvidenceClientError('protocol');
 

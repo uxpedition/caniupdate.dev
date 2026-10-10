@@ -109,6 +109,22 @@ describe('package evidence client failures', () => {
     });
   });
 
+  it('rejects a structurally incomplete measurements envelope as a protocol failure', async () => {
+    await expect(
+      getPackageMeasurements(
+        binding(async () =>
+          response({
+            packageName: 'minimist',
+            comparison: {},
+            from: { version: '1.0.0', tarball: {} },
+            to: { version: '2.0.0', tarball: {} },
+          }),
+        ),
+        request,
+      ),
+    ).rejects.toMatchObject({ reason: 'protocol' });
+  });
+
   it('returns validated evidence unchanged on a successful response', async () => {
     await expect(
       getBriefingEvidence(

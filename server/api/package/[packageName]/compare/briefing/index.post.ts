@@ -8,6 +8,7 @@ import {
   type H3Event,
 } from 'h3';
 
+import type { BriefingServiceBinding } from '#shared/cloudflare';
 import type { BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
 import type { BriefingSubmission } from '#shared/comparison/briefing/briefingJob.defs';
 import {
@@ -25,10 +26,6 @@ import { decodePackageComparisonQuery, decodePackageComparisonRouterParams } fro
 import { browserBriefingSocketUrl } from './_internals/socketUrl';
 
 type SubmissionFailureStatus = 'Evidence service unavailable' | 'Briefing service unavailable';
-
-// The RPC envelope is unknown until the copy helpers below flatten its own keys for the strict protocol decoder.
-// oxlint-disable-next-line rules/no-unknown-returns -- The service binding's raw envelope is the boundary; the protocol decoder consumes it immediately.
-type BriefingService = { submit(packet: BriefingEvidence): Promise<unknown> };
 
 type DisposableRpcResult = RpcResultData & { [Symbol.dispose](): void };
 
@@ -129,11 +126,13 @@ const submissionFailure = (cause: unknown): BriefingSubmissionFailure => {
 };
 
 const receiveBriefingServiceResult = async (
-  service: BriefingService,
+  service: BriefingServiceBinding,
   evidence: BriefingEvidence,
 ): Promise<BriefingServiceResult> => {
   try {
-    const rpcResult = await service.submit(evidence);
+    // The binding's type describes the native producer; the value is still widened to unknown here because the
+    // guards and strict decoder below are what establish its shape at this boundary.
+    const rpcResult: unknown = await service.submit(evidence);
 
     if (isDisposableRpcResult(rpcResult)) {
       const dispose = rpcResult[Symbol.dispose];

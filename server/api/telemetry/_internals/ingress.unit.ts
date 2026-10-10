@@ -90,11 +90,16 @@ const tracePayload = () => ({
   ],
 });
 
-// oxlint-disable-next-line rules/no-unknown-returns -- Test JSON helper feeding decoders; parsed values are untyped input data for the boundary under test.
-const parseJson = (text: string): unknown => {
+const decodeTraceExport = (text: string) => {
   const value: unknown = JSON.parse(text);
 
-  return value;
+  return decodeTelemetryPayload('traces')(value);
+};
+
+const decodeLogExport = (text: string) => {
+  const value: unknown = JSON.parse(text);
+
+  return decodeTelemetryPayload('logs')(value);
 };
 
 type ForwardedRequest = { readonly input: RequestInfo | URL; readonly init?: RequestInit };
@@ -128,7 +133,7 @@ const expectTraceExport = (forwarded: readonly ForwardedRequest[]): void => {
   expect(forwardedText).not.toContain('private status text');
   expect(forwardedText).not.toContain('private top-level data');
 
-  const decoded = decodeTelemetryPayload('traces')(parseJson(forwardedText));
+  const decoded = decodeTraceExport(forwardedText);
   const group = decoded.resourceSpans[0];
 
   if (group === undefined) throw new Error('Expected forwarded trace resource');
@@ -143,7 +148,7 @@ const expectTraceExport = (forwarded: readonly ForwardedRequest[]): void => {
 const expectLogExport = (forwarded: readonly ForwardedRequest[]): void => {
   const { input, init } = requireForwardedRequest(forwarded);
   expect(String(input)).toBe('http://127.0.0.1:4318/v1/logs');
-  const payload = decodeTelemetryPayload('logs')(parseJson(String(init.body)));
+  const payload = decodeLogExport(String(init.body));
   const group = payload.resourceLogs[0];
 
   if (group === undefined) throw new Error('Expected forwarded log resource');
@@ -208,7 +213,7 @@ describe('telemetry ingress', () => {
 
     incoming.end(new Uint8Array(TELEMETRY_MAX_BODY_BYTES + 1));
 
-    await expect(readBoundedTelemetryBody(request)).rejects.toMatchObject({ statusCode: 413 });
+    await expect(readBoundedTelemetryBody(request, 'traces')).rejects.toMatchObject({ statusCode: 413 });
     expect(incoming.destroyed).toBe(true);
   });
 
@@ -230,11 +235,17 @@ describe('telemetry ingress', () => {
       context: { cloudflare: { request: new Request('http://localhost:3000/api/telemetry/v1/traces') } },
     });
 
-    incoming.push('{"actual":"post"}');
+    incoming.push(JSON.stringify(tracePayload()));
     incoming.push(null);
 
     expect(request.method).toBe('POST');
-    await expect(readBoundedTelemetryBody(request)).resolves.toEqual({ actual: 'post' });
+    await expect(readBoundedTelemetryBody(request, 'traces')).resolves.toMatchObject({
+      resourceSpans: [
+        {
+          scopeSpans: [{ spans: [{ name: 'comparison.page', traceId: '4bf92f3577b34da6a3ce929d0e0e4736' }] }],
+        },
+      ],
+    });
     incoming.destroy();
   });
 
@@ -300,7 +311,7 @@ describe('telemetry ingress', () => {
         }),
       });
 
-      void readBoundedTelemetryBody(request)
+      void readBoundedTelemetryBody(request, 'traces')
         .then(
           () => {
             outgoing.statusCode = 204;
@@ -359,7 +370,7 @@ describe('telemetry ingress', () => {
 
     const request = new Request('http://localhost:3000/api/telemetry/v1/traces', requestInit);
 
-    await expect(readBoundedTelemetryBody(request)).rejects.toMatchObject({ statusCode: 413 });
+    await expect(readBoundedTelemetryBody(request, 'traces')).rejects.toMatchObject({ statusCode: 413 });
     expect(cancelled).toBe(true);
   });
 
@@ -457,7 +468,7 @@ describe('telemetry ingress', () => {
       body: '{}',
     });
 
-    await expect(readBoundedTelemetryBody(request)).rejects.toMatchObject({ statusCode: 415 });
+    await expect(readBoundedTelemetryBody(request, 'logs')).rejects.toMatchObject({ statusCode: 415 });
   });
 
   it('bounds concurrent requests, per-client rate, and remembered clients', () => {

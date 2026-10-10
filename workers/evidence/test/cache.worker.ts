@@ -4,6 +4,13 @@ import { Schema } from 'effect';
 
 import type { ComparisonEvidenceCacheOptions } from '../../../server/comparison/evidence/services';
 import { SqlEvidenceCache } from '../store';
+import {
+  type CacheFixtureCoalesced,
+  type CacheFixtureCommand,
+  CacheFixtureCommandSchema,
+  type CacheFixtureError,
+  type CacheFixtureOutcome,
+} from './cache.protocol';
 
 type Request = Cloudflare.Request;
 
@@ -12,64 +19,6 @@ type Response = Cloudflare.Response;
 declare const Response: typeof Cloudflare.Response;
 
 const CHUNK_BYTES = 128 * 1024;
-
-export type CacheFixtureCommand =
-  | { operation: 'initialize' }
-  | {
-      operation: 'load';
-      key: string;
-      value: string;
-      ttlMs: number | null;
-      cacheable: boolean;
-      validation: 'string' | 'reject';
-    }
-  | { operation: 'cleanup'; now: number }
-  | { operation: 'load-replacing'; key: string; value: string; oldValue: string; ttlMs: number | null }
-  | { operation: 'coalesce'; key: string; value: string; rejectSecond: boolean }
-  | { operation: 'serialization'; key: string; kind: 'undefined' | 'circular' };
-
-type SanitizedError = {
-  _tag: string;
-  operation?: string;
-  detail?: string;
-  causeName?: string;
-  causeMessage?: string;
-};
-
-type CacheOutcome = { ok: true; value: string } | { ok: false; error: SanitizedError };
-
-const TtlMsSchema = Schema.NullOr(Schema.Finite);
-
-const CacheFixtureCommandSchema = Schema.Union([
-  Schema.Struct({ operation: Schema.Literal('initialize') }),
-  Schema.Struct({
-    operation: Schema.Literal('load'),
-    key: Schema.String,
-    value: Schema.String,
-    ttlMs: TtlMsSchema,
-    cacheable: Schema.Boolean,
-    validation: Schema.Literals(['string', 'reject']),
-  }),
-  Schema.Struct({ operation: Schema.Literal('cleanup'), now: Schema.Finite }),
-  Schema.Struct({
-    operation: Schema.Literal('load-replacing'),
-    key: Schema.String,
-    value: Schema.String,
-    oldValue: Schema.String,
-    ttlMs: TtlMsSchema,
-  }),
-  Schema.Struct({
-    operation: Schema.Literal('coalesce'),
-    key: Schema.String,
-    value: Schema.String,
-    rejectSecond: Schema.Boolean,
-  }),
-  Schema.Struct({
-    operation: Schema.Literal('serialization'),
-    key: Schema.String,
-    kind: Schema.Literals(['undefined', 'circular']),
-  }),
-]);
 
 const decodeCacheFixtureCommand = Schema.decodeUnknownSync(CacheFixtureCommandSchema, { errors: 'all' });
 
@@ -82,22 +31,20 @@ const isSelfContainer = Schema.is(Schema.Struct({ self: Schema.Unknown }));
 // Self-referential probe: JSON.stringify throws on it, exercising the serialization-failure path.
 type SelfReferentialProbe = { self?: unknown };
 
-type CoalesceResult = { first: CacheOutcome; second: CacheOutcome };
-
 // `undefined` is the unserializable-value probe; every other member is a fixture operation's result.
 type FixtureResult =
   | { initialized: true }
   | { cleaned: true }
   | string
   | undefined
-  | CoalesceResult
+  | CacheFixtureCoalesced
   | SelfReferentialProbe;
 
 type FixtureEnvelope =
   | { ok: true; value: FixtureResult; loaderCalls: number }
-  | { ok: false; error: SanitizedError; loaderCalls: number };
+  | { ok: false; error: CacheFixtureError; loaderCalls: number };
 
-type FixtureResponseBody = FixtureEnvelope | { error: SanitizedError };
+type FixtureResponseBody = FixtureEnvelope | { error: CacheFixtureError };
 
 function jsonResponse(body: FixtureResponseBody, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -113,8 +60,11 @@ function stringProperty(cause: unknown, key: string): string | undefined {
   return isScalarString(property) ? property : undefined;
 }
 
-// oxlint-disable-next-line rules/no-unknown-returns -- Failure cause chains are runtime-owned; the container walk below validates each level it reads.
-function innermostCause(cause: unknown): unknown {
+type CauseLeaf = { name: string | undefined; message: string | undefined };
+
+// Walks native `Error.cause` links to the innermost container and projects only its validated name and message.
+// Cycles, primitive links, missing causes, and DrizzleQueryError leaves yield no leaf.
+function innermostCause(cause: unknown): CauseLeaf | undefined {
   if (!isContainerObject(cause)) return undefined;
   let current: unknown = Reflect.get(cause, 'cause');
 
@@ -127,25 +77,25 @@ function innermostCause(cause: unknown): unknown {
     const nested: unknown = Reflect.get(current, 'cause');
 
     if (nested === undefined) {
-      return stringProperty(current, 'name') === 'DrizzleQueryError' ? undefined : current;
+      if (stringProperty(current, 'name') === 'DrizzleQueryError') return undefined;
+
+      return { name: stringProperty(current, 'name'), message: stringProperty(current, 'message') };
     }
 
     current = nested;
   }
 
-  return current;
+  return undefined;
 }
 
-function sanitizeError(cause: unknown): SanitizedError {
-  const error: SanitizedError = {
-    _tag: stringProperty(cause, '_tag') ?? 'UnknownError',
-  };
-
+function sanitizeError(cause: unknown): CacheFixtureError {
   const operation = stringProperty(cause, 'operation');
   const detail = stringProperty(cause, 'detail');
-  const innermost = innermostCause(cause);
-  const causeName = stringProperty(innermost, 'name');
-  const causeMessage = stringProperty(innermost, 'message');
+  const leaf = innermostCause(cause);
+  const causeName = leaf?.name;
+  const causeMessage = leaf?.message;
+
+  const error: CacheFixtureError = { _tag: stringProperty(cause, '_tag') ?? 'UnknownError' };
 
   if (operation !== undefined) error.operation = operation;
 
@@ -158,7 +108,7 @@ function sanitizeError(cause: unknown): SanitizedError {
   return error;
 }
 
-async function captureOutcome(promise: Promise<string>): Promise<CacheOutcome> {
+async function captureOutcome(promise: Promise<string>): Promise<CacheFixtureOutcome> {
   try {
     return { ok: true, value: await promise };
   } catch (cause) {
@@ -260,7 +210,9 @@ export class EvidenceCacheFixture extends DurableObject {
     }
   }
 
-  private async coalesce(command: Extract<CacheFixtureCommand, { operation: 'coalesce' }>): Promise<CoalesceResult> {
+  private async coalesce(
+    command: Extract<CacheFixtureCommand, { operation: 'coalesce' }>,
+  ): Promise<CacheFixtureCoalesced> {
     let releaseLoader: ((value: string) => void) | undefined;
 
     const deferred = new Promise<string>((resolve) => {

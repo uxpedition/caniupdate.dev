@@ -9,32 +9,9 @@ import {
   type EvidenceCacheFixture,
   type EvidenceCacheFixtureOptions,
 } from './test/cache.harness';
-
-const FixtureErrorSchema = Schema.Struct({
-  _tag: Schema.String,
-  operation: Schema.optionalKey(Schema.String),
-  detail: Schema.optionalKey(Schema.String),
-  causeName: Schema.optionalKey(Schema.String),
-  causeMessage: Schema.optionalKey(Schema.String),
-});
-
-const FixtureResultSchema = Schema.Union([
-  Schema.Struct({ ok: Schema.Literal(true), value: Schema.Unknown, loaderCalls: Schema.Finite }),
-  Schema.Struct({ ok: Schema.Literal(false), error: FixtureErrorSchema, loaderCalls: Schema.Finite }),
-]);
-
-const LoaderOutcomeSchema = Schema.Union([
-  Schema.Struct({ ok: Schema.Literal(true), value: Schema.Unknown }),
-  Schema.Struct({ ok: Schema.Literal(false), error: FixtureErrorSchema }),
-]);
-
-const CoalescedOutcomesSchema = Schema.Struct({ first: LoaderOutcomeSchema, second: LoaderOutcomeSchema });
+import { isCacheFixtureCoalesced } from './test/cache.protocol';
 
 const SqlChunkRowsSchema = Schema.Array(Schema.Struct({ chunk_index: Schema.Finite, payload: Schema.String }));
-
-const decodeFixtureResult = Schema.decodeUnknownSync(FixtureResultSchema, { errors: 'all' });
-
-const decodeCoalescedOutcomes = Schema.decodeUnknownSync(CoalescedOutcomesSchema, { errors: 'all' });
 
 const decodeSqlChunkRows = Schema.decodeUnknownSync(SqlChunkRowsSchema, { errors: 'all' });
 
@@ -127,16 +104,14 @@ describe('evidence cache in real SQLite workerd storage', () => {
       async (fixture) => {
         await seedLegacyCache(fixture);
 
-        const result = decodeFixtureResult(
-          await fixture.call({
-            operation: 'load',
-            key: 'legacy',
-            value: 'replacement',
-            ttlMs: null,
-            cacheable: true,
-            validation: 'string',
-          }),
-        );
+        const result = await fixture.call({
+          operation: 'load',
+          key: 'legacy',
+          value: 'replacement',
+          ttlMs: null,
+          cacheable: true,
+          validation: 'string',
+        });
 
         expect(result).toMatchObject({ ok: true, value: 'old', loaderCalls: 0 });
         expect(await fixture.exec('SELECT * FROM evidence_records')).toEqual([
@@ -167,16 +142,14 @@ describe('evidence cache in real SQLite workerd storage', () => {
       const chunks = await fixture.exec('SELECT * FROM evidence_chunks');
       await fixture.restart();
       expect(
-        decodeFixtureResult(
-          await fixture.call({
-            operation: 'load',
-            key: 'restart',
-            value: 'replacement',
-            ttlMs: null,
-            cacheable: true,
-            validation: 'string',
-          }),
-        ),
+        await fixture.call({
+          operation: 'load',
+          key: 'restart',
+          value: 'replacement',
+          ttlMs: null,
+          cacheable: true,
+          validation: 'string',
+        }),
       ).toMatchObject({ ok: true, value: 'persisted', loaderCalls: 0 });
       expect(await fixture.exec('SELECT * FROM evidence_records')).toEqual(records);
       expect(await fixture.exec('SELECT * FROM evidence_chunks')).toEqual(chunks);
@@ -195,7 +168,7 @@ describe('evidence cache in real SQLite workerd storage', () => {
         );
         await fixture.exec(`CREATE TRIGGER refuse_migration BEFORE INSERT ON __drizzle_migrations
         BEGIN SELECT RAISE(ABORT, 'fixture migration refusal'); END`);
-        const result = decodeFixtureResult(await fixture.call({ operation: 'initialize' }));
+        const result = await fixture.call({ operation: 'initialize' });
         expect(result.ok).toBe(false);
 
         if (result.ok) throw new Error('Refused migration unexpectedly initialized');
@@ -244,16 +217,14 @@ describe('evidence cache in real SQLite workerd storage', () => {
     await withFixture(async (fixture) => {
       const value = '界'.repeat(100_000);
 
-      const first = decodeFixtureResult(
-        await fixture.call({
-          operation: 'load',
-          key: 'multibyte',
-          value,
-          ttlMs: null,
-          cacheable: true,
-          validation: 'string',
-        }),
-      );
+      const first = await fixture.call({
+        operation: 'load',
+        key: 'multibyte',
+        value,
+        ttlMs: null,
+        cacheable: true,
+        validation: 'string',
+      });
 
       expect(first.ok).toBe(true);
 
@@ -279,16 +250,14 @@ describe('evidence cache in real SQLite workerd storage', () => {
       expect(chunks.length).toBeGreaterThan(1);
       expect(chunks.map((row) => row.payload).join('')).toBe(JSON.stringify(value));
 
-      const hit = decodeFixtureResult(
-        await fixture.call({
-          operation: 'load',
-          key: 'multibyte',
-          value: 'must not replace the stored result',
-          ttlMs: null,
-          cacheable: true,
-          validation: 'string',
-        }),
-      );
+      const hit = await fixture.call({
+        operation: 'load',
+        key: 'multibyte',
+        value: 'must not replace the stored result',
+        ttlMs: null,
+        cacheable: true,
+        validation: 'string',
+      });
 
       expect(hit).toEqual({ ok: true, value, loaderCalls: 1 });
     });
@@ -296,15 +265,20 @@ describe('evidence cache in real SQLite workerd storage', () => {
 
   it('runs one same-key loader and shares its value with both callers', async () => {
     await withFixture(async (fixture) => {
-      const result = decodeFixtureResult(
-        await fixture.call({ operation: 'coalesce', key: 'coalesce-value', value: 'shared', rejectSecond: false }),
-      );
+      const result = await fixture.call({
+        operation: 'coalesce',
+        key: 'coalesce-value',
+        value: 'shared',
+        rejectSecond: false,
+      });
 
       expect(result.ok).toBe(true);
 
       if (!result.ok) throw new Error('Coalesced load unexpectedly failed');
       expect(result.loaderCalls).toBe(1);
-      const outcomes = decodeCoalescedOutcomes(result.value);
+
+      if (!isCacheFixtureCoalesced(result.value)) throw new Error('Coalesced load returned an unexpected value');
+      const outcomes = result.value;
       expect(outcomes.first).toEqual({ ok: true, value: 'shared' });
       expect(outcomes.second).toEqual({ ok: true, value: 'shared' });
     });
@@ -312,15 +286,20 @@ describe('evidence cache in real SQLite workerd storage', () => {
 
   it('applies a waiting same-key caller’s own validation predicate', async () => {
     await withFixture(async (fixture) => {
-      const result = decodeFixtureResult(
-        await fixture.call({ operation: 'coalesce', key: 'coalesce-validation', value: 'shared', rejectSecond: true }),
-      );
+      const result = await fixture.call({
+        operation: 'coalesce',
+        key: 'coalesce-validation',
+        value: 'shared',
+        rejectSecond: true,
+      });
 
       expect(result.ok).toBe(true);
 
       if (!result.ok) throw new Error('Coalesced load unexpectedly failed');
       expect(result.loaderCalls).toBe(1);
-      const outcomes = decodeCoalescedOutcomes(result.value);
+
+      if (!isCacheFixtureCoalesced(result.value)) throw new Error('Coalesced load returned an unexpected value');
+      const outcomes = result.value;
       expect(outcomes.first).toEqual({ ok: true, value: 'shared' });
       expect(outcomes.second).toMatchObject({
         ok: false,
@@ -335,20 +314,21 @@ describe('evidence cache in real SQLite workerd storage', () => {
         BEFORE INSERT ON evidence_chunks
         BEGIN SELECT RAISE(ABORT, 'coalesced fixture refusal'); END`);
 
-      const result = decodeFixtureResult(
-        await fixture.call({
-          operation: 'coalesce',
-          key: 'coalesce-write-error',
-          value: 'shared',
-          rejectSecond: false,
-        }),
-      );
+      const result = await fixture.call({
+        operation: 'coalesce',
+        key: 'coalesce-write-error',
+        value: 'shared',
+        rejectSecond: false,
+      });
 
       expect(result.ok).toBe(true);
 
       if (!result.ok) throw new Error('Coalesced command unexpectedly failed');
       expect(result.loaderCalls).toBe(1);
-      const outcomes = decodeCoalescedOutcomes(result.value);
+
+      if (!isCacheFixtureCoalesced(result.value))
+        throw new Error('Coalesced write failure returned an unexpected value');
+      const outcomes = result.value;
       expect(outcomes.first).toMatchObject({
         ok: false,
         error: { _tag: 'EvidenceStorageError', operation: 'write' },
@@ -368,42 +348,36 @@ describe('evidence cache in real SQLite workerd storage', () => {
 
   it('deletes records expiring at the boundary while retaining future and permanent rows', async () => {
     await withFixture(async (fixture) => {
-      const future = decodeFixtureResult(
-        await fixture.call({
-          operation: 'load',
-          key: 'future',
-          value: 'future',
-          ttlMs: 60_000,
-          cacheable: true,
-          validation: 'string',
-        }),
-      );
+      const future = await fixture.call({
+        operation: 'load',
+        key: 'future',
+        value: 'future',
+        ttlMs: 60_000,
+        cacheable: true,
+        validation: 'string',
+      });
 
       expect(future.ok).toBe(true);
 
-      const permanent = decodeFixtureResult(
-        await fixture.call({
-          operation: 'load',
-          key: 'permanent',
-          value: 'permanent',
-          ttlMs: null,
-          cacheable: true,
-          validation: 'string',
-        }),
-      );
+      const permanent = await fixture.call({
+        operation: 'load',
+        key: 'permanent',
+        value: 'permanent',
+        ttlMs: null,
+        cacheable: true,
+        validation: 'string',
+      });
 
       expect(permanent.ok).toBe(true);
 
-      const boundary = decodeFixtureResult(
-        await fixture.call({
-          operation: 'load',
-          key: 'boundary',
-          value: 'boundary',
-          ttlMs: 0,
-          cacheable: true,
-          validation: 'string',
-        }),
-      );
+      const boundary = await fixture.call({
+        operation: 'load',
+        key: 'boundary',
+        value: 'boundary',
+        ttlMs: 0,
+        cacheable: true,
+        validation: 'string',
+      });
 
       expect(boundary.ok).toBe(true);
 
@@ -423,7 +397,7 @@ describe('evidence cache in real SQLite workerd storage', () => {
       expect(futureExpiration).toBeGreaterThan(boundaryExpiration);
       expect(permanentExpiration?.expires_at).toBeNull();
 
-      const cleanup = decodeFixtureResult(await fixture.call({ operation: 'cleanup', now: boundaryExpiration }));
+      const cleanup = await fixture.call({ operation: 'cleanup', now: boundaryExpiration });
       expect(cleanup.ok).toBe(true);
       expect(await fixture.exec('SELECT key FROM evidence_records ORDER BY key')).toEqual([
         { key: 'future' },
@@ -438,15 +412,13 @@ describe('evidence cache in real SQLite workerd storage', () => {
 
   it('replaces all old chunks and metadata when a loader writes a new value', async () => {
     await withFixture(async (fixture) => {
-      const result = decodeFixtureResult(
-        await fixture.call({
-          operation: 'load-replacing',
-          key: 'replacement',
-          oldValue: 'x'.repeat(128 * 1024 + 10),
-          value: 'new',
-          ttlMs: null,
-        }),
-      );
+      const result = await fixture.call({
+        operation: 'load-replacing',
+        key: 'replacement',
+        oldValue: 'x'.repeat(128 * 1024 + 10),
+        value: 'new',
+        ttlMs: null,
+      });
 
       expect(result).toEqual({ ok: true, value: 'new', loaderCalls: 1 });
       expect(
@@ -467,15 +439,13 @@ describe('evidence cache in real SQLite workerd storage', () => {
         BEFORE INSERT ON evidence_chunks WHEN NEW.chunk_index = 1
         BEGIN SELECT RAISE(ABORT, 'fixture refusal'); END`);
 
-      const result = decodeFixtureResult(
-        await fixture.call({
-          operation: 'load-replacing',
-          key: 'rollback',
-          oldValue: 'old',
-          value: '界'.repeat(100_000),
-          ttlMs: null,
-        }),
-      );
+      const result = await fixture.call({
+        operation: 'load-replacing',
+        key: 'rollback',
+        oldValue: 'old',
+        value: '界'.repeat(100_000),
+        ttlMs: null,
+      });
 
       expect(result.ok).toBe(false);
 
@@ -514,7 +484,7 @@ describe('evidence cache in real SQLite workerd storage', () => {
         BEFORE DELETE ON evidence_records WHEN OLD.key = 'cleanup-rollback'
         BEGIN SELECT RAISE(ABORT, 'fixture refusal'); END`);
 
-      const result = decodeFixtureResult(await fixture.call({ operation: 'cleanup', now: 20 }));
+      const result = await fixture.call({ operation: 'cleanup', now: 20 });
       expect(result.ok).toBe(false);
 
       if (result.ok) throw new Error('Faulted cleanup unexpectedly succeeded');
@@ -555,16 +525,14 @@ describe('evidence cache in real SQLite workerd storage', () => {
         );
       }
 
-      const result = decodeFixtureResult(
-        await fixture.call({
-          operation: 'load',
-          key,
-          value: 'loader must not refresh corruption',
-          ttlMs: null,
-          cacheable: true,
-          validation: testCase.validation,
-        }),
-      );
+      const result = await fixture.call({
+        operation: 'load',
+        key,
+        value: 'loader must not refresh corruption',
+        ttlMs: null,
+        cacheable: true,
+        validation: testCase.validation,
+      });
 
       expect(result.ok).toBe(false);
 
@@ -579,7 +547,7 @@ describe('evidence cache in real SQLite workerd storage', () => {
       async (fixture) => {
         await fixture.exec('CREATE TABLE evidence_records (key TEXT PRIMARY KEY NOT NULL)');
         await fixture.exec("INSERT INTO evidence_records VALUES ('retained')");
-        const result = decodeFixtureResult(await fixture.call({ operation: 'initialize' }));
+        const result = await fixture.call({ operation: 'initialize' });
         expect(result.ok).toBe(false);
 
         if (result.ok) throw new Error('Incompatible schema unexpectedly initialized');
@@ -613,16 +581,14 @@ describe('evidence cache in real SQLite workerd storage', () => {
       );
       await fixture.exec('DROP TABLE evidence_chunks');
 
-      const result = decodeFixtureResult(
-        await fixture.call({
-          operation: 'load',
-          key: 'missing-chunks',
-          value: 'loader must not run',
-          ttlMs: null,
-          cacheable: true,
-          validation: 'string',
-        }),
-      );
+      const result = await fixture.call({
+        operation: 'load',
+        key: 'missing-chunks',
+        value: 'loader must not run',
+        ttlMs: null,
+        cacheable: true,
+        validation: 'string',
+      });
 
       expect(result.ok).toBe(false);
 
@@ -639,16 +605,14 @@ describe('evidence cache in real SQLite workerd storage', () => {
         'CREATE TABLE evidence_records (expires_at INTEGER, chunk_count INTEGER, byte_length INTEGER)',
       );
 
-      const result = decodeFixtureResult(
-        await fixture.call({
-          operation: 'load',
-          key: 'read-failure',
-          value: 'loader must not run',
-          ttlMs: null,
-          cacheable: true,
-          validation: 'string',
-        }),
-      );
+      const result = await fixture.call({
+        operation: 'load',
+        key: 'read-failure',
+        value: 'loader must not run',
+        ttlMs: null,
+        cacheable: true,
+        validation: 'string',
+      });
 
       expect(result.ok).toBe(false);
 
@@ -660,16 +624,14 @@ describe('evidence cache in real SQLite workerd storage', () => {
 
   it('returns a non-cacheable fresh value without persisting it', async () => {
     await withFixture(async (fixture) => {
-      const result = decodeFixtureResult(
-        await fixture.call({
-          operation: 'load',
-          key: 'non-cacheable',
-          value: 'fresh only',
-          ttlMs: null,
-          cacheable: false,
-          validation: 'string',
-        }),
-      );
+      const result = await fixture.call({
+        operation: 'load',
+        key: 'non-cacheable',
+        value: 'fresh only',
+        ttlMs: null,
+        cacheable: false,
+        validation: 'string',
+      });
 
       expect(result).toEqual({ ok: true, value: 'fresh only', loaderCalls: 1 });
       expect(await fixture.exec('SELECT key FROM evidence_records WHERE key = ?', 'non-cacheable')).toEqual([]);
@@ -679,7 +641,7 @@ describe('evidence cache in real SQLite workerd storage', () => {
 
   it.each(serializationCases)('tags $kind serialization failures and leaves no partial row', async ({ kind, key }) => {
     await withFixture(async (fixture) => {
-      const result = decodeFixtureResult(await fixture.call({ operation: 'serialization', key, kind }));
+      const result = await fixture.call({ operation: 'serialization', key, kind });
       expect(result.ok).toBe(false);
 
       if (result.ok) throw new Error('Unserializable evidence unexpectedly persisted');

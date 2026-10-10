@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
-import { Log, LogLevel, Miniflare } from 'miniflare';
+import type { Fetcher } from '@cloudflare/workers-types/experimental';
+import { Schema } from 'effect';
+import { Log, LogLevel, Miniflare, type ReplaceWorkersTypes, type Response as MiniflareResponse } from 'miniflare';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const execFileAsync = promisify(execFile);
@@ -18,13 +20,22 @@ const WRANGLER_BIN = join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js'
 
 const WORKER_NAME = 'can-i-update-tarball-streaming-test';
 
-type WorkerResponse = {
-  status: number;
-  // oxlint-disable-next-line rules/no-unknown-returns -- Bundled worker responses are decoded per endpoint; the test harness reads them raw.
-  json(): Promise<unknown>;
-};
+type TarballMode = 'valid' | 'malformed' | 'invalid-gzip' | 'oversized';
 
-type WorkerHandle = { fetch(input: string): Promise<WorkerResponse> };
+const TarballFixtureResponseSchema = Schema.Union([
+  Schema.Struct({ available: Schema.Literal(true), entries: Schema.Finite }),
+  Schema.Struct({ available: Schema.Literal(false) }),
+  Schema.Struct({ error: Schema.String }),
+]);
+
+type TarballFixtureResponse = typeof TarballFixtureResponseSchema.Type;
+
+const decodeTarballFixtureResponse = Schema.decodeSync(Schema.fromJsonString(TarballFixtureResponseSchema), {
+  errors: 'all',
+  onExcessProperty: 'error',
+});
+
+type WorkerHandle = ReplaceWorkersTypes<Fetcher>;
 
 let runtime: Miniflare | undefined;
 
@@ -52,11 +63,11 @@ async function bundleFixture(): Promise<Record<string, { type: 'esm'; contents: 
   }
 }
 
-async function inspect(mode: string): Promise<{ response: WorkerResponse; body: unknown }> {
+async function inspect(mode: TarballMode): Promise<{ response: MiniflareResponse; body: TarballFixtureResponse }> {
   if (worker === undefined) throw new Error('Workerd fixture has not started');
   const response = await worker.fetch(`https://tarball.test/${mode}`);
 
-  return { response, body: await response.json() };
+  return { response, body: decodeTarballFixtureResponse(await response.text()) };
 }
 
 describe('tarball stream lifecycle in workerd', () => {

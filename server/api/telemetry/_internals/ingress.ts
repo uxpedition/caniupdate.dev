@@ -184,8 +184,10 @@ const readTelemetryChunksWithinDeadline = async (reader: TelemetryBodyReader): P
   }
 };
 
-// oxlint-disable-next-line rules/no-unknown-returns -- Parse step before the signal decode: JSON yields unknown by nature, and the only production consumer decodes it immediately.
-export const readBoundedTelemetryBody = async (request: TelemetryRequest): Promise<unknown> => {
+export const readBoundedTelemetryBody = async (
+  request: TelemetryRequest,
+  signal: TelemetrySignal,
+): Promise<SanitizedTelemetryPayload> => {
   validateAndCancelOnFailure(request);
 
   if (request.body === null) throw new TelemetryIngressError(400);
@@ -204,7 +206,7 @@ export const readBoundedTelemetryBody = async (request: TelemetryRequest): Promi
     const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     const parsed: unknown = JSON.parse(text);
 
-    return parsed;
+    return decodeTelemetryPayload(signal)(parsed);
   } catch {
     throw new TelemetryIngressError(400);
   }
@@ -269,9 +271,7 @@ const readBrowserTelemetryPayload = async (
   release: () => void,
 ): Promise<SanitizedTelemetryPayload> => {
   try {
-    const body = await readBoundedTelemetryBody(request);
-
-    return forceBrowserIdentity(signal, decodeTelemetryPayload(signal)(body));
+    return forceBrowserIdentity(signal, await readBoundedTelemetryBody(request, signal));
   } catch (error) {
     release();
 

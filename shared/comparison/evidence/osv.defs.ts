@@ -92,7 +92,7 @@ export const OsvVulnerabilitySchema = Schema.Struct({
 
 export type OsvVulnerability = typeof OsvVulnerabilitySchema.Type;
 
-const PackageAdvisorySchema = Schema.Union([
+export const PackageAdvisorySchema = Schema.Union([
   Schema.Struct({
     id: Schema.String,
     url: Schema.String,

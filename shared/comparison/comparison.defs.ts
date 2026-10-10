@@ -1,7 +1,9 @@
-import type { PackageBundleSize } from './evidence/bundlephobia.defs';
-import type { PackageAdvisory, PackageVulnerabilities } from './evidence/osv.defs';
-import type { PackageTarball } from './evidence/tarball.defs';
-import type { ParsedPackageVersion } from './package/package.defs';
+import { Schema } from 'effect';
+
+import { PackageBundleSizeSchema, type PackageBundleSize } from './evidence/bundlephobia.defs';
+import { PackageAdvisorySchema, PackageVulnerabilitiesSchema, type PackageVulnerabilities } from './evidence/osv.defs';
+import { PackageTarballSchema, type PackageTarball } from './evidence/tarball.defs';
+import { ParsedPackageVersionSchema, type ParsedPackageVersion } from './package/package.defs';
 
 export type ComparisonVersion = ParsedPackageVersion & {
   vulnerabilities: PackageVulnerabilities;
@@ -28,32 +30,11 @@ export type DependencyRequirement = { category: 'runtime' | 'optional'; range: s
 
 export type PeerRequirement = { range: string; optional: boolean };
 
-export type SizeComparison = {
-  status: 'available' | 'partial' | 'unavailable';
-  from: number | null;
-  to: number | null;
-  delta: number | null;
-  percent: number | null;
-  reasons: string[];
-};
+export type SizeComparison = typeof SizeComparisonSchema.Type;
 
-export type AdvisoryGroup = {
-  ids: string[];
-  aliases: string[];
-  from: PackageAdvisory[];
-  to: PackageAdvisory[];
-};
+export type AdvisoryGroup = typeof AdvisoryGroupSchema.Type;
 
-export type AdvisoryComparison = {
-  status: 'available' | 'partial' | 'unavailable';
-  coverage: { from: PackageVulnerabilities['status']; to: PackageVulnerabilities['status'] };
-  reasons: string[];
-  fromOnly: AdvisoryGroup[];
-  both: AdvisoryGroup[];
-  toOnly: AdvisoryGroup[];
-  /** A one-sided match cannot be classified as exclusive when opposite-side coverage is incomplete. */
-  uncertain: AdvisoryGroup[];
-};
+export type AdvisoryComparison = typeof AdvisoryComparisonSchema.Type;
 
 type ModuleDeclaration = Pick<ParsedPackageVersion['moduleFormat'], 'type' | 'main' | 'module'>;
 
@@ -73,35 +54,18 @@ export type DeclarationComparison = {
   installScripts: DeclarationChange<string>[];
 };
 
-export type MeasurementComparison = {
-  sizes: {
-    unpacked: SizeComparison & { sources: { from: 'registry' | 'tarball' | null; to: 'registry' | 'tarball' | null } };
-    bundle: {
-      provider: 'bundlephobia';
-      methodology: 'provider-estimate';
-      minified: SizeComparison;
-      gzip: SizeComparison;
-    };
-  };
-  advisories: AdvisoryComparison;
-};
+export type MeasurementComparison = typeof MeasurementComparisonSchema.Type;
 
 export type PackageComparison = DeclarationComparison & MeasurementComparison;
 
 /** Inspected-archive evidence without the per-file inventory, which stays server-side. */
-export type TarballSummary = {
-  status: PackageTarball['status'];
-  reasons: readonly string[];
-  url: string;
-  fileCount: number;
-  changelogCount: number;
-};
+export type TarballSummary = typeof TarballSummarySchema.Type;
 
 /** Registry manifest fields only; what the declarations route returns per version. */
 export type DeclaredPackageVersion = ParsedPackageVersion;
 
 /** Manifest fields plus measurement evidence; what the measurements route returns per version. */
-export type MeasuredPackageVersion = Omit<ComparisonVersion, 'tarball'> & { tarball: TarballSummary };
+export type MeasuredPackageVersion = typeof MeasuredPackageVersionSchema.Type;
 
 export type PackageDeclarationsResponse = {
   packageName: string;
@@ -110,9 +74,83 @@ export type PackageDeclarationsResponse = {
   comparison: DeclarationComparison;
 };
 
-export type PackageMeasurementsResponse = {
-  packageName: string;
-  from: MeasuredPackageVersion;
-  to: MeasuredPackageVersion;
-  comparison: MeasurementComparison;
-};
+export type PackageMeasurementsResponse = typeof PackageMeasurementsResponseSchema.Type;
+
+// Boundary schemas for the measurements route. Each decoded value satisfies the public types above. Arrays are
+// `Schema.mutable` because the comparison producer appends to and sorts them while assembling the response.
+const AvailabilitySchema = Schema.Literals(['available', 'partial', 'unavailable']);
+
+const MutableStringsSchema = Schema.mutable(Schema.Array(Schema.String));
+
+const SizeComparisonSchema = Schema.Struct({
+  status: Schema.mutableKey(AvailabilitySchema),
+  from: Schema.NullOr(Schema.Number),
+  to: Schema.NullOr(Schema.Number),
+  delta: Schema.mutableKey(Schema.NullOr(Schema.Number)),
+  percent: Schema.mutableKey(Schema.NullOr(Schema.Number)),
+  reasons: MutableStringsSchema,
+});
+
+const AdvisoryGroupSchema = Schema.Struct({
+  ids: Schema.mutableKey(MutableStringsSchema),
+  aliases: Schema.mutableKey(MutableStringsSchema),
+  from: Schema.mutable(Schema.Array(PackageAdvisorySchema)),
+  to: Schema.mutable(Schema.Array(PackageAdvisorySchema)),
+});
+
+const AdvisoryGroupsSchema = Schema.mutable(Schema.Array(AdvisoryGroupSchema));
+
+const AdvisoryComparisonSchema = Schema.Struct({
+  status: AvailabilitySchema,
+  coverage: Schema.Struct({ from: AvailabilitySchema, to: AvailabilitySchema }),
+  reasons: MutableStringsSchema,
+  fromOnly: AdvisoryGroupsSchema,
+  both: AdvisoryGroupsSchema,
+  toOnly: AdvisoryGroupsSchema,
+  /** A one-sided match cannot be classified as exclusive when opposite-side coverage is incomplete. */
+  uncertain: AdvisoryGroupsSchema,
+});
+
+const SizeSourceSchema = Schema.NullOr(Schema.Literals(['registry', 'tarball']));
+
+const MeasurementComparisonSchema = Schema.Struct({
+  sizes: Schema.Struct({
+    unpacked: Schema.Struct({
+      ...SizeComparisonSchema.fields,
+      sources: Schema.Struct({ from: SizeSourceSchema, to: SizeSourceSchema }),
+    }),
+    bundle: Schema.Struct({
+      provider: Schema.Literal('bundlephobia'),
+      methodology: Schema.Literal('provider-estimate'),
+      minified: SizeComparisonSchema,
+      gzip: SizeComparisonSchema,
+    }),
+  }),
+  advisories: AdvisoryComparisonSchema,
+});
+
+const TarballSummarySchema = Schema.Struct({
+  status: PackageTarballSchema.fields.status,
+  reasons: Schema.Array(Schema.String),
+  url: Schema.String,
+  fileCount: Schema.Number,
+  changelogCount: Schema.Number,
+});
+
+const MeasuredPackageVersionSchema = Schema.Struct({
+  ...ParsedPackageVersionSchema.fields,
+  vulnerabilities: PackageVulnerabilitiesSchema,
+  bundleSize: PackageBundleSizeSchema,
+  tarball: TarballSummarySchema,
+});
+
+/**
+ * Decode boundary for the measurements route. Decode with `onExcessProperty: 'error'`: the per-file and changelog
+ * inventories are server-side only, so any excess key (such as `files` on a tarball summary) is a protocol violation.
+ */
+export const PackageMeasurementsResponseSchema = Schema.Struct({
+  packageName: Schema.String,
+  from: MeasuredPackageVersionSchema,
+  to: MeasuredPackageVersionSchema,
+  comparison: MeasurementComparisonSchema,
+});

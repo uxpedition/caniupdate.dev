@@ -116,7 +116,7 @@ const ParsedPackageModuleFormatSchema = Schema.Struct({
   typesVersions: Schema.optionalKey(Schema.Json),
 });
 
-const ParsedPackageVersionSchema = Schema.Struct({
+export const ParsedPackageVersionSchema = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
   description: Schema.optionalKey(Schema.String),

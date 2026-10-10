@@ -40,13 +40,13 @@ const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000] as const;
 
 const SUBSCRIPTION_DEADLINE = Duration.seconds(180);
 
-// oxlint-disable-next-line rules/no-unknown-returns -- DOM abort reasons are unreviewed values by contract; the synthesized AbortError below is the controlled form.
-const subscriptionAbortReason = (signal: AbortSignal): unknown => {
-  if (signal.reason !== undefined) return signal.reason;
+/** Preserves arbitrary DOM abort reasons without exposing them through a return contract. */
+const throwSubscriptionAbort = (signal: AbortSignal): never => {
+  if (signal.reason !== undefined) throw signal.reason;
   const abortError = new Error('The briefing subscription was aborted');
   abortError.name = 'AbortError';
 
-  return abortError;
+  throw abortError;
 };
 
 /** A submission the route refused with a sanitized 503 is resubmitted once, after this pause, before the query fails. */
@@ -312,7 +312,7 @@ export const waitForJobEvent = async (
   signal: AbortSignal,
   onStatus: (state: BriefingStatus) => void,
 ): Promise<PackageBriefing> => {
-  if (signal.aborted) throw subscriptionAbortReason(signal);
+  if (signal.aborted) throwSubscriptionAbort(signal);
 
   let highest = revision;
 
@@ -340,7 +340,8 @@ export const waitForJobEvent = async (
 
   return Effect.runPromise(boundedSubscription, { signal }).catch((cause: unknown) => {
     if (!signal.aborted) throw cause;
-    throw subscriptionAbortReason(signal);
+
+    return throwSubscriptionAbort(signal);
   });
 };
 

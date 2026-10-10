@@ -35,11 +35,16 @@ const findRequest = (requests: ReadonlyArray<{ url: string; body: string }>, sig
   return request;
 };
 
-// oxlint-disable-next-line rules/no-unknown-returns -- Test fixture passthrough mirrors live export bytes; the strict telemetry schema decodes immediately after.
-const parseJson = (body: string): unknown => {
+const decodeLogExport = (body: string) => {
   const value: unknown = JSON.parse(body);
 
-  return value;
+  return decodeTelemetryPayload('logs')(value);
+};
+
+const decodeTraceExport = (body: string) => {
+  const value: unknown = JSON.parse(body);
+
+  return decodeTelemetryPayload('traces')(value);
 };
 
 describe('runWithTelemetry', () => {
@@ -60,8 +65,8 @@ describe('runWithTelemetry', () => {
     );
 
     await Promise.all(lifetime);
-    const logs = decodeTelemetryPayload('logs')(parseJson(findRequest(requests, 'logs').body));
-    const traces = decodeTelemetryPayload('traces')(parseJson(findRequest(requests, 'traces').body));
+    const logs = decodeLogExport(findRequest(requests, 'logs').body);
+    const traces = decodeTraceExport(findRequest(requests, 'traces').body);
     const log = logs.resourceLogs[0]?.scopeLogs[0]?.logRecords[0];
     const span = traces.resourceSpans[0]?.scopeSpans[0]?.spans[0];
     expect(result.traceId).toMatch(/^[0-9a-f]{32}$/);
@@ -105,8 +110,8 @@ describe('runWithTelemetry', () => {
       failure,
     );
     await Promise.all(lifetime);
-    const logs = decodeTelemetryPayload('logs')(parseJson(findRequest(requests, 'logs').body));
-    const traces = decodeTelemetryPayload('traces')(parseJson(findRequest(requests, 'traces').body));
+    const logs = decodeLogExport(findRequest(requests, 'logs').body);
+    const traces = decodeTraceExport(findRequest(requests, 'traces').body);
 
     const expected = [
       { key: 'comparison.package.name', value: { stringValue: '@scope/package' } },
@@ -160,7 +165,7 @@ describe('runWithTelemetry', () => {
 
     const serialized = requests.map(({ body }) => body).join('\n');
     expect(serialized).not.toContain('collector-secret-provider-detail');
-    const traces = decodeTelemetryPayload('traces')(parseJson(findRequest(requests, 'traces').body));
+    const traces = decodeTraceExport(findRequest(requests, 'traces').body);
     const span = traces.resourceSpans[0]?.scopeSpans[0]?.spans[0];
     expect(span?.status).toEqual({ code: 2 });
     expect(span?.events).toEqual([]);
@@ -190,8 +195,8 @@ describe('runWithTelemetry', () => {
 
     await Promise.all(lifetime);
 
-    const logs = decodeTelemetryPayload('logs')(parseJson(findRequest(requests, 'logs').body));
-    const traces = decodeTelemetryPayload('traces')(parseJson(findRequest(requests, 'traces').body));
+    const logs = decodeLogExport(findRequest(requests, 'logs').body);
+    const traces = decodeTraceExport(findRequest(requests, 'traces').body);
     const exportedLog = logs.resourceLogs[0]?.scopeLogs[0]?.logRecords[0];
 
     const exportedSpans = traces.resourceSpans.flatMap((resource) =>
@@ -232,7 +237,7 @@ describe('runWithTelemetry', () => {
 
     await Promise.all(lifetime);
 
-    const traces = decodeTelemetryPayload('traces')(parseJson(findRequest(requests, 'traces').body));
+    const traces = decodeTraceExport(findRequest(requests, 'traces').body);
     const spans = traces.resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans));
     const root = spans.find(({ name }) => name === 'briefing.generation');
     const child = spans.find(({ name }) => name === 'briefing.generation.accepted');
@@ -286,7 +291,7 @@ describe('runWithTelemetry', () => {
     );
     await Promise.all(lifetime);
 
-    const traces = decodeTelemetryPayload('traces')(parseJson(findRequest(requests, 'traces').body));
+    const traces = decodeTraceExport(findRequest(requests, 'traces').body);
     const spans = traces.resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans));
     const root = spans.find(({ name }) => name === 'briefing.generation');
     const child = spans.find(({ name }) => name === 'briefing.generation.accepted');

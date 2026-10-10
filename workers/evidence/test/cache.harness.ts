@@ -10,7 +10,7 @@ import type { SqlStorageValue } from '@cloudflare/workers-types';
 import { Schema } from 'effect';
 import { Log, LogLevel, Miniflare } from 'miniflare';
 
-import type { CacheFixtureCommand } from './cache.worker';
+import { type CacheFixtureCommand, type CacheFixtureResponse, CacheFixtureResponseSchema } from './cache.protocol';
 
 const execFileAsync = promisify(execFile);
 
@@ -34,11 +34,15 @@ const InitializedResponseSchema = Schema.Struct({
 
 const isInitializedResponse = Schema.is(InitializedResponseSchema);
 
+const decodeCacheFixtureResponse = Schema.decodeSync(Schema.fromJsonString(CacheFixtureResponseSchema), {
+  errors: 'all',
+  onExcessProperty: 'error',
+});
+
 type WorkerModules = Record<string, { type: 'esm'; contents: string }>;
 
 export type EvidenceCacheFixture = {
-  // oxlint-disable-next-line rules/no-unknown-returns -- Fixture call results are runtime-owned; individual suites assert on their own command shapes.
-  call(command: CacheFixtureCommand): Promise<unknown>;
+  call(command: CacheFixtureCommand): Promise<CacheFixtureResponse>;
   exec(sql: string, ...bindings: SqlStorageValue[]): Promise<readonly Record<string, SqlStorageValue>[]>;
   restart(): Promise<void>;
   dispose(): Promise<void>;
@@ -110,9 +114,7 @@ export async function openEvidenceCacheFixture(
       name: objectName,
     });
 
-    // Fixture call results are runtime-owned; individual suites assert on their own command shapes.
-    // oxlint-disable-next-line rules/no-unknown-returns
-    const call = async (command: CacheFixtureCommand): Promise<unknown> => {
+    const call = async (command: CacheFixtureCommand): Promise<CacheFixtureResponse> => {
       const stub = namespace.get(namespace.idFromName(objectName));
 
       const response = await stub.fetch('https://cache.test/command', {
@@ -123,7 +125,7 @@ export async function openEvidenceCacheFixture(
 
       if (response.status !== 200) throw new Error(`Evidence cache fixture returned HTTP ${response.status}`);
 
-      return await response.json();
+      return decodeCacheFixtureResponse(await response.text());
     };
 
     if (options.initialize !== false && !isInitializedResponse(await call({ operation: 'initialize' }))) {

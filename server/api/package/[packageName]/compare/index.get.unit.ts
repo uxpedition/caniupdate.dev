@@ -1,10 +1,12 @@
 import { mockEvent } from 'h3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { RegistryVersionManifest } from '#shared/comparison/package/package.defs';
+
 import handler from './index.get';
 
-// oxlint-disable-next-line rules/no-unknown-returns -- The mock serves hand-rolled registry manifests the route's strict manifest schema decodes itself.
-const registry = { json: vi.fn<(path: string) => Promise<unknown>>() };
+// Registry stub serving version manifests; the route still decodes each response through its strict manifest schema.
+const registry = { json: vi.fn<(path: string) => Promise<RegistryVersionManifest>>() };
 
 const manifest = (version: string) => ({
   name: 'minimist',
@@ -110,7 +112,7 @@ describe('declaration comparison', () => {
   });
 
   it('compares declarations even when evidence providers are unavailable', async () => {
-    registry.json.mockImplementation(async (path) => {
+    registry.json.mockImplementation(async (path): Promise<RegistryVersionManifest> => {
       const old = path.endsWith('/1.0.0');
 
       return {

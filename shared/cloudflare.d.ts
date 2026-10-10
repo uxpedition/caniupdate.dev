@@ -4,6 +4,11 @@ import type { PackageEvidenceNamespace } from './comparison/evidence/packageEvid
 
 type DisposableBriefingServiceResult = BriefingServiceResult & { [Symbol.dispose](): void };
 
+/** Native submission object with Cloudflare's documented lifecycle hook. */
+export type BriefingServiceBinding = {
+  submit(packet: BriefingEvidence): Promise<DisposableBriefingServiceResult>;
+};
+
 // Nitro's dev binding proxy and built Worker attach this platform context to each request. The Nuxt Worker owns no
 // inference and no store: the private evidence object builds the bounded packet, and the private briefing service
 // entrypoint owns generation, D1, and the socket the browser follows.
@@ -12,10 +17,7 @@ declare module 'h3' {
     cloudflare?: {
       readonly env?: {
         readonly PACKAGE_EVIDENCE?: PackageEvidenceNamespace;
-        readonly BRIEFING_SERVICE?: {
-          /** Native submission object with Cloudflare's documented lifecycle hook. */
-          submit(packet: BriefingEvidence): Promise<DisposableBriefingServiceResult>;
-        };
+        readonly BRIEFING_SERVICE?: BriefingServiceBinding;
         /** Private OTLP endpoint supplied only to the Nuxt Worker. */
         readonly NUXT_OTEL_ENDPOINT?: string;
         /** JSON-encoded private OTLP authentication headers supplied only to the Nuxt Worker. */

@@ -6,12 +6,15 @@ import { FetchHttpClient } from 'effect/http';
 import { pack } from 'tar-stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { RegistryVersionManifest } from '#shared/comparison/package/package.defs';
+
 import { ArchiveCapacityError } from '../../workers/evidence/admission';
 import { getComparisonFacts, getComparisonMeasurements } from './collect';
 import type { ComparisonEvidenceCache, ComparisonEvidenceCacheOptions } from './evidence/services';
 
-// oxlint-disable-next-line rules/no-unknown-returns -- Test registry stub returning arbitrary JSON responses; the collector decodes each endpoint.
-const registry = { json: vi.fn<(path: string) => Promise<unknown>>() };
+// Registry stub serving version manifests; the collector still decodes each response through
+// RegistryVersionManifestSchema.
+const registry = { json: vi.fn<(path: string) => Promise<RegistryVersionManifest>>() };
 
 const manifest = (version: string) => ({
   name: 'minimist',
