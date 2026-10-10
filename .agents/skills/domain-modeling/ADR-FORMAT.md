@@ -14,13 +14,9 @@ Keep superseded ADRs with their status and a link to the replacement. Follow exi
 
 ## When to offer an ADR
 
-All three of these must be true:
+Every expensive-to-reverse decision deserves a record. Costly reversal alone is sufficient; surprisingness and competing alternatives are not additional prerequisites. Significant non-obvious choices, hidden constraints, and deliberate deviations can also warrant an ADR even when reversal is inexpensive.
 
-1. **Hard to reverse**: the cost of changing your mind later is meaningful
-2. **Surprising without context**: a future reader will look at the code and wonder "why on earth did they do it this way?"
-3. **The result of a real trade-off**: there were genuine alternatives and you picked one for specific reasons
-
-If a decision is easy to reverse, skip it: you'll just reverse it. If it's not surprising, nobody will wonder why. If there was no real alternative, there's nothing to record beyond "we did the obvious thing."
+Capture the context, rationale, consequences, and alternatives actually considered. An obvious choice can still carry lock-in worth explaining. If alternatives or historical reasoning are unknown, say so rather than inventing a trade-off. Cheap, self-evident choices usually need no separate record. Eligibility does not authorize publication.
 
 ### What qualifies
 

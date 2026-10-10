@@ -44,7 +44,7 @@ These are engineering operations, not general business operations. Procedures be
 
 For example, the briefing document explains how the RPC result is validated and disposed today. Its ADR explains why native object RPC was chosen over JSON-text transport. Link these accounts instead of duplicating a full contract in the ADR.
 
-ADRs and RFCs preserve decision and proposal history. All other published documents are living guidance: update them as the product, implementation, and procedures change, rather than append superseded instructions or dated investigation logs. A decision is a choice under the knowledge and constraints available when it was made, not a permanent ruling. Within ADRs and RFCs, distinguish source-backed behavior, historical reports or recollections, present-day choices, and unknowns. Accepting a proposal does not prove it has been implemented.
+ADRs and RFCs preserve decision and proposal history. All other published documents are living guidance: update them as the product, implementation, and procedures change, rather than append superseded instructions or dated investigation logs. A decision is a choice under the knowledge and constraints available when it was made, not a permanent ruling. Every expensive-to-reverse decision warrants a record, even when the choice seems obvious; surprisingness is not an additional eligibility requirement. Within ADRs and RFCs, distinguish source-backed behavior, historical reports or recollections, present-day choices, and unknowns. Accepting a proposal does not prove it has been implemented.
 
 ## Proposals and local agent work
 
@@ -52,7 +52,7 @@ Engineering proposals for durable review belong in `docs/engineering/rfcs/`. RFC
 
 Read the [Drizzle database-layer RFC](engineering/rfcs/0001-drizzle-database-layer.md) for proposal history and acceptance checks, and the [server module ownership RFC](engineering/rfcs/0002-server-module-ownership.md) for ownership rationale. Proposal status belongs in each RFC. For current database behavior, use the [database ADR](engineering/adrs/drizzle-database-layer.md) and [development procedures](engineering/ops/development.md#how-do-i-change-or-apply-the-database-schema); for current module ownership, use the [system overview](engineering/overview.md) and source.
 
-`docs/superpowers/` is ignored local working material for agent designs and execution plans. It is not part of the published documentation, and current documents must not depend on files there.
+AI idea briefs, specs, plans, and execution checklists are temporary working material, stored in a named OS-temporary directory outside the repository and never committed. They may snapshot commands and context for execution; published documentation must not depend on them. Extract important proposals, decisions, and implemented knowledge into the maintained RFC, ADR, current-system, or operations document rather than committing the agent's working artifact. Existing ignored `docs/superpowers/` material is not published documentation or a destination for new agent working artifacts.
 
 ## Retired material
 

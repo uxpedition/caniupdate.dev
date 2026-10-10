@@ -2,6 +2,12 @@
 
 **Can I update?** compares two versions of one public npm package, not a consumer project. Missing evidence means uncertainty, not “unchanged” or “safe”; AI notes supplement facts, never gate them.
 
+## Skill routing
+
+Before any response or task action on a new user task—including clarifying questions, planning, or codebase exploration—read [using-agent-skills](.agents/skills/using-agent-skills/SKILL.md) and follow its mandatory routing guidance. Read the applicable skills before performing the work they govern. Re-evaluate routing when the task's scope or development phase changes.
+
+Reuse skills already loaded in the current context; reload after context loss. Respect user-only invocation restrictions and existing authorization boundaries. Use the harness's skill loader when available, otherwise read the local files directly.
+
 ## Navigation
 
 - **Architecture or cross-runtime changes:** read [the system overview](docs/engineering/overview.md). `app/` owns presentation and reactive queries; `server/api/` owns public handlers; `server/comparison/` owns domain workflows; `server/httpDependencies/` owns provider I/O; `shared/**/*.defs.ts` owns cross-runtime contracts. Route-local helpers belong in `_internals/` directories excluded from Nitro routing.

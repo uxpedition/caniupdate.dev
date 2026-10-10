@@ -64,15 +64,15 @@ Load `grill-with-artifacts` and its selected output guidance. Carry forward the 
 - **Boundary**: included concerns and explicitly deferred work.
 - **Endpoint**: enough understanding or decisions to produce that output; selecting a winner is not always required.
 
-Present the brief for confirmation unless the user's explicit brief already confirms it. Ask one focused question at a time in dependency order. Investigate facts yourself; recommendations during the interview require the user's request for advice. Complete the agreed slice, not every possible branch.
+Present the brief for confirmation unless the user's explicit brief already confirms it. Ask focused, independent frontier questions together; defer questions that depend on unresolved answers. Investigate facts yourself; recommendations during the interview require the user's request for advice. Complete the agreed slice, not every possible branch.
 
 Use supporting skills within that brief:
 
 - **New or sharper domain term?** Load `domain-modeling`, capture the resolved wording in the conversation, and propose a glossary edit for review. Write only with authorization.
-- **Load-bearing reason for rejecting a candidate?** Offer an ADR only when the choice is hard to reverse, surprising without context, and involves a real trade-off. Skip ephemeral deferrals and self-evident reasons.
+- **Consequential adopted or rejected choice?** Offer an ADR whenever reversal would be expensive; obviousness does not disqualify it. Record other significant non-obvious constraints when useful. Skip ephemeral deferrals; follow `domain-modeling`'s decision-record guidance.
 - **Alternative interfaces requested?** Use `codebase-design`'s `DESIGN-IT-TWICE.md` within the confirmed scope. Compare depth, locality, leverage, and seam placement; recommend only if asked.
 
-At the endpoint, draft the selected output from established conclusions and visible unknowns. Get review before writing or publishing unless explicitly authorized already. Exploration and accepted advice do not authorize implementation, glossary writes, ADR publication, or unrelated migrations.
+At the endpoint, restate established conclusions, visible unknowns, constraints, and exclusions; obtain `grilling`'s explicit yes and end the interview turn. Draft the selected output only when the user subsequently requests it, following the wrapper's output contract. Get review before writing or publishing unless explicitly authorized already. Exploration and accepted advice do not authorize implementation, glossary writes, ADR publication, or unrelated migrations.
 
 ## Common mistakes
 

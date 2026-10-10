@@ -13,21 +13,23 @@ Keep these categories distinct:
 
 User explanations establish intent, not automatically implementation facts. Check claims against code when relevant. Surface meaningful contradictions without silently choosing a version. An unfamiliar term warrants clarification when it affects the artifact, not a mandatory glossary debate.
 
-Apply artifact templates only when the agreed endpoint is reached or the user explicitly requests a draft. A request for advice is an interview turn, even when its eventual output is a PRD or another artifact. Its response consists of facts, alternatives and consequences, requested advice, and the pending choice—not an artifact draft or proposed requirements.
+For an interview, reach the agreed endpoint, obtain `grilling`'s explicit yes, deliver confirmed understanding, and end that turn before downstream drafting. Apply artifact templates when the user subsequently requests the output. An explicit standalone request to draft from already-established material needs no new interview. A request for advice is an interview turn, even when its eventual output is a PRD or another artifact. Its response consists of facts, alternatives and consequences, requested advice, and the pending choice—not an artifact draft or proposed requirements.
 
 Draft from established material. Show the proposed destination and request review before writing or migrating files, posting issues, or publishing documents. Explicit permission to write a settled artifact is sufficient; unresolved content must remain labelled rather than filled with invented answers. An interview does not authorize code changes.
 
+AI idea briefs, specs, plans, and execution checklists are temporary working material, stored outside the repository in the task's named OS-temporary working directory and never committed. They may cache commands and context for execution. A durable RFC, ADR, product requirement, issue, or current-system document is a separately authorized publication: extract the important proposal, decision, requirement, or implemented knowledge into the repository's maintained format rather than committing the working artifact. Temporary design exploration is not automatically an RFC.
+
 ## Quick routing
 
-| User's purpose | Mode | Usual artifact |
-| --- | --- | --- |
-| Understand or explore | Explanation | In-chat synthesis |
-| Define a product change | PRD | Repository's PRD format |
-| Specify actionable work | Issue | Repository issue template or in-chat issue draft |
-| Explain the current system | System documentation | Relevant document under `docs/` |
-| Work out an engineering solution | Design | Repository's design format |
-| Propose a change for discussion | RFC | `docs/engineering/rfcs/` |
-| Preserve a settled significant decision | ADR | `docs/engineering/adrs/` |
+| User's purpose                          | Mode                 | Usual artifact                                   |
+| --------------------------------------- | -------------------- | ------------------------------------------------ |
+| Understand or explore                   | Explanation          | In-chat synthesis                                |
+| Define a product change                 | PRD                  | Repository's PRD format                          |
+| Specify actionable work                 | Issue                | Repository issue template or in-chat issue draft |
+| Explain the current system              | System documentation | Relevant document under `docs/`                  |
+| Work out an engineering solution        | Design               | Repository's design format                       |
+| Propose a change for discussion         | RFC                  | `docs/engineering/rfcs/`                         |
+| Preserve a settled significant decision | ADR                  | `docs/engineering/adrs/`                         |
 
 Intent determines the mode, not request size. One session has one primary output. Related artifacts can be linked or parked as later work; do not automatically turn a PRD into an issue backlog, RFC, and ADR.
 
@@ -73,7 +75,8 @@ docs/
     adrs/<adr-name>.md    What significant decisions were made, and why?
     ops/                  How do I run, deploy, diagnose, and recover it?
     rfcs/                 What engineering changes are proposed for discussion?
-  superpowers/            Ignored local agent designs and execution plans
+
+OS temporary directory    AI idea briefs, specs, plans, and execution checklists; never committed
 ```
 
 Read [docs/CONTEXT.md](../../../docs/CONTEXT.md) before choosing destinations. In this repository, current-system explanations use `docs/engineering/<document-name>.md`; settled decision records use `docs/engineering/adrs/<adr-name>.md`; development, deployment, release, and recovery procedures use `docs/engineering/ops/<document-name>.md`. Engineering is the technical umbrella: explain current contracts in direct documents, preserve decision history in ADRs, and maintain executable procedures in ops, linked rather than duplicated. Use descriptive filenames consistent with the existing documents. Folder organization is explained in `docs/CONTEXT.md`, not a second documentation README.
@@ -82,7 +85,7 @@ Inspect relevant existing docs and notes before drafting. Classify sections, not
 
 Document behaviour, rationale where supported, limitations, and open questions. Create only useful documents. README remains an introduction and quick start, not a duplicate architecture manual. ADRs and RFCs preserve historical decisions and proposals; all other published documentation is living guidance updated as behavior and procedures change. Do not append obsolete commands or investigation logs to current-system or operations documents.
 
-Migrate only after replacement content is approved. Update affected links and remove competing current guidance. Retain context needed to understand current decisions in the relevant documents, labelled as historical where appropriate; delete retired reports and redundant execution material. Git preserves their history; do not create an archive copy. `docs/superpowers/` is ignored local agent working material, not published documentation. Move proposals that need durable review into `docs/engineering/rfcs/`, not their execution checklists. Implementation problems discovered during documentation are findings, not permission to fix code.
+Migrate only after replacement content is approved. Update affected links and remove competing current guidance. Retain context needed to understand current decisions in the relevant documents, labelled as historical where appropriate; delete retired reports and redundant execution material. Git preserves their history; do not create an archive copy. Keep AI working artifacts in the task's OS-temporary directory outside the repository; never commit them. Extract proposals needing durable review into `docs/engineering/rfcs/`, leaving execution checklists temporary. Implementation problems discovered during documentation are findings, not permission to fix code.
 
 ## Design
 
@@ -98,7 +101,7 @@ Acceptance establishes agreement, not shipment. Keep rejected and withdrawn RFCs
 
 ## ADR
 
-Use `docs/engineering/adrs/` for settled decisions worth preserving: costly to reverse, surprising without context, and involving genuine alternatives. Otherwise record the conclusion in the primary artifact.
+Use `docs/engineering/adrs/` for settled decisions worth preserving. Every expensive-to-reverse decision warrants a record, even when obvious; significant non-obvious choices and hidden constraints can also qualify. Follow `domain-modeling`'s decision-record guidance. Otherwise record the conclusion in the primary artifact.
 
 Use descriptive filenames matching the existing repository convention, such as `evidence-cache-lifetimes.md`; do not introduce numbering alongside the existing unnumbered records. Include status, context, decision, considered alternatives, consequences, and evidence or related links. State whether rationale is historical or a present-day explanation when that distinction matters. If the original reason is unknown, say so.
 

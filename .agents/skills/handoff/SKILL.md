@@ -1,13 +1,13 @@
 ---
 name: handoff
 description: Compact the current conversation into a handoff document for another agent to pick up.
-argument-hint: "What will the next session be used for?"
+argument-hint: 'What will the next session be used for?'
 disable-model-invocation: true
 ---
 
 Write a handoff document summarising the current conversation so a fresh agent can continue the work. Save to the temporary directory of the user's OS - not the current workspace.
 
-Include a "suggested skills" section in the document, naming which skills the next agent should call the Skill tool for.
+Include a "suggested skills" section naming which skills the next agent should load through its runtime's skill mechanism or read directly; do not assume a tool named `Skill` exists. Preserve the exact OS-temporary working-directory path, accepted scope, approval state, task status, and verification outcomes so the next session can resume without guessing. This handoff and all referenced AI working artifacts are never committed.
 
 Do not duplicate content already captured in other artifacts (specs, plans, ADRs, issues, commits, diffs). Reference them by path or URL instead.
 

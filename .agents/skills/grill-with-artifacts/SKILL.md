@@ -10,9 +10,9 @@ Build shared understanding of one engineering topic and produce the output the u
 
 ## Required composition
 
-Load `grilling` using the runtime's skill mechanism (or read `../grilling/SKILL.md`), then read [OUTPUTS.md](OUTPUTS.md) for the selected output mode. Before choosing a repository artifact destination, read [docs/CONTEXT.md](../../../docs/CONTEXT.md): current-system documents live directly under `docs/engineering/`, ADRs under `docs/engineering/adrs/`, engineering proposals under `docs/engineering/rfcs/`, and development, deployment, release, and recovery procedures under `docs/engineering/ops/`. `docs/superpowers/` is ignored local agent working material; retired reports are deleted, with history retained in Git. Invoke skills by loading their instructions; do not assume a tool literally named `Skill` exists.
+Load `grilling` using the runtime's skill mechanism (or read `../grilling/SKILL.md`), then read [OUTPUTS.md](OUTPUTS.md) for the selected output mode. Before choosing a repository artifact destination, read [docs/CONTEXT.md](../../../docs/CONTEXT.md): current-system documents live directly under `docs/engineering/`, ADRs under `docs/engineering/adrs/`, engineering proposals under `docs/engineering/rfcs/`, and development, deployment, release, and recovery procedures under `docs/engineering/ops/`. AI idea briefs, specs, plans, and execution checklists belong in an OS-temporary working directory outside the repository and are never committed. Retired published reports are deleted, with history retained in Git. Invoke skills by loading their instructions; do not assume a tool literally named `Skill` exists.
 
-Use `grilling` for its decision tree, dependency-aware rounds, and separation of retrievable facts from user decisions. **This wrapper replaces its whole-frontier questioning, automatic recommendations, and whole-tree completion rules with the session contract below.** Facts are the agent's work; use available tools and delegate only when the runtime and task warrant it.
+Use `grilling` for intent hypotheses, its decision tree, dependency-ready rounds, separation of retrievable facts from user decisions, and explicit-confirmation gate. **This wrapper bounds the tree to the confirmed slice and replaces automatic engineering recommendations with the invitation policy below; independent frontier questions still appear together.** Facts are the agent's work; use available tools and delegate only when the runtime and task warrant it.
 
 ## 1. Set the scope
 
@@ -37,7 +37,7 @@ An explicit user-provided brief counts as confirmation. Output follows user inte
 
 ## 2. Interview within the brief
 
-Ask one focused question at a time, in dependency order. There is no question quota. Number questions if useful, with enough context to answer and neutral alternatives where helpful.
+Ask focused questions in dependency-ready rounds. Show independent questions together; defer questions whose framing depends on an unanswered question. There is no question quota. Number questions if useful, with enough context to answer and neutral alternatives where helpful.
 
 For intent and trade-offs, hear the user's thinking first. **Recommendations are offered only when the user asks for advice or help.** An explanation of verified facts needs no such invitation. If the user does not know, investigate facts or explain consequences; keep undecided choices open. A help response contains the relevant facts, alternatives and consequences, and requested recommendation; the choice remains pending until the user adopts it. Return to that pending choice rather than drafting an artifact from unaccepted advice. Accepting advice now does not establish historical rationale.
 
@@ -45,7 +45,7 @@ Maintain a bounded decision tree: questions must serve the confirmed endpoint. P
 
 ## 3. Produce the selected output
 
-At the endpoint, summarize established conclusions and unresolved points, then draft according to the selected mode in OUTPUTS.md. Completion is agreement on this slice, not visiting every branch of the original request. Future slices are optional, not an automatic next round.
+At the endpoint, restate established conclusions, constraints, exclusions, and unresolved points, then obtain the explicit yes required by `grilling`. Completion is confirmed agreement on this slice, not visiting every branch of the original request. Deliver the confirmed understanding and end the interview turn. Draft according to the selected mode in OUTPUTS.md only when the user subsequently requests the output; future slices are optional, not an automatic next round.
 
 Get review before writing or publishing artifacts unless explicitly authorized already. The interview does not authorize implementation or unrelated migrations.
 
