@@ -1,3 +1,5 @@
+import { Schema } from 'effect';
+
 import { decodeTelemetryHeaders } from '#shared/telemetry/telemetryConfig.defs';
 
 import {
@@ -31,16 +33,21 @@ const classifyTelemetryPath = (pathname: string): WorkerTelemetryRoute | undefin
   return 'invalid';
 };
 
-const telemetryConfigFromEnvironment = (environment: object) => {
-  const enabled =
-    'NUXT_PUBLIC_TELEMETRY_ENABLED' in environment && environment.NUXT_PUBLIC_TELEMETRY_ENABLED === 'true';
+/** Environment-owned telemetry knobs; each stays unknown until the guard or header decoder confirms it. */
+type TelemetryEnvironment = {
+  readonly NUXT_PUBLIC_TELEMETRY_ENABLED?: unknown;
+  readonly NUXT_OTEL_ENDPOINT?: unknown;
+  readonly NUXT_OTEL_HEADERS?: unknown;
+};
 
-  const endpoint =
-    'NUXT_OTEL_ENDPOINT' in environment && typeof environment.NUXT_OTEL_ENDPOINT === 'string'
-      ? environment.NUXT_OTEL_ENDPOINT
-      : '';
+const isScalarString = Schema.is(Schema.String);
 
-  const headers = 'NUXT_OTEL_HEADERS' in environment ? decodeTelemetryHeaders(environment.NUXT_OTEL_HEADERS) : {};
+const telemetryConfigFromEnvironment = (environment: TelemetryEnvironment) => {
+  const enabled = environment.NUXT_PUBLIC_TELEMETRY_ENABLED === 'true';
+
+  const endpoint = isScalarString(environment.NUXT_OTEL_ENDPOINT) ? environment.NUXT_OTEL_ENDPOINT : '';
+
+  const headers = decodeTelemetryHeaders(environment.NUXT_OTEL_HEADERS);
 
   return { enabled: enabled && endpoint.trim() !== '', endpoint, headers };
 };

@@ -244,7 +244,12 @@ const requestPathFromEvent = (event: EventContainer, request: LegacyNodeRequest)
   return isScalarString(event.path) ? event.path : undefined;
 };
 
-const createLegacyWebRequest = (event: EventContainer, request: LegacyNodeRequest, method: string, path: string): Request => {
+const createLegacyWebRequest = (
+  event: EventContainer,
+  request: LegacyNodeRequest,
+  method: string,
+  path: string,
+): Request => {
   const headers = legacyHeaders(event.headers);
   const url = nodeRequestURL(headers, request, path);
 

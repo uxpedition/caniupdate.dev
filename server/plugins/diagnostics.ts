@@ -1,14 +1,18 @@
+import { Schema } from 'effect';
+
 import { defineNitroPlugin } from 'nitropack/runtime';
 
 import { createServerDiagnosticSend, reportServerDiagnostic } from '#shared/telemetry/telemetryDiagnostics';
 
 import { readServerTelemetryConfig } from '../telemetry/runtimeConfig';
 
-const errorStatusCode = (error: unknown): number | undefined => {
-  if (!(error instanceof Error)) return undefined;
-  const status: unknown = Reflect.get(error, 'statusCode');
+const isScalarNumber = Schema.is(Schema.Number);
 
-  return typeof status === 'number' ? status : undefined;
+const errorStatusCode = (cause: unknown): number | undefined => {
+  if (!(cause instanceof Error)) return undefined;
+  const status: unknown = Reflect.get(cause, 'statusCode');
+
+  return isScalarNumber(status) ? status : undefined;
 };
 
 /** Nitro-owned unhandled diagnostics: rendered handler failures, provider failures and their outcomes. */

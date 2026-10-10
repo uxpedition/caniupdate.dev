@@ -1,5 +1,6 @@
-import { Schema } from 'effect';
+import { Result, Schema } from 'effect';
 import type { OtlpLogger, OtlpTracer } from 'effect/observability';
+import type { OtlpAttribute } from './telemetry.schema';
 
 import {
   HexSpanIdSchema,
@@ -95,22 +96,24 @@ const RESOURCE_VALUE_VALIDATORS: Readonly<Record<string, (value: string) => bool
   'deployment.environment.name': isTelemetryEnvironment,
 };
 
+const decodeNativeValueString = Schema.decodeUnknownResult(Schema.Struct({ stringValue: Schema.String }), {
+  errors: 'all',
+  onExcessProperty: 'ignore',
+});
+
 const projectedDroppedCount = (original: number | undefined, inputCount: number, outputCount: number): number => {
   const initial =
-    typeof original === 'number' && Number.isInteger(original) && original >= 0
+    original !== undefined && Number.isInteger(original) && original >= 0
       ? Math.min(original, MAX_DROPPED_COUNT)
       : 0;
 
   return Math.min(MAX_DROPPED_COUNT, initial + inputCount - outputCount);
 };
 
-const readStringValue = (value: unknown): string | undefined => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+const readStringValue = (value: OtlpAttribute['value']): string | undefined => {
+  const envelope = Result.getOrUndefined(decodeNativeValueString(value));
 
-  if (!('stringValue' in value)) return undefined;
-  const candidate = value.stringValue;
-
-  return typeof candidate === 'string' ? candidate : undefined;
+  return envelope === undefined ? undefined : envelope.stringValue;
 };
 
 const validatedProjectFieldValue = (
@@ -298,8 +301,8 @@ const projectLogRecord = (record: NativeLogRecord): NativeLogRecord | undefined 
 
   if (body === undefined || !isTelemetryLogMessage(body) || !hasValidLogSeverity(record)) return undefined;
   const attributes = projectAttributes(record.attributes);
-  const traceId = typeof record.traceId === 'string' && isHexTraceId(record.traceId) ? record.traceId : undefined;
-  const spanId = typeof record.spanId === 'string' && isHexSpanId(record.spanId) ? record.spanId : undefined;
+  const traceId = record.traceId !== undefined && isHexTraceId(record.traceId) ? record.traceId : undefined;
+  const spanId = record.spanId !== undefined && isHexSpanId(record.spanId) ? record.spanId : undefined;
 
   return {
     timeUnixNano: record.timeUnixNano,

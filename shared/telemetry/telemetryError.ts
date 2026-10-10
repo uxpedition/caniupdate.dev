@@ -1,3 +1,7 @@
+import { Schema } from 'effect';
+
+const isScalarString = Schema.is(Schema.String);
+
 const ERROR_TYPES: Readonly<Record<string, true>> = {
   Error: true,
   TypeError: true,
@@ -58,7 +62,7 @@ const readErrorString = (error: Error, key: 'name' | 'message' | 'stack'): strin
   try {
     const value: unknown = Reflect.get(error, key);
 
-    return typeof value === 'string' ? value : undefined;
+    return isScalarString(value) ? value : undefined;
   } catch {
     return undefined;
   }
@@ -110,22 +114,22 @@ export const sanitizeErrorStack = (stack: string): string | undefined => {
 };
 
 /** Canonical sanitized attribute set for one diagnostic; unreviewed sources export nothing. */
-export const sanitizedErrorAttributes = (source: string, error: unknown): Record<string, string> | undefined => {
+export const sanitizedErrorAttributes = (source: string, cause: unknown): Record<string, string> | undefined => {
   const safeSource = sanitizeErrorAttribute('error.source', source);
 
   if (safeSource === undefined) return undefined;
   const attributes: Record<string, string> = { 'error.source': safeSource };
 
-  if (!(error instanceof Error)) {
+  if (!(cause instanceof Error)) {
     attributes['exception.type'] = 'Error';
 
     return attributes;
   }
 
-  const safeType = sanitizeErrorAttribute('exception.type', readErrorString(error, 'name') ?? 'Error');
+  const safeType = sanitizeErrorAttribute('exception.type', readErrorString(cause, 'name') ?? 'Error');
 
   if (safeType !== undefined) attributes['exception.type'] = safeType;
-  const message = readErrorString(error, 'message');
+  const message = readErrorString(cause, 'message');
 
   if (message !== undefined) {
     const safeMessage = sanitizeErrorAttribute('exception.message', message);
@@ -133,7 +137,7 @@ export const sanitizedErrorAttributes = (source: string, error: unknown): Record
     if (safeMessage !== undefined) attributes['exception.message'] = safeMessage;
   }
 
-  const safeStack = sanitizeErrorStack(readErrorString(error, 'stack') ?? '');
+  const safeStack = sanitizeErrorStack(readErrorString(cause, 'stack') ?? '');
 
   if (safeStack !== undefined) attributes['exception.stacktrace'] = safeStack;
 

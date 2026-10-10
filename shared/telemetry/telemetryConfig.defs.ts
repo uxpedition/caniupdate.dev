@@ -4,44 +4,47 @@ export const TelemetryRuntimeConfigSchema = Schema.Struct({ enabled: Schema.Bool
 
 export type TelemetryRuntimeConfig = typeof TelemetryRuntimeConfigSchema.Type;
 
-const decodeRuntimeConfig = Schema.decodeUnknownSync(TelemetryRuntimeConfigSchema, {
+export const decodeTelemetryRuntimeConfig = Schema.decodeUnknownSync(TelemetryRuntimeConfigSchema, {
   errors: 'all',
   onExcessProperty: 'error',
 });
 
-export const decodeTelemetryRuntimeConfig = (value: unknown): TelemetryRuntimeConfig => decodeRuntimeConfig(value);
+const HeaderRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
 
-const decodeHeaderRecord = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown), { errors: 'all' });
+type HeaderRecord = typeof HeaderRecordSchema.Type;
 
-const telemetryHeaderRecord = (input: unknown): Readonly<Record<string, unknown>> | undefined => {
-  let value = input;
+const decodeHeaderRecord = Schema.decodeUnknownSync(HeaderRecordSchema, { errors: 'all' });
 
-  if (typeof value === 'string') {
-    if (value.trim() === '') return undefined;
+const isScalarString = Schema.is(Schema.String);
 
-    try {
-      const parsed: unknown = JSON.parse(value);
-      value = parsed;
-    } catch {
-      return undefined;
-    }
-  }
-
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+/** Parse JSON text into a header record; empty or malformed text yields nothing. */
+const parseHeaderRecord = (text: string): HeaderRecord | undefined => {
+  if (text.trim() === '') return undefined;
 
   try {
-    return decodeHeaderRecord(value);
+    const parsed: unknown = JSON.parse(text);
+
+    return decodeHeaderRecord(parsed);
   } catch {
     return undefined;
   }
 };
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Exported worker/config header decode boundary; the input is environment-owned until parsed above.
 export const decodeTelemetryHeaders = (input: unknown): Record<string, string> => {
-  const record = telemetryHeaderRecord(input);
+  const candidate = isScalarString(input) ? parseHeaderRecord(input) : input;
+
+  let record: HeaderRecord | undefined;
+
+  try {
+    record = decodeHeaderRecord(candidate);
+  } catch {
+    record = undefined;
+  }
 
   return record === undefined
     ? {}
     : Object.fromEntries(
-        Object.entries(record).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+        Object.entries(record).filter((entry): entry is [string, string] => isScalarString(entry[1])),
       );
 };

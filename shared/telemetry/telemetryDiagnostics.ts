@@ -33,12 +33,12 @@ const markServerDiagnosticOwned = (event: H3Event, error: Error): boolean => {
 };
 
 /** Telemetry recursion, expected client outcomes and aborted requests are not diagnostics. */
-export const isServerDiagnosticReportable = (event: H3Event, error: unknown, status: number | undefined): boolean => {
+export const isServerDiagnosticReportable = (event: H3Event, cause: unknown, status: number | undefined): boolean => {
   if (new URL(event.path ?? '/', 'http://localhost').pathname.startsWith('/api/telemetry')) return false;
 
   if (status !== undefined && status < 500) return false;
 
-  if (error instanceof Error && error.name === 'AbortError') return false;
+  if (cause instanceof Error && cause.name === 'AbortError') return false;
 
   return true;
 };
