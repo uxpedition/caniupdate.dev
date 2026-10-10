@@ -1,11 +1,32 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "import", "unicorn"],
-  "ignorePatterns": ["**/.*/**", "node_modules", ".nuxt", ".output", ".nitro", "dist"],
+  "plugins": ["typescript", "import", "unicorn", "oxc"],
+  "jsPlugins": ["./scripts/tools/oxlint/index.ts", "./scripts/tools/oxlint/effect/index.ts"],
+  "ignorePatterns": ["**/.*/**", "node_modules", ".nuxt", ".output", ".nitro", "dist", "scripts/tools/oxlint/**"],
   "options": {
     "typeAware": true
   },
   "rules": {
+    "rules/no-array-filter-map": "warn",
+    "rules/no-conditional-empty-object-spread": "warn",
+    "rules/no-known-value-widening": "warn",
+    "rules/no-live-suffix": "warn",
+    "rules/no-object-parameters": "warn",
+    "rules/no-reduce-accumulator-copy": "warn",
+    "rules/no-reflect-get": "warn",
+    "rules/no-runtime-typeof": "warn",
+    "rules/no-unknown-parameters": "warn",
+    "rules/no-unknown-returns": "warn",
+    "rules/no-unknown-type-aliases": "warn",
+    "rules/no-unsafe-dictionary-type": "warn",
+    "rules/no-widen-then-assert": "warn",
+    "rules/require-readable-spacing": "warn",
+    "effect/no-manual-effect-error-tag": "warn",
+    "effect/no-manual-tag-comparison": "warn",
+    "effect/no-manual-tagged-construction": "warn",
+    "effect/no-service-constructor-imports": "warn",
+    "effect/prefer-effect-match": "warn",
+    "oxc/no-accumulating-spread": "warn",
     "no-unused-vars": [
       "error",
       {

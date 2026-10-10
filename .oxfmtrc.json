@@ -1,6 +1,15 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["**/.*/**", "node_modules", ".nuxt", ".output", ".nitro", "dist", "docs/superpowers"],
+  "ignorePatterns": [
+    "**/.*/**",
+    "node_modules",
+    ".nuxt",
+    ".output",
+    ".nitro",
+    "dist",
+    "docs/superpowers",
+    "scripts/tools/oxlint/**"
+  ],
   "sortImports": true,
   "printWidth": 120,
   "semi": true,
