@@ -1,4 +1,4 @@
-import { Effect, Tracer } from 'effect';
+import { Effect, Schema, Tracer } from 'effect';
 import {
   createError,
   defineEventHandler,
@@ -26,30 +26,43 @@ import { browserBriefingSocketUrl } from './_internals/socketUrl';
 
 type SubmissionFailureStatus = 'Evidence service unavailable' | 'Briefing service unavailable';
 
+// The RPC envelope is unknown until the copy helpers below flatten its own keys for the strict protocol decoder.
+// oxlint-disable-next-line rules/no-unknown-returns -- The service binding's raw envelope is the boundary; the protocol decoder consumes it immediately.
 type BriefingService = { submit(packet: BriefingEvidence): Promise<unknown> };
 
 type DisposableRpcResult = object & { [Symbol.dispose](): void };
 
 // Cloudflare adds this documented lifecycle hook to every object returned over RPC. It is the sole runtime-owned
 // property permitted at this boundary; all application fields remain subject to the strict protocol decoder below.
+// oxlint-disable rules/no-runtime-typeof -- The RPC dispose lifecycle hook is a runtime-owned platform contract, not a decodable payload shape.
 const isDisposableRpcResult = (value: unknown): value is DisposableRpcResult =>
   typeof value === 'object' &&
   value !== null &&
   typeof Object.getOwnPropertyDescriptor(value, Symbol.dispose)?.value === 'function';
+// oxlint-enable rules/no-runtime-typeof
+
+const RpcResultDataSchema = Schema.Record(Schema.String, Schema.Unknown);
+
+type RpcResultData = typeof RpcResultDataSchema.Type;
+
+const isRpcResultObject = Schema.is(Schema.Struct({}));
+
+const isScalarString = Schema.is(Schema.String);
 
 // Copy every own string key, including non-enumerable ones, so strict decoding still rejects undeclared application
 // data. When present, the documented disposer is excluded because the caller invokes it unconditionally.
-const copyRpcServiceResultData = (submission: unknown): Record<string, unknown> => {
-  if (typeof submission !== 'object' || submission === null) {
+// oxlint-disable-next-line rules/no-unknown-parameters -- The RPC envelope is runtime-owned until the copy below flattens own keys for strict decoding.
+const copyRpcServiceResultData = (submission: unknown): RpcResultData => {
+  if (!isRpcResultObject(submission)) {
     throw new TypeError('Briefing service did not return an object');
   }
 
-  const data: Record<string, unknown> = {};
+  const data: RpcResultData = {};
 
   for (const key of Reflect.ownKeys(submission)) {
     if (key === Symbol.dispose) continue;
 
-    if (typeof key === 'symbol') throw new TypeError('Briefing service returned an unexpected symbol');
+    if (!isScalarString(key)) throw new TypeError('Briefing service returned an unexpected symbol');
 
     const descriptor = Object.getOwnPropertyDescriptor(submission, key);
 
@@ -65,15 +78,16 @@ const copyRpcServiceResultData = (submission: unknown): Record<string, unknown> 
 
 // Node's Miniflare bridge omits descriptor values while keeping ordinary property reads live. This is reachable only
 // through Nuxt's compile-time development branch below; built Workers retain the descriptor-only path above.
-const copyNodeDevelopmentRpcServiceResultData = (submission: unknown): Record<string, unknown> => {
-  if (typeof submission !== 'object' || submission === null) {
+// oxlint-disable-next-line rules/no-unknown-parameters -- Same RPC envelope as above, under the descriptor-omitting development bridge.
+const copyNodeDevelopmentRpcServiceResultData = (submission: unknown): RpcResultData => {
+  if (!isRpcResultObject(submission)) {
     throw new TypeError('Briefing service did not return an object');
   }
 
-  const data: Record<string, unknown> = {};
+  const data: RpcResultData = {};
 
   for (const key of Reflect.ownKeys(submission)) {
-    if (typeof key === 'symbol') throw new TypeError('Briefing service returned an unexpected symbol');
+    if (!isScalarString(key)) throw new TypeError('Briefing service returned an unexpected symbol');
 
     const descriptor = Object.getOwnPropertyDescriptor(submission, key);
 
@@ -94,11 +108,11 @@ const SUBMISSION_FAILURE_TAG = 'BriefingSubmissionError';
 // not reach the log, whatever the error is called.
 const SANITIZED_REASON_PATTERN = /^[a-z][a-z-]*$/;
 
-const sanitizedFailureReason = (error: unknown): string | undefined => {
-  if (!(error instanceof Error)) return undefined;
+const sanitizedFailureReason = (cause: unknown): string | undefined => {
+  if (!(cause instanceof Error)) return undefined;
   // The service's class carries the reason; across the binding's RPC boundary only its name and message survive, and
   // its message is the reason. The shape guard keeps free text — a provider body, a credential — out of the log.
-  const reason = 'reason' in error && typeof error.reason === 'string' ? error.reason : error.message;
+  const reason = 'reason' in cause && isScalarString(cause.reason) ? cause.reason : cause.message;
 
   return SANITIZED_REASON_PATTERN.test(reason) ? reason : undefined;
 };
@@ -115,9 +129,11 @@ class BriefingSubmissionFailure extends Error {
   }
 }
 
-const submissionFailure = (error: unknown): BriefingSubmissionFailure => {
-  const failureName = error instanceof Error ? error.name : typeof error;
-  const reason = failureName === SUBMISSION_FAILURE_TAG ? sanitizedFailureReason(error) : undefined;
+const submissionFailure = (cause: unknown): BriefingSubmissionFailure => {
+  // The recorded name distinguishes Error rejections from the runtime's non-Error envelope shapes in diagnostics.
+  // oxlint-disable-next-line rules/no-runtime-typeof -- Value-position naming of a non-Error RPC failure, not narrowing.
+  const failureName = cause instanceof Error ? cause.name : typeof cause;
+  const reason = failureName === SUBMISSION_FAILURE_TAG ? sanitizedFailureReason(cause) : undefined;
 
   return new BriefingSubmissionFailure(failureName, reason);
 };

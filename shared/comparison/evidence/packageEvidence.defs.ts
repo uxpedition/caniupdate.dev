@@ -25,8 +25,11 @@ export type PackageEvidenceObject = {
   ): Promise<PackageEvidenceResponse>;
 };
 
+/** The opaque request-scoped object id; only its string identity is meaningful at this port. */
+export type PackageEvidenceObjectId = { toString(): string };
+
 /** Minimal request-scoped port used by the public worker to call package evidence objects. */
 export interface PackageEvidenceNamespace {
-  idFromName(name: string): object;
-  get(id: object): PackageEvidenceObject;
+  idFromName(name: string): PackageEvidenceObjectId;
+  get(id: PackageEvidenceObjectId): PackageEvidenceObject;
 }

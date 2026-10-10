@@ -1,4 +1,5 @@
 import { Schema } from 'effect';
+
 import type { NuxtApp } from '#app';
 import { defineNuxtPlugin, useRuntimeConfig } from '#imports';
 import { decodeTelemetryHeaders } from '#shared/telemetry/telemetryConfig.defs';
@@ -19,15 +20,13 @@ const telemetryFromRuntime = (runtime: unknown): ServerTelemetryBaseConfig => {
   const config: unknown = runtime;
 
   const nested = (path: string) =>
-    path
-      .split('.')
-      .reduce<unknown>((value, key) => {
-        if (!isScopeObject(value) || !Reflect.has(value, key)) return undefined;
+    path.split('.').reduce<unknown>((value, key) => {
+      if (!isScopeObject(value) || !Reflect.has(value, key)) return undefined;
 
-        const child: unknown = Reflect.get(value, key);
+      const child: unknown = Reflect.get(value, key);
 
-        return child;
-      }, config);
+      return child;
+    }, config);
 
   const endpoint = nested('otelEndpoint');
 

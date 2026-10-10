@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
 import type { BriefingSubmission } from '#shared/comparison/briefing/briefingJob.defs';
 import type { BriefingServiceResult } from '#shared/comparison/briefing/briefingService.defs';
-import type { PackageEvidenceNamespace, PackageEvidenceObject } from '#shared/comparison/evidence/packageEvidence.defs';
+import type {
+  PackageEvidenceNamespace,
+  PackageEvidenceObject,
+  PackageEvidenceObjectId,
+} from '#shared/comparison/evidence/packageEvidence.defs';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
 import handler from './index.post';
@@ -21,7 +25,7 @@ const idFromName = vi.fn((name: string) => ({ name }));
 
 const objectFetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
 
-const getObject = vi.fn<(id: object) => PackageEvidenceObject>(() => ({ fetch: objectFetch }));
+const getObject = vi.fn<(id: PackageEvidenceObjectId) => PackageEvidenceObject>(() => ({ fetch: objectFetch }));
 
 const namespace: PackageEvidenceNamespace = { idFromName, get: getObject };
 
@@ -162,10 +166,15 @@ function eventFor(
 
 const ConsoleLogRecordSchema = Schema.Struct({ annotations: Schema.Record(Schema.String, Schema.Unknown) });
 
+type ConsoleLogRecord = typeof ConsoleLogRecordSchema.Type;
+
+const isScalarString = Schema.is(Schema.String);
+
 const decodeConsoleLogRecord = Schema.decodeUnknownSync(ConsoleLogRecordSchema, { errors: 'all' });
 
-const annotationsFromLog = (value: unknown): Readonly<Record<string, unknown>> => {
-  if (typeof value !== 'string') throw new Error('Expected a JSON console record');
+// oxlint-disable-next-line rules/no-unknown-parameters -- Logged console values are runtime-owned; the string and JSON checks below are the validation.
+const annotationsFromLog = (value: unknown): ConsoleLogRecord['annotations'] => {
+  if (!isScalarString(value)) throw new Error('Expected a JSON console record');
   let record: unknown;
 
   try {

@@ -21,6 +21,7 @@ const decodeBriefingServiceResultEnvelope = Schema.decodeUnknownSync(BriefingSer
 });
 
 /** A malformed diagnostic context is dropped; the public submission remains strictly decoded. */
+// oxlint-disable-next-line rules/no-unknown-parameters -- Exported RPC service-result decode boundary; the envelope decoder above runs first.
 export const decodeBriefingServiceResult = (value: unknown): BriefingServiceResult => {
   const envelope = decodeBriefingServiceResultEnvelope(value);
   const submission = decodeBriefingSubmission(envelope.submission);
