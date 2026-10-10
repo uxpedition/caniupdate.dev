@@ -4,7 +4,7 @@ import { ref, toValue } from 'vue';
 
 import { packageComparisonQueryOptions } from './packageComparisonQueryOptions';
 
-const requestFetch = <T, R extends NitroFetchRequest>(_url: R, _options?: unknown): Promise<T> =>
+const requestFetch = <T, R extends NitroFetchRequest>(_url: R): Promise<T> =>
   Promise.reject(new Error('not called'));
 
 describe('packageComparisonQueryOptions', () => {

@@ -6,8 +6,8 @@ import { FetchHttpClient } from 'effect/http';
 import { buildBriefingEvidence } from '../../server/comparison/briefing/evidence/build';
 import { getComparisonFacts, getComparisonMeasurements } from '../../server/comparison/collect';
 import type { ComparisonEvidenceServices } from '../../server/comparison/evidence/services';
-import type { PackageMeasurementsResponse } from '../../shared/comparison/comparison.defs';
 import type { BriefingEvidence } from '../../shared/comparison/briefing/briefing.defs';
+import type { PackageMeasurementsResponse } from '../../shared/comparison/comparison.defs';
 import { PackageNameSchema } from '../../shared/comparison/package/package.defs';
 import {
   ArchiveCapacityError,

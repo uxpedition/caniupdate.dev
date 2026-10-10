@@ -11,7 +11,9 @@ const router = useRouter();
 
 const isComparisonRoute = computed(
   () =>
+    // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating vue-router's declared string | string[] param union, not unparsed input.
     typeof router.currentRoute.value.params.packageName === 'string' &&
+    // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating vue-router's declared string | string[] param union, not unparsed input.
     typeof router.currentRoute.value.params.versionPair === 'string',
 );
 </script>

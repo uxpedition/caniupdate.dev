@@ -4,7 +4,6 @@ import type { DurableObjectStorage } from '@cloudflare/workers-types';
 import { and, asc, eq, inArray, isNotNull, lte } from 'drizzle-orm';
 import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
-
 import { Schema } from 'effect';
 
 import { EvidenceStorageCorruptionError, EvidenceStorageError } from '../../server/comparison/evidence/errors';

@@ -26,7 +26,7 @@ const formatNumber = (value: number): string => new Intl.NumberFormat('en-US').f
 
 const formatBytes = (value: number | null): string => (value === null ? 'Unavailable' : `${formatNumber(value)} bytes`);
 
-const formatJson = (value: unknown): string => {
+const formatJson = <T>(value: T): string => {
   if (value === null || value === undefined) return 'Not declared';
 
   return JSON.stringify(value, null, 2) ?? 'Not declared';

@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/vue-query';
 import type { QueryFunctionContext } from '@tanstack/vue-query';
-import { Duration, Effect, Tracer } from 'effect';
+import { Duration, Effect, Schema, Tracer } from 'effect';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
@@ -40,6 +40,7 @@ const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000] as const;
 
 const SUBSCRIPTION_DEADLINE = Duration.seconds(180);
 
+// oxlint-disable-next-line rules/no-unknown-returns -- DOM abort reasons are unreviewed values by contract; the synthesized AbortError below is the controlled form.
 const subscriptionAbortReason = (signal: AbortSignal): unknown => {
   if (signal.reason !== undefined) return signal.reason;
   const abortError = new Error('The briefing subscription was aborted');
@@ -51,15 +52,20 @@ const subscriptionAbortReason = (signal: AbortSignal): unknown => {
 /** A submission the route refused with a sanitized 503 is resubmitted once, after this pause, before the query fails. */
 const SUBMISSION_RETRY_DELAY_MS = 250;
 
+/** Any non-null, non-function container: the gate before probing ofetch's rejection shape. */
+const isFailureContainer = Schema.is(Schema.Struct({}));
+
+const isScalarString = Schema.is(Schema.String);
+
 /**
  * The sanitized 503 `$fetch` rejects with when the submission route refuses a POST; ofetch exposes the response status
  * under both names. Nothing else is resubmitted: a 200 or 202 resolves, and a failure of another kind is not one a
  * second, hash-addressed submission could answer differently.
  */
-const isSanitizedSubmissionFailure = (error: unknown): boolean => {
-  if (typeof error !== 'object' || error === null) return false;
+const isSanitizedSubmissionFailure = (cause: unknown): boolean => {
+  if (!isFailureContainer(cause)) return false;
 
-  return ('status' in error && error.status === 503) || ('statusCode' in error && error.statusCode === 503);
+  return ('status' in cause && cause.status === 503) || ('statusCode' in cause && cause.statusCode === 503);
 };
 
 /** Rejects as the query's own signal does when aborted, so a cancelled query never resubmits. */
@@ -173,10 +179,11 @@ type SocketMessage =
   | { readonly _tag: 'status'; readonly status: BriefingStatus; readonly revision: number }
   | CompletedBriefing;
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Raw socket frames are runtime-owned until the string check and strict protocol decode below.
 const decodeJobEventMessage = (data: unknown, highest: number): SocketMessage => {
   let frame: BriefingJobEvent | undefined;
 
-  if (typeof data === 'string') {
+  if (isScalarString(data)) {
     try {
       frame = decodeBriefingJobEvent(JSON.parse(data));
     } catch {}
@@ -322,8 +329,8 @@ export const waitForJobEvent = async (
     orElse: () => Effect.fail(new Error('The briefing subscription exceeded its 180-second deadline')),
   });
 
-  return Effect.runPromise(boundedSubscription, { signal }).catch((error: unknown) => {
-    if (!signal.aborted) throw error;
+  return Effect.runPromise(boundedSubscription, { signal }).catch((cause: unknown) => {
+    if (!signal.aborted) throw cause;
     throw subscriptionAbortReason(signal);
   });
 };

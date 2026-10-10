@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/vue-query';
 import type { NitroFetchRequest } from 'nitropack/types';
+import { Schema } from 'effect';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref, toValue } from 'vue';
 
@@ -136,15 +137,20 @@ const installTelemetryCollector = () => {
   };
 };
 
+/** Any non-null, non-function container: the gate before probing captured fetch call options. */
+const isOptionContainer = Schema.is(Schema.Struct({}));
+
+const isScalarString = Schema.is(Schema.String);
+
 const traceparentAt = (index: number): string | undefined => {
   const options: unknown = requestFetch.mock.calls[index]?.[1];
 
-  if (typeof options !== 'object' || options === null || !('headers' in options)) return undefined;
+  if (!isOptionContainer(options) || !('headers' in options)) return undefined;
   const headers = options.headers;
 
-  if (typeof headers !== 'object' || headers === null || !('traceparent' in headers)) return undefined;
+  if (!isOptionContainer(headers) || !('traceparent' in headers)) return undefined;
 
-  return typeof headers.traceparent === 'string' ? headers.traceparent : undefined;
+  return isScalarString(headers.traceparent) ? headers.traceparent : undefined;
 };
 
 // What `$fetch` rejects with when the submission route answers its sanitized 503: ofetch's FetchError exposes the
@@ -178,6 +184,7 @@ const runQuery = (
     options.telemetryRuntime,
   );
 
+  // oxlint-disable-next-line rules/no-runtime-typeof -- The generated queryFn option is resolved dynamically; no schema can assert callable query options.
   if (typeof queryFn !== 'function') throw new Error('Expected a briefing queryFn');
 
   return queryFn({ client: queryClient, queryKey: toValue(queryKey), signal, meta: undefined });
@@ -199,7 +206,7 @@ const waitForSocket = async (index: number) => {
 };
 
 describe('packageBriefingQueryOptions', () => {
-  const rejectingFetch = <T, R extends NitroFetchRequest>(_url: R, _options?: unknown): Promise<T> =>
+  const rejectingFetch = <T, R extends NitroFetchRequest>(_url: R): Promise<T> =>
     Promise.reject(new Error('not called'));
 
   beforeEach(() => {
@@ -464,7 +471,7 @@ describe('packageBriefingQueryOptions', () => {
     const promise = Promise.resolve(startQuery(pending(), [], new AbortController().signal));
     vi.useFakeTimers();
     let subscriptionError: unknown;
-    void promise.catch((error: unknown) => {
+    void promise.catch((error) => {
       subscriptionError = error;
     });
 
@@ -482,7 +489,7 @@ describe('packageBriefingQueryOptions', () => {
     const promise = Promise.resolve(startQuery(pending(), statuses, new AbortController().signal));
     vi.useFakeTimers();
     let subscriptionError: unknown;
-    void promise.catch((error: unknown) => {
+    void promise.catch((error) => {
       subscriptionError = error;
     });
 

@@ -5,9 +5,13 @@ import { useRoute } from '#imports';
 // The route names the comparison: a shell that only reads these params can paint without waiting for any fetch.
 export const useComparisonRoute = () => {
   const route = useRoute();
-  const packageName = computed(() => (typeof route.params.packageName === 'string' ? route.params.packageName : ''));
+  const packageName = computed(() =>
+    // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating vue-router's declared string | string[] param union, not unparsed input.
+    typeof route.params.packageName === 'string' ? route.params.packageName : '',
+  );
 
   const versions = computed(() => {
+    // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating vue-router's declared string | string[] param union, not unparsed input.
     const pair = typeof route.params.versionPair === 'string' ? route.params.versionPair : '';
     const [from = '', to = ''] = pair.split('...');
 
