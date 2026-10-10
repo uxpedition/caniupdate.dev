@@ -5,6 +5,8 @@ import { and, asc, eq, inArray, isNotNull, lte } from 'drizzle-orm';
 import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 
+import { Schema } from 'effect';
+
 import { EvidenceStorageCorruptionError, EvidenceStorageError } from '../../server/comparison/evidence/errors';
 import type {
   ComparisonEvidenceCache,
@@ -22,6 +24,9 @@ type RecordRow = typeof evidenceRecords.$inferSelect;
 type CachedValue = { found: true; value: unknown } | { found: false };
 
 const CHUNK_UTF16_UNITS = Math.floor(CHUNK_BYTES / 3);
+
+/** Persisted chunk payloads stay strings; anything else on the row is corruption. */
+const isScalarString = Schema.is(Schema.String);
 
 /** SQLite-backed cache used by one PackageEvidence object. Rows and chunks are replaced atomically. */
 export class SqlEvidenceCache implements ComparisonEvidenceCache {
@@ -123,7 +128,7 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
     for (let index = 0; index < chunks.length; index += 1) {
       const chunk = chunks[index];
 
-      if (chunk === undefined || chunk.chunkIndex !== index || typeof chunk.payload !== 'string') {
+      if (chunk === undefined || chunk.chunkIndex !== index || !isScalarString(chunk.payload)) {
         throw new EvidenceStorageCorruptionError({ detail: 'Evidence chunk order is invalid' });
       }
 
@@ -182,6 +187,7 @@ function storageOperation<T>(operation: StorageOperation, run: () => T): T {
   }
 }
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Persisted cache values are unknown until the caller's isValid predicate narrows them.
 function validateValue<T>(value: unknown, options: ComparisonEvidenceCacheOptions<T>): T {
   if (!options.isValid(value))
     throw new EvidenceStorageCorruptionError({ detail: 'Evidence value does not match its schema' });

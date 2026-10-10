@@ -86,10 +86,12 @@ const corruptionCases: CorruptionCase[] = [
   },
 ];
 
+const isScalarNumber = Schema.is(Schema.Number);
+
 function numberField(row: Record<string, SqlStorageValue> | undefined, name: string): number {
   const value = row?.[name];
 
-  if (typeof value !== 'number') throw new Error(`Expected numeric SQLite column ${name}`);
+  if (!isScalarNumber(value)) throw new Error(`Expected numeric SQLite column ${name}`);
 
   return value;
 }
@@ -582,7 +584,7 @@ describe('evidence cache in real SQLite workerd storage', () => {
 
         if (result.ok) throw new Error('Incompatible schema unexpectedly initialized');
         expect(result.error).toMatchObject({ _tag: 'EvidenceStorageError', operation: 'initialize' });
-        expect(typeof result.error.causeMessage).toBe('string');
+        expect(result.error.causeMessage).toBeTypeOf('string');
         expect(await fixture.exec('SELECT * FROM evidence_records')).toEqual([{ key: 'retained' }]);
         expect(
           await fixture.exec(

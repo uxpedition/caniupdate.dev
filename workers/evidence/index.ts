@@ -6,6 +6,7 @@ import { FetchHttpClient } from 'effect/http';
 import { buildBriefingEvidence } from '../../server/comparison/briefing/evidence/build';
 import { getComparisonFacts, getComparisonMeasurements } from '../../server/comparison/collect';
 import type { ComparisonEvidenceServices } from '../../server/comparison/evidence/services';
+import type { PackageMeasurementsResponse } from '../../shared/comparison/comparison.defs';
 import type { BriefingEvidence } from '../../shared/comparison/briefing/briefing.defs';
 import { PackageNameSchema } from '../../shared/comparison/package/package.defs';
 import {
@@ -54,7 +55,7 @@ const MAX_PENDING_EVIDENCE_REQUESTS = 16;
 
 const requestAdmission = new BoundedResponseAdmission(MAX_PENDING_EVIDENCE_REQUESTS);
 
-type InFlightValue = Promise<unknown>;
+type InFlightValue = Promise<PackageMeasurementsResponse | BriefingEvidence>;
 
 export class PackageEvidence extends DurableObject<EvidenceEnv> {
   readonly #cache: SqlEvidenceCache | undefined;
@@ -132,7 +133,10 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
     );
   }
 
-  async #coalesce(key: string, load: () => Promise<unknown>): Promise<unknown> {
+  async #coalesce(
+    key: string,
+    load: () => Promise<PackageMeasurementsResponse | BriefingEvidence>,
+  ): Promise<PackageMeasurementsResponse | BriefingEvidence> {
     const current = this.#inFlight.get(key);
 
     if (current !== undefined) return await current;

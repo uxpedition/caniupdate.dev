@@ -20,6 +20,7 @@ const WORKER_NAME = 'can-i-update-tarball-streaming-test';
 
 type WorkerResponse = {
   status: number;
+  // oxlint-disable-next-line rules/no-unknown-returns -- Bundled worker responses are decoded per endpoint; the test harness reads them raw.
   json(): Promise<unknown>;
 };
 
