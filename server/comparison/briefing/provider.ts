@@ -2,7 +2,7 @@
 // envelope normalization that real providers require. Credentials stay inside this module's process-local layer.
 
 import { OpenAiClient, OpenAiLanguageModel } from '@effect/ai-openai-compat';
-import { Duration, Effect, Layer, Redacted, Stream } from 'effect';
+import { Duration, Effect, Layer, Predicate, Redacted, Stream } from 'effect';
 import { LanguageModel } from 'effect/ai';
 import { Headers, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from 'effect/http';
 
@@ -24,9 +24,6 @@ export type BriefingProviderTarget = {
   readonly apiKey: string;
   readonly model: string;
 };
-
-const hasErrorTag = (value: unknown, tag: string): boolean =>
-  typeof value === 'object' && value !== null && '_tag' in value && value._tag === tag;
 
 type ResponseChunks = { chunks: Uint8Array[]; size: number };
 
@@ -59,7 +56,7 @@ const bufferResponseBody = (
       },
     ).pipe(
       Effect.catchIf(
-        (error) => hasErrorTag(error, 'HttpClientError') && hasErrorTag(error.reason, 'EmptyBodyError'),
+        (error) => Predicate.isTagged(error, 'HttpClientError') && Predicate.isTagged(error.reason, 'EmptyBodyError'),
         () => Effect.succeed<ResponseChunks>({ chunks: [], size: 0 }),
       ),
     );
@@ -80,8 +77,13 @@ const bufferResponseBody = (
 // tool calls, so metadata nulls are dropped before decoding. Model text is a string and is never altered.
 const dropNullProviderFields = (body: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> => {
   try {
-    const envelope: unknown = JSON.parse(new TextDecoder().decode(body), (_key: string, value: unknown) =>
-      value === null ? undefined : value,
+    const envelope: unknown = JSON.parse(
+      new TextDecoder().decode(body),
+      (_key, value) => {
+        const next: unknown = value;
+
+        return value === null || value === undefined ? undefined : next;
+      },
     );
 
     return new TextEncoder().encode(JSON.stringify(envelope));

@@ -22,7 +22,7 @@ const textEncoder = new TextEncoder();
 
 const byteLength = (value: string): number => textEncoder.encode(value).byteLength;
 
-const json = (value: unknown): string => JSON.stringify(value) ?? 'null';
+const json = <T>(value: T): string => JSON.stringify(value) ?? 'null';
 
 const boundedText = (value: string, maxBytes: number): string => {
   if (byteLength(value) <= maxBytes) return value;

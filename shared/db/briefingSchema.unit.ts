@@ -2,10 +2,12 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-
+import { Schema } from 'effect';
 import { describe, expect, it } from 'vitest';
 
 import { installBriefingSchema, openBriefingD1 } from '../../test/helpers/briefingDatabase.harness';
+
+const isScalarString = Schema.is(Schema.String);
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url);
 
@@ -54,7 +56,7 @@ describe('generated briefing schema', () => {
         .prepare('SELECT created_at FROM package_briefings WHERE evidence_hash = ?')
         .get('valid')?.created_at;
 
-      if (typeof createdAt !== 'string') throw new Error('Missing default timestamp');
+      if (!isScalarString(createdAt)) throw new Error('Missing default timestamp');
       expect(createdAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
       expect(database.prepare('PRAGMA foreign_key_list(package_briefings)').all()).toEqual([]);
       expect(database.prepare('PRAGMA index_list(package_briefings)').all()).toEqual([

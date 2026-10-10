@@ -3,7 +3,7 @@ import type {
   BriefingInput,
   BriefingSourceDraft,
 } from '../../../../shared/comparison/briefing/briefing.defs';
-import type { AdvisoryGroup, PackageComparison } from '../../../../shared/comparison/comparison.defs';
+import type { AdvisoryComparison, AdvisoryGroup, PackageComparison } from '../../../../shared/comparison/comparison.defs';
 import type { PackageAdvisory } from '../../../../shared/comparison/evidence/osv.defs';
 import { buildMaintainerCandidates } from './changelog';
 import { packBriefingEvidence, type BriefingEvidenceCandidate } from './packing';
@@ -12,7 +12,7 @@ const MAX_GAP_BYTES = 512;
 
 const textEncoder = new TextEncoder();
 
-const json = (value: unknown): string => JSON.stringify(value) ?? 'null';
+const json = <T>(value: T): string => JSON.stringify(value) ?? 'null';
 
 const byteLength = (value: string): number => textEncoder.encode(value).byteLength;
 
@@ -43,6 +43,31 @@ const versionUrls = (input: BriefingInput): string[] =>
     registryManifestUrl(input.packageName, input.to.version),
   ]);
 
+/** Advisory details are summarized down to the reviewed fields before entering an evidence packet. */
+export type AdvisorySummary =
+  | PackageAdvisory
+  | {
+      readonly id: string;
+      readonly url: string;
+      readonly detailsStatus: 'available';
+      readonly summary: Extract<PackageAdvisory, { detailsStatus: 'available' }>['summary'];
+      readonly severity: Extract<PackageAdvisory, { detailsStatus: 'available' }>['severity'];
+    };
+
+type AdvisorySummaryGroup = Pick<AdvisoryGroup, 'ids' | 'aliases'> & {
+  readonly from: readonly AdvisorySummary[];
+  readonly to: readonly AdvisorySummary[];
+};
+
+/** The advisory evidence comparison reduces own side groups to summarized, bounded content. */
+export type AdvisoryComparisonEvidence = Pick<AdvisoryComparison, 'status' | 'coverage' | 'reasons'> & {
+  readonly detailScope: string;
+  readonly fromOnly: readonly AdvisorySummaryGroup[];
+  readonly both: readonly AdvisorySummaryGroup[];
+  readonly toOnly: readonly AdvisorySummaryGroup[];
+  readonly uncertain: readonly AdvisorySummaryGroup[];
+};
+
 function advisoryUrls(comparison: PackageComparison): string[] {
   const groups: readonly AdvisoryGroup[] = [
     ...comparison.advisories.fromOnly,
@@ -54,14 +79,17 @@ function advisoryUrls(comparison: PackageComparison): string[] {
   return unique(groups.flatMap((group) => [...group.from, ...group.to].map(({ url }) => url)));
 }
 
-function advisorySummary(advisory: PackageAdvisory) {
+function advisorySummary(advisory: PackageAdvisory): AdvisorySummary {
   if (advisory.detailsStatus !== 'available') return advisory;
   const { id, url, detailsStatus, summary, severity } = advisory;
 
   return { id, url, detailsStatus, summary, severity };
 }
 
-function advisoryEvidence(comparison: PackageComparison) {
+/** One evidence-field payload: a comparison member value, or the advisory summary derived from it. */
+type EvidenceComparisonValue = PackageComparison[keyof PackageComparison] | AdvisoryComparisonEvidence;
+
+function advisoryEvidence(comparison: PackageComparison): AdvisoryComparisonEvidence {
   const summarizeGroups = (groups: readonly AdvisoryGroup[]) =>
     groups.map(({ ids, aliases, from, to }) => ({
       ids,
@@ -88,7 +116,7 @@ function advisoryEvidence(comparison: PackageComparison) {
 function structuredSource(
   id: string,
   label: string,
-  value: unknown,
+  value: EvidenceComparisonValue,
   urls: readonly string[],
   priority: number,
 ): BriefingEvidenceCandidate {
@@ -105,7 +133,7 @@ const declarationCandidate = (
   id: string,
   label: string,
   versions: readonly string[],
-  value: unknown,
+  value: EvidenceComparisonValue,
 ): BriefingEvidenceCandidate =>
   structuredSource(`comparison.${id}`, `Computed ${label} declaration comparison`, value, versions, 1);
 

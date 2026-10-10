@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { Cause, Data, Effect, Layer, Result, Schema } from 'effect';
+import { Cause, Data, Effect, Layer, Predicate, Result, Schema } from 'effect';
 import { LanguageModel, Prompt } from 'effect/ai';
 import { FetchHttpClient, HttpClient } from 'effect/http';
 
@@ -133,11 +133,14 @@ export const readBriefingConfig = (env: BriefingEnvironment): BriefingConfig => 
 
 const invalidResponse = (): BriefingInvalidResponseError => new BriefingInvalidResponseError({});
 
-const hasErrorTag = (value: unknown, tag: string): boolean =>
-  typeof value === 'object' && value !== null && '_tag' in value && value._tag === tag;
+const RecordContainerSchema = Schema.Record(Schema.String, Schema.Unknown);
 
-const hasExactKeys = (value: unknown, expected: readonly string[]): value is Record<string, unknown> => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+type RecordContainer = typeof RecordContainerSchema.Type;
+
+const isRecordContainer = Schema.is(RecordContainerSchema);
+
+const hasExactKeys = (value: unknown, expected: readonly string[]): value is RecordContainer => {
+  if (!isRecordContainer(value)) return false;
   const keys = Object.keys(value);
 
   return keys.length === expected.length && expected.every((key) => Object.hasOwn(value, key));
@@ -145,11 +148,17 @@ const hasExactKeys = (value: unknown, expected: readonly string[]): value is Rec
 
 const parseJson = (content: string): Effect.Effect<unknown, BriefingInvalidResponseError> =>
   Effect.try({
-    try: (): unknown => JSON.parse(content),
+    try: () => {
+      const parsed: unknown = JSON.parse(content);
+
+      return parsed;
+    },
     catch: () => invalidResponse(),
   });
 
-const hasValidContentShape = (value: unknown): boolean => {
+const hasValidContentShape = (
+  value: unknown,
+): value is RecordContainer & { readonly bullets: readonly unknown[] } => {
   if (!hasExactKeys(value, ['bullets']) || !Array.isArray(value.bullets)) return false;
 
   if (value.bullets.length < MIN_BULLETS || value.bullets.length > MAX_BULLETS) return false;
@@ -228,19 +237,14 @@ const collectResponseEvidence = (
 
 // Provider decoding failures surface as `AiError` with an `InvalidOutputError` reason; local citation and shape
 // failures use this module's own tags. Everything else, including HTTP status failures, stays a provider error.
-const isInvalidProviderOutput = (failure: unknown): boolean => {
-  if (hasErrorTag(failure, 'BriefingInvalidResponseError') || hasErrorTag(failure, 'BriefingResponseTooLargeError')) {
+const isInvalidProviderOutput = (cause: unknown): boolean => {
+  if (Predicate.isTagged(cause, 'BriefingInvalidResponseError') || Predicate.isTagged(cause, 'BriefingResponseTooLargeError')) {
     return true;
   }
 
-  if (!hasErrorTag(failure, 'AiError')) return false;
+  if (!Predicate.isTagged(cause, 'AiError')) return false;
 
-  return (
-    typeof failure === 'object' &&
-    failure !== null &&
-    'reason' in failure &&
-    hasErrorTag(failure.reason, 'InvalidOutputError')
-  );
+  return 'reason' in cause && Predicate.isTagged(cause.reason, 'InvalidOutputError');
 };
 
 type BriefingRequest = {

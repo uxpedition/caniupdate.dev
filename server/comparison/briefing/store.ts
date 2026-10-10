@@ -35,9 +35,12 @@ export const isBriefingStoreFailure = (cause: unknown): cause is BriefingStoreFa
   cause instanceof BriefingStoreCorruptionError ||
   cause instanceof BriefingStoreValidationError;
 
+const isScalarString = Schema.is(Schema.String);
+
+// oxlint-disable-next-line rules/no-unknown-parameters -- Persisted D1 rows arrive untyped storage values; the text guard and strict decoder below are the validation.
 function decodeRow(value: unknown): AvailablePackageBriefing {
   try {
-    if (typeof value !== 'string') throw new TypeError('Stored briefing is not JSON text');
+    if (!isScalarString(value)) throw new TypeError('Stored briefing is not JSON text');
 
     return decodeBriefing(JSON.parse(value));
   } catch (cause) {
