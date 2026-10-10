@@ -1,25 +1,6 @@
 import { defineRule } from '@oxlint/plugins';
 import type { ESTree } from '@oxlint/plugins';
 
-type RuntimeFunction = ESTree.ArrowFunctionExpression | ESTree.Function;
-
-function isRuntimeFunction(node: ESTree.Node): node is RuntimeFunction {
-  return (
-    node.type === 'ArrowFunctionExpression' || node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression'
-  );
-}
-
-function isInsideTypeGuard(node: ESTree.Node): boolean {
-  let current: ESTree.Node | null = node.parent;
-  while (current !== null && current.type !== 'Program') {
-    if (isRuntimeFunction(current)) {
-      return current.returnType?.typeAnnotation.type === 'TSTypePredicate';
-    }
-    current = current.parent;
-  }
-  return false;
-}
-
 /** Return whether typeof safely probes for the existence of a possibly absent binding. */
 function isExistenceProbe(node: ESTree.UnaryExpression): boolean {
   const parent = node.parent;
@@ -29,36 +10,33 @@ function isExistenceProbe(node: ESTree.UnaryExpression): boolean {
   return other.type === 'Literal' && other.value === 'undefined';
 }
 
-/** Disallow runtime typeof checks that narrow unparsed values instead of decoding them. */
+/**
+ * This syntactic rule cannot distinguish unparsed input from an established union.
+ * Decode external data with Effect's Schema.decodeUnknown* at its boundary and use the decoded result.
+ * For schema-backed type narrowing, Schema.is(DomainSchema)(value) checks the schema's Type without decoding.
+ * Prefer Effect's Predicate.is* for primitive/callable checks on already-typed values.
+ * Binding-existence probes remain valid: evaluating an absent binding before calling a predicate can throw.
+ */
 export const noRuntimeTypeofRule = defineRule({
   meta: {
     type: 'problem',
     docs: {
       description:
-        'Disallow runtime typeof checks; external values must be decoded into meaningful types at their I/O boundary.',
+        'Reject direct runtime typeof checks, including inside type guards. Decode external data with Effect Schema.decodeUnknown* at its I/O boundary. Use Schema.is(DomainSchema)(value) for schema-backed type narrowing without decoding, or Predicate.is* for primitive/callable checks on already-typed values. Comparisons against "undefined" are allowed for binding-existence probes.',
     },
     messages: {
       runtimeTypeof:
-        'A `typeof` check narrows a representation without establishing its contract. Parse input at its I/O boundary, then branch on the domain value.',
+        'direct runtime `typeof` checks are not allowed' +
+        '\nhelp: for external input, decode its complete contract with `Schema.decodeUnknownResult(DomainSchema)(input)` at the I/O boundary and use the decoded value' +
+        '\nhelp: to check conformance to a schema\'s decoded type without transformation, use `Schema.is(DomainSchema)(value)`' +
+        '\nhelp: for primitive or callable checks on an already-typed value, use an Effect predicate such as `Predicate.isFunction`' +
+        '\nnote: primitive predicates do not replace boundary decoding',
     },
-    schema: [
-      {
-        type: 'object',
-        properties: {
-          allowInTypeGuards: { type: 'boolean' },
-        },
-        additionalProperties: false,
-      },
-    ],
-    defaultOptions: [{ allowInTypeGuards: false }],
   },
   createOnce(context) {
     return {
       UnaryExpression(node) {
-        const option = context.options?.[0];
-        const allowInTypeGuards =
-          typeof option === 'object' && option !== null && !Array.isArray(option) && option.allowInTypeGuards === true;
-        if (node.operator === 'typeof' && !isExistenceProbe(node) && (!allowInTypeGuards || !isInsideTypeGuard(node))) {
+        if (node.operator === 'typeof' && !isExistenceProbe(node)) {
           context.report({ node, messageId: 'runtimeTypeof' });
         }
       },
