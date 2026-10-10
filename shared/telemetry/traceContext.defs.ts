@@ -31,6 +31,7 @@ const decodeTraceContextSync = Schema.decodeUnknownSync(TraceContextSchema, {
 });
 
 /** Invalid or undeclared persisted diagnostics are absent, never submission failures. */
+// oxlint-disable-next-line rules/no-unknown-parameters -- Exported persisted-data decode boundary; the body runs the strict schema parser above.
 export const decodeTraceContext = (value: unknown): TraceContext | undefined => {
   try {
     return decodeTraceContextSync(value);

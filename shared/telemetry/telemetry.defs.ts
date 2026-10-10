@@ -1,4 +1,4 @@
-import { Schema } from 'effect';
+import { Result, Schema } from 'effect';
 
 import {
   HexSpanIdSchema,
@@ -17,8 +17,8 @@ import {
   TelemetryComparisonSelectorSchema,
   TelemetryComparisonVersionSchema,
   TelemetryEnvironmentSchema,
-  TelemetryFailureNameSchema,
   TelemetryFailureReasonSchema,
+  TelemetryFailureNameSchema,
   TelemetryLogMessageSchema,
   TelemetryResourceSchema,
   TelemetryServiceNameSchema,
@@ -34,11 +34,11 @@ import type {
   SanitizedTelemetryPayload,
   SanitizedTraceData,
   TelemetryAttribute,
-  TelemetryLogMessage,
   TelemetryResource,
   TelemetryResourceAttribute,
 } from './telemetry.schema';
 import { isErrorAttributeKey, sanitizeErrorAttribute } from './telemetryError';
+import type { ErrorAttributeKey } from './telemetryError';
 
 export type TelemetrySignal = 'logs' | 'traces';
 
@@ -73,17 +73,17 @@ const decodeSanitizedTraceData = Schema.decodeUnknownSync(SanitizedTraceDataSche
   onExcessProperty: 'error',
 });
 
-const decodeSafeLogMessage = Schema.decodeUnknownSync(Schema.Struct({ stringValue: TelemetryLogMessageSchema }), {
+const decodeSafeLogMessage = Schema.decodeUnknownResult(Schema.Struct({ stringValue: TelemetryLogMessageSchema }), {
   errors: 'all',
   onExcessProperty: 'ignore',
 });
 
-const decodeServiceName = Schema.decodeUnknownSync(Schema.Struct({ stringValue: TelemetryServiceNameSchema }), {
+const decodeServiceName = Schema.decodeUnknownResult(Schema.Struct({ stringValue: TelemetryServiceNameSchema }), {
   errors: 'all',
   onExcessProperty: 'error',
 });
 
-const decodeServiceVersion = Schema.decodeUnknownSync(
+const decodeServiceVersion = Schema.decodeUnknownResult(
   Schema.Struct({
     stringValue: Schema.String.check(
       Schema.isMaxLength(64),
@@ -93,47 +93,52 @@ const decodeServiceVersion = Schema.decodeUnknownSync(
   { errors: 'all', onExcessProperty: 'error' },
 );
 
-const decodeEnvironment = Schema.decodeUnknownSync(Schema.Struct({ stringValue: TelemetryEnvironmentSchema }), {
+const decodeEnvironment = Schema.decodeUnknownResult(Schema.Struct({ stringValue: TelemetryEnvironmentSchema }), {
   errors: 'all',
   onExcessProperty: 'error',
 });
 
-const decodeTraceIdAttribute = Schema.decodeUnknownSync(Schema.Struct({ stringValue: HexTraceIdSchema }), {
+const decodeErrorAttributeString = Schema.decodeUnknownResult(Schema.Struct({ stringValue: Schema.String }), {
   errors: 'all',
   onExcessProperty: 'error',
 });
 
-const decodeSpanIdAttribute = Schema.decodeUnknownSync(Schema.Struct({ stringValue: HexSpanIdSchema }), {
+const decodeTraceIdAttribute = Schema.decodeUnknownResult(Schema.Struct({ stringValue: HexTraceIdSchema }), {
   errors: 'all',
   onExcessProperty: 'error',
 });
 
-const decodeFailureReason = Schema.decodeUnknownSync(Schema.Struct({ stringValue: TelemetryFailureReasonSchema }), {
+const decodeSpanIdAttribute = Schema.decodeUnknownResult(Schema.Struct({ stringValue: HexSpanIdSchema }), {
   errors: 'all',
   onExcessProperty: 'error',
 });
 
-const decodeFailureName = Schema.decodeUnknownSync(Schema.Struct({ stringValue: TelemetryFailureNameSchema }), {
+const decodeFailureReason = Schema.decodeUnknownResult(Schema.Struct({ stringValue: TelemetryFailureReasonSchema }), {
   errors: 'all',
   onExcessProperty: 'error',
 });
 
-const decodeRelationship = Schema.decodeUnknownSync(
+const decodeFailureName = Schema.decodeUnknownResult(Schema.Struct({ stringValue: TelemetryFailureNameSchema }), {
+  errors: 'all',
+  onExcessProperty: 'error',
+});
+
+const decodeRelationship = Schema.decodeUnknownResult(
   Schema.Struct({ stringValue: Schema.Literal('shared-generation') }),
   { errors: 'all', onExcessProperty: 'error' },
 );
 
-const decodeComparisonPackage = Schema.decodeUnknownSync(
+const decodeComparisonPackage = Schema.decodeUnknownResult(
   Schema.Struct({ stringValue: TelemetryComparisonPackageSchema }),
   { errors: 'all', onExcessProperty: 'error' },
 );
 
-const decodeComparisonVersion = Schema.decodeUnknownSync(
+const decodeComparisonVersion = Schema.decodeUnknownResult(
   Schema.Struct({ stringValue: TelemetryComparisonVersionSchema }),
   { errors: 'all', onExcessProperty: 'error' },
 );
 
-const decodeComparisonSelector = Schema.decodeUnknownSync(
+const decodeComparisonSelector = Schema.decodeUnknownResult(
   Schema.Struct({ stringValue: TelemetryComparisonSelectorSchema }),
   { errors: 'all', onExcessProperty: 'error' },
 );
@@ -144,14 +149,23 @@ const isTelemetrySpanName = Schema.is(TelemetrySpanNameSchema);
 
 type SafeStringValue = TelemetryAttribute['value'];
 
-type SafeLogMessage = { readonly stringValue: TelemetryLogMessage };
-
 type BoundedState = { visited: number; stringLength: number };
 
 type PendingValue = { value: unknown; depth: number };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
+
+type UnknownRecord = typeof UnknownRecordSchema.Type;
+
+const isJsonString = Schema.is(Schema.String);
+
+const isJsonNumber = Schema.is(Schema.Number);
+
+const isJsonBoolean = Schema.is(Schema.Boolean);
+
+const isJsonContainer = Schema.is(Schema.Union([UnknownRecordSchema, Schema.Array(Schema.Unknown)]));
+
+const isJsonArray = Schema.is(Schema.Array(Schema.Unknown));
 
 const addStringLength = (state: BoundedState, value: string): boolean => {
   state.stringLength += value.length;
@@ -168,7 +182,7 @@ const enqueueArray = (values: ReadonlyArray<unknown>, pending: Array<PendingValu
 };
 
 const enqueueRecord = (
-  value: Record<string, unknown>,
+  value: UnknownRecord,
   pending: Array<PendingValue>,
   depth: number,
   state: BoundedState,
@@ -187,30 +201,36 @@ const enqueueRecord = (
   return true;
 };
 
+// oxlint-disable-next-line rules/no-unknown-parameters -- Bounded walker input is arbitrary JSON by contract; this is the pre-decode bound checker.
 const isBoundedPrimitive = (value: unknown, state: BoundedState): boolean => {
-  if (typeof value === 'string') return addStringLength(state, value);
+  if (isJsonString(value)) return addStringLength(state, value);
 
-  if (typeof value === 'number') return Number.isFinite(value);
+  if (isJsonNumber(value)) return Number.isFinite(value);
 
-  return value === null || typeof value === 'boolean';
+  return value === null || isJsonBoolean(value);
 };
 
 const enqueueChildren = (
+  // oxlint-disable-next-line rules/no-unknown-parameters -- Bounded walker input is arbitrary JSON by contract; this is the pre-decode bound checker.
   value: unknown,
   pending: Array<PendingValue>,
   depth: number,
   seen: WeakSet<object>,
   state: BoundedState,
 ): boolean => {
-  if (typeof value !== 'object' || value === null || seen.has(value)) return false;
+  if (!isJsonContainer(value)) return false;
+
+  if (seen.has(value)) return false;
+
   seen.add(value);
 
-  if (Array.isArray(value)) return enqueueArray(value, pending, depth);
+  if (isJsonArray(value)) return enqueueArray(value, pending, depth);
 
-  return isRecord(value) && enqueueRecord(value, pending, depth, state);
+  return enqueueRecord(value, pending, depth, state);
 };
 
 /** Bound unknown OTLP attribute values before schema decoding or transport. */
+// oxlint-disable-next-line rules/no-unknown-parameters -- Bounded walker input is arbitrary JSON by contract; this is the pre-decode bound checker.
 const isBoundedJson = (value: unknown): boolean => {
   const pending: Array<PendingValue> = [{ value, depth: 0 }];
   const seen = new WeakSet<object>();
@@ -232,27 +252,13 @@ const isBoundedJson = (value: unknown): boolean => {
   return true;
 };
 
-const readStringValue = (value: unknown): string | undefined => {
-  if (!isRecord(value) || Object.keys(value).length !== 1 || !Object.hasOwn(value, 'stringValue')) return undefined;
-  const candidate = value.stringValue;
-
-  return typeof candidate === 'string' ? candidate : undefined;
-};
-
-const sanitizedString = (value: unknown, decode: (value: unknown) => SafeStringValue): SafeStringValue | undefined => {
-  try {
-    return decode({ stringValue: readStringValue(value) });
-  } catch {
-    return undefined;
-  }
-};
-
 const sanitizeKnownAttribute = (
   attribute: OtlpAttribute,
   key: TelemetryAttribute['key'],
-  decode: (value: unknown) => SafeStringValue,
+  // oxlint-disable-next-line rules/no-unknown-parameters -- Injected decoders are library-composed envelope parsers; their input is unknown by contract.
+  decode: (value: unknown) => Result.Result<SafeStringValue, unknown>,
 ): TelemetryAttribute | undefined => {
-  const value = sanitizedString(attribute.value, decode);
+  const value = Result.getOrUndefined(decode(attribute.value));
 
   return value === undefined ? undefined : { key, value };
 };
@@ -272,13 +278,18 @@ const sanitizeComparisonAttribute = (attribute: OtlpAttribute): TelemetryAttribu
   }
 };
 
-const sanitizeAttribute = (attribute: OtlpAttribute): TelemetryAttribute | undefined => {
-  if (isErrorAttributeKey(attribute.key)) {
-    const raw = readStringValue(attribute.value);
-    const value = raw === undefined ? undefined : sanitizeErrorAttribute(attribute.key, raw);
+const sanitizeErrorAttributeEntry = (
+  attribute: OtlpAttribute,
+  key: ErrorAttributeKey,
+): TelemetryAttribute | undefined => {
+  const raw = Result.getOrUndefined(decodeErrorAttributeString(attribute.value))?.stringValue;
+  const value = raw === undefined ? undefined : sanitizeErrorAttribute(key, raw);
 
-    return value === undefined ? undefined : { key: attribute.key, value: { stringValue: value } };
-  }
+  return value === undefined ? undefined : { key, value: { stringValue: value } };
+};
+
+const sanitizeAttribute = (attribute: OtlpAttribute): TelemetryAttribute | undefined => {
+  if (isErrorAttributeKey(attribute.key)) return sanitizeErrorAttributeEntry(attribute, attribute.key);
 
   switch (attribute.key) {
     case 'traceId':
@@ -316,35 +327,39 @@ const sanitizeAttributes = (attributes: ReadonlyArray<OtlpAttribute>): ReadonlyA
 const countAfterRedaction = (original: number | undefined, inputCount: number, outputCount: number): number =>
   Math.min(MAX_DROPPED_COUNT, (original ?? 0) + inputCount - outputCount);
 
+const sanitizeResourceAttribute = (attribute: OtlpAttribute): TelemetryResourceAttribute | undefined => {
+  switch (attribute.key) {
+    case 'service.name': {
+      const value = Result.getOrUndefined(decodeServiceName(attribute.value));
+
+      return value === undefined ? undefined : { key: 'service.name', value };
+    }
+    case 'service.version': {
+      const value = Result.getOrUndefined(decodeServiceVersion(attribute.value));
+
+      return value === undefined ? undefined : { key: 'service.version', value };
+    }
+    case 'deployment.environment.name': {
+      const value = Result.getOrUndefined(decodeEnvironment(attribute.value));
+
+      return value === undefined ? undefined : { key: 'deployment.environment.name', value };
+    }
+    default:
+      return undefined;
+  }
+};
+
 const sanitizeResource = (resource: OtlpResource): TelemetryResource => {
   const attributes: Array<TelemetryResourceAttribute> = [];
   const seen = new Set<string>();
 
   for (const attribute of resource.attributes) {
     if (seen.has(attribute.key)) continue;
-    let key: TelemetryResourceAttribute['key'];
-    let value: SafeStringValue | undefined;
+    const sanitized = sanitizeResourceAttribute(attribute);
 
-    switch (attribute.key) {
-      case 'service.name':
-        key = 'service.name';
-        value = sanitizedString(attribute.value, decodeServiceName);
-        break;
-      case 'service.version':
-        key = 'service.version';
-        value = sanitizedString(attribute.value, decodeServiceVersion);
-        break;
-      case 'deployment.environment.name':
-        key = 'deployment.environment.name';
-        value = sanitizedString(attribute.value, decodeEnvironment);
-        break;
-      default:
-        continue;
-    }
-
-    if (value === undefined) continue;
+    if (sanitized === undefined) continue;
     seen.add(attribute.key);
-    attributes.push({ key, value });
+    attributes.push(sanitized);
   }
 
   const resourceData = {
@@ -360,13 +375,9 @@ const sanitizeResource = (resource: OtlpResource): TelemetryResource => {
 };
 
 const sanitizeLogRecord = (record: OtlpLogRecord) => {
-  let body: SafeLogMessage;
+  const body = Result.getOrUndefined(decodeSafeLogMessage(record.body));
 
-  try {
-    body = decodeSafeLogMessage(record.body);
-  } catch {
-    return undefined;
-  }
+  if (body === undefined) return undefined;
 
   const attributes = sanitizeAttributes(record.attributes);
 
@@ -482,6 +493,7 @@ const sanitizeTraces = (data: typeof OtlpTracesDataSchema.Type): SanitizedTraceD
 };
 
 /** Decode and rebuild only bounded OTLP JSON records approved for application telemetry. */
+// oxlint-disable rules/no-unknown-parameters -- This function is the ingress decode boundary; its body runs the bounded schema parsers above.
 export function decodeTelemetryPayload(signal: 'logs', value: unknown): SanitizedLogsData;
 export function decodeTelemetryPayload(signal: 'traces', value: unknown): SanitizedTraceData;
 export function decodeTelemetryPayload(signal: TelemetrySignal, value: unknown): SanitizedTelemetryPayload;
@@ -497,3 +509,4 @@ export function decodeTelemetryPayload(signal: TelemetrySignal, value: unknown):
       throw new TypeError('Unsupported telemetry signal');
   }
 }
+// oxlint-enable rules/no-unknown-parameters
