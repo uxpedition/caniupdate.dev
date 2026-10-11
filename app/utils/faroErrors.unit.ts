@@ -1,3 +1,4 @@
+import { Predicate } from 'effect';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTelemetryRuntime } from '#shared/telemetry/telemetry';
@@ -98,8 +99,7 @@ describe('Faro error integration', () => {
 
     const rejectionListener = browserWindow.listeners.get('unhandledrejection')?.values().next().value;
 
-    // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating the declared EventListenerOrEventListenerObject union to require the callable arm.
-    if (typeof rejectionListener !== 'function') throw new Error('Expected Faro rejection instrumentation');
+    if (!Predicate.isFunction(rejectionListener)) throw new Error('Expected Faro rejection instrumentation');
     rejectionListener(rejectionEvent('api_key=primitive-secret'));
 
     await flushExports(capture);

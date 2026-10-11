@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { BetweenVerticalStart } from '@lucide/vue';
+import { Schema } from 'effect';
 import { computed } from 'vue';
 
 import { useRouter } from '#imports';
@@ -9,13 +10,9 @@ import SiteFooter from '~/components/SiteFooter.vue';
 
 const router = useRouter();
 
-const isComparisonRoute = computed(
-  () =>
-    // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating vue-router's declared string | string[] param union, not unparsed input.
-    typeof router.currentRoute.value.params.packageName === 'string' &&
-    // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating vue-router's declared string | string[] param union, not unparsed input.
-    typeof router.currentRoute.value.params.versionPair === 'string',
-);
+const isComparisonParams = Schema.is(Schema.Struct({ packageName: Schema.String, versionPair: Schema.String }));
+
+const isComparisonRoute = computed(() => isComparisonParams(router.currentRoute.value.params));
 </script>
 
 <template>

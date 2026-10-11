@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/vue-query';
-import { Schema } from 'effect';
+import { Predicate, Schema } from 'effect';
 import type { NitroFetchRequest } from 'nitropack/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref, toValue } from 'vue';
@@ -184,8 +184,7 @@ const runQuery = (
     options.telemetryRuntime,
   );
 
-  // oxlint-disable-next-line rules/no-runtime-typeof -- The generated queryFn option is resolved dynamically; no schema can assert callable query options.
-  if (typeof queryFn !== 'function') throw new Error('Expected a briefing queryFn');
+  if (!Predicate.isFunction(queryFn)) throw new Error('Expected a briefing queryFn');
 
   return queryFn({ client: queryClient, queryKey: toValue(queryKey), signal, meta: undefined });
 };

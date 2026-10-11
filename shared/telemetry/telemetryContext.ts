@@ -32,8 +32,7 @@ const isCloudflareBinding = (value: unknown): value is CloudflareBinding =>
 const waitUntilFromScope = (scope: RuntimeContainer): TelemetryWaitUntil | undefined => {
   const waitUntil = scope.waitUntil;
 
-  // oxlint-disable-next-line rules/no-runtime-typeof -- Platform-owned lifecycle hook: no schema can assert callability, only whichever container provides it.
-  if (typeof waitUntil !== 'function') return undefined;
+  if (!Predicate.isFunction(waitUntil)) return undefined;
 
   return (promise) => {
     Reflect.apply(waitUntil, scope, [promise]);

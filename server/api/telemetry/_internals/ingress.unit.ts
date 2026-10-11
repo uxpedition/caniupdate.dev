@@ -2,6 +2,7 @@ import { createServer, IncomingMessage } from 'node:http';
 import { Socket } from 'node:net';
 import { PassThrough } from 'node:stream';
 
+import { Predicate, Schema } from 'effect';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { decodeTelemetryPayload } from '#shared/telemetry/telemetry.defs';
@@ -18,6 +19,8 @@ import {
   isSameOriginTelemetryRequest,
   readBoundedTelemetryBody,
 } from './ingress';
+
+const isScalarString = Schema.is(Schema.String);
 
 const logPayload = () => ({
   resourceLogs: [
@@ -111,8 +114,7 @@ const requireForwardedRequest = (forwarded: readonly ForwardedRequest[]) => {
 
   if (request.init === undefined) throw new Error('Expected collector request options');
 
-  // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating the declared BodyInit union for the JSON body the collector contract requires.
-  if (typeof request.init.body !== 'string') throw new Error('Expected JSON collector request body');
+  if (!isScalarString(request.init.body)) throw new Error('Expected JSON collector request body');
   const input = request.input instanceof Request ? request.input.url : request.input.toString();
 
   return { input, init: { ...request.init, body: request.init.body } };
@@ -333,8 +335,7 @@ describe('telemetry ingress', () => {
     try {
       const address = server.address();
 
-      // oxlint-disable-next-line rules/no-runtime-typeof -- Discriminating the declared AddressInfo | string | null union to require the port-bearing arm.
-      if (address === null || typeof address === 'string') throw new Error('Expected isolated HTTP listener');
+      if (address === null || Predicate.isString(address)) throw new Error('Expected isolated HTTP listener');
       const origin = `http://127.0.0.1:${address.port}`;
 
       const response = await fetch(`${origin}/api/telemetry/v1/traces`, {
