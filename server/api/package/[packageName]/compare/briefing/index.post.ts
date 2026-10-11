@@ -117,9 +117,13 @@ class BriefingSubmissionFailure extends Error {
 }
 
 const submissionFailure = (cause: unknown): BriefingSubmissionFailure => {
-  // The recorded name distinguishes Error rejections from the runtime's non-Error envelope shapes in diagnostics.
-  // oxlint-disable-next-line rules/no-runtime-typeof -- Value-position naming of a non-Error RPC failure, not narrowing.
-  const failureName = cause instanceof Error ? cause.name : typeof cause;
+  /*
+   * RPC promises can reject with non-Errors. Record their runtime category without logging the rejected value,
+   * which may contain credentials or provider response text. This label is diagnostic only; the HTTP response
+   * stays a generic 503. Schema/Predicate checks would duplicate typeof's classification, not validate a contract.
+   */
+  // oxlint-disable-next-line rules/no-runtime-typeof -- Diagnostic type label for non-Error rejections; no decoding or narrowing.
+  const failureName = cause instanceof Error ? cause.name : `ErrorWithType_${typeof cause}`;
   const reason = failureName === SUBMISSION_FAILURE_TAG ? sanitizedFailureReason(cause) : undefined;
 
   return new BriefingSubmissionFailure(failureName, reason);
