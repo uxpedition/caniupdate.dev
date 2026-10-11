@@ -1,6 +1,6 @@
 import type * as Cloudflare from '@cloudflare/workers-types';
 import { DurableObject } from 'cloudflare:workers';
-import { Schema } from 'effect';
+import { Predicate, Schema } from 'effect';
 
 import type { ComparisonEvidenceCacheOptions } from '../../../server/comparison/evidence/services';
 import { SqlEvidenceCache } from '../store';
@@ -21,8 +21,6 @@ declare const Response: typeof Cloudflare.Response;
 const CHUNK_BYTES = 128 * 1024;
 
 const decodeCacheFixtureCommand = Schema.decodeUnknownSync(CacheFixtureCommandSchema, { errors: 'all' });
-
-const isContainerObject = Schema.is(Schema.Struct({}));
 
 const isScalarString = Schema.is(Schema.String);
 
@@ -54,7 +52,8 @@ function jsonResponse(body: FixtureResponseBody, status = 200): Response {
 }
 
 function stringProperty(cause: unknown, key: string): string | undefined {
-  if (!isContainerObject(cause) || !(key in cause)) return undefined;
+  // `key in` and `Reflect.get` throw on primitives such as a thrown string.
+  if (!Predicate.isObjectOrArray(cause) || !(key in cause)) return undefined;
   const property: unknown = Reflect.get(cause, key);
 
   return isScalarString(property) ? property : undefined;
@@ -65,13 +64,13 @@ type CauseLeaf = { name: string | undefined; message: string | undefined };
 // Walks native `Error.cause` links to the innermost container and projects only its validated name and message.
 // Cycles, primitive links, missing causes, and DrizzleQueryError leaves yield no leaf.
 function innermostCause(cause: unknown): CauseLeaf | undefined {
-  if (!isContainerObject(cause)) return undefined;
+  if (!Predicate.isObjectOrArray(cause)) return undefined;
   let current: unknown = Reflect.get(cause, 'cause');
 
   if (current === undefined) return undefined;
   const seen = new Set<object>();
 
-  while (isContainerObject(current)) {
+  while (Predicate.isObjectOrArray(current)) {
     if (seen.has(current)) return undefined;
     seen.add(current);
     const nested: unknown = Reflect.get(current, 'cause');
