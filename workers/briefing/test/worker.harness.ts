@@ -109,13 +109,10 @@ export const BRIEFING_ENVIRONMENTS = ENVIRONMENTS;
  * (`QUEUE <name> <acked>/<total>`). With this fixture's `maxBatchSize: 1` and `maxBatchTimeout: 0` every send flushes
  * on its own, so counting these lines counts messages that reached the Queue and were delivered — the producer-side
  * counter no other hook exposes. A suite that asserts "zero" also observes a known delivery, so a Miniflare change
- * to this line fails loudly instead of silently reporting nothing.
+ * to this line fails loudly instead of silently reporting nothing. `RecordingLog` receives the message before any
+ * terminal colouring, so the line is matched as plain text.
  */
 const QUEUE_DELIVERY = new RegExp(String.raw`QUEUE\s+${QUEUE_NAME}\s+\d+/\d+`);
-
-// Miniflare's broker colours that line when it thinks it is on a TTY; strip escape codes before matching.
-// oxlint-disable-next-line no-control-regex -- matching terminal colour escapes is the point of this expression.
-const ANSI = /\u001B\[[0-9;]*m/g;
 
 /** Captures every line the runtime logs, so a test can count real queue deliveries. */
 class RecordingLog extends Log {
@@ -468,7 +465,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
       queue,
       allowedOrigin,
       eventsUrl: (hash: string): string => `${environment.requests}/api/briefings/${hash}/events`,
-      queueDeliveries: (): number => log.lines.filter((line) => QUEUE_DELIVERY.test(line.replace(ANSI, ''))).length,
+      queueDeliveries: (): number => log.lines.filter((line) => QUEUE_DELIVERY.test(line)).length,
       structuredLogs: (): readonly string[] => structuredLogs,
       publicFetch: (input, init) => runtime.dispatchFetch(input, init),
       async submit<T>(packet: T): Promise<SubmitResult> {
