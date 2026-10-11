@@ -19,7 +19,14 @@ import { promisify } from 'node:util';
 
 import type { D1Database, Queue } from '@cloudflare/workers-types';
 import { Schema } from 'effect';
-import { Log, LogLevel, Miniflare, type DispatchFetch, type WebSocket as RuntimeWebSocket } from 'miniflare';
+import {
+  Log,
+  LogLevel,
+  Miniflare,
+  type DispatchFetch,
+  type MiniflareWorkerConfig,
+  type WebSocket as RuntimeWebSocket,
+} from 'miniflare';
 
 import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
 import {
@@ -338,8 +345,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
   const structuredLogs: string[] = [];
 
   // Miniflare 5 declares every environment entry as a binding, so plain variables use the `text` variant.
-  // oxlint-disable-next-line rules/no-unsafe-dictionary-type -- Miniflare's binding envelope is heterogeneous (d1 objects and text values) by its own contract.
-  const briefingEnv: Record<string, unknown> = {
+  const briefingEnv: NonNullable<MiniflareWorkerConfig['env']> = {
     BRIEFINGS_DB: { type: 'd1', id: D1_ID },
     BRIEFING_PUBLIC_URL: { type: 'text', value: environment.publicUrl },
     BRIEFING_ALLOWED_ORIGIN: { type: 'text', value: allowedOrigin },
