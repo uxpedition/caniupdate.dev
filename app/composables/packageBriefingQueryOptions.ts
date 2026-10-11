@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/vue-query';
 import type { QueryFunctionContext } from '@tanstack/vue-query';
-import { Duration, Effect, Schema, Tracer } from 'effect';
+import { Duration, Effect, Predicate, Schema, Tracer } from 'effect';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
@@ -52,9 +52,6 @@ const throwSubscriptionAbort = (signal: AbortSignal): never => {
 /** A submission the route refused with a sanitized 503 is resubmitted once, after this pause, before the query fails. */
 const SUBMISSION_RETRY_DELAY_MS = 250;
 
-/** Any non-null, non-function container: the gate before probing ofetch's rejection shape. */
-const isFailureContainer = Schema.is(Schema.Struct({}));
-
 const isScalarString = Schema.is(Schema.String);
 
 /**
@@ -63,7 +60,7 @@ const isScalarString = Schema.is(Schema.String);
  * second, hash-addressed submission could answer differently.
  */
 const isSanitizedSubmissionFailure = (cause: unknown): boolean => {
-  if (!isFailureContainer(cause)) return false;
+  if (!Predicate.isObjectOrArray(cause)) return false;
 
   return ('status' in cause && cause.status === 503) || ('statusCode' in cause && cause.statusCode === 503);
 };
