@@ -106,11 +106,16 @@ export const noUnsafeDictionaryTypeRule = defineRule({
     type: 'problem',
     docs: {
       description:
-        "Disallow object-dictionary contracts whose direct value type is an unsafe escape hatch, except the broad dictionary maintained by a guard's narrowed subject; a guard must still assert a concrete type.",
+        'Require concrete dictionary value contracts instead of any, unknown, object, empty-object types, or unions containing them. Reuse the owning library or schema contract, including heterogeneous value unions; use Schema.Json for arbitrary JSON fixtures and decode external payloads before use. A type predicate may accept a broad dictionary as its subject, but must assert a concrete type.',
     },
     messages: {
       unsafeDictionary:
-        "This dictionary's {{value}} value type gives callers no concrete value contract. Use an owner/schema-derived value type; parse external payloads before insertion.",
+        'expected a concrete dictionary value contract, found an unsafe `{{value}}` value type' +
+        '\nhelp: reuse the owning library or schema contract; for a library configuration field, use its indexed type such as `NonNullable<LibraryConfig["env"]>`' +
+        '\nhelp: heterogeneous dictionaries can use the owner\'s concrete value union; arbitrary JSON fixtures can use `Record<string, Schema.Json>`' +
+        '\nhelp: decode external payloads with `Schema.decodeUnknownResult(DomainSchema)` before inserting or consuming their values' +
+        '\nnote: a type annotation or assertion does not validate external data' +
+        '\nnote: a type predicate may accept a broad dictionary as its subject, but must assert a concrete type',
     },
   },
   createOnce(context) {
