@@ -356,26 +356,30 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
     briefingEnv.AI_BRIEFING_MODEL = { type: 'text', value: MODEL };
   }
 
+  const briefingConfig: MiniflareWorkerConfig = {
+    name: WORKER_NAME,
+    compatibilityDate: '2026-09-16',
+    compatibilityFlags: ['nodejs_compat', 'no_nodejs_compat_v2'],
+    env: {
+      ...briefingEnv,
+      BRIEFING_JOBS: { type: 'durable-object', worker: WORKER_NAME, exportName: 'BriefingJob' },
+    },
+    exports: { BriefingJob: { type: 'durable-object', storage: 'sqlite' } },
+    manifest: { mainModule: 'index.js', modules },
+  };
+
+  // Only a consumer runtime declares the queue trigger; a producer-only runtime leaves `triggers` absent.
+  if (options.consumer !== false) {
+    briefingConfig.triggers = [{ type: 'queue', name: QUEUE_NAME, maxBatchSize: 1, maxBatchTimeout: 0, maxRetries: 2 }];
+  }
+
   const runtime = new Miniflare({
     log,
     handleStructuredLogs: ({ message }) => structuredLogs.push(message),
     resourcePersistencePath: options.stateDir,
     workers: [
       {
-        config: {
-          name: WORKER_NAME,
-          compatibilityDate: '2026-09-16',
-          compatibilityFlags: ['nodejs_compat', 'no_nodejs_compat_v2'],
-          env: {
-            ...briefingEnv,
-            BRIEFING_JOBS: { type: 'durable-object', worker: WORKER_NAME, exportName: 'BriefingJob' },
-          },
-          exports: { BriefingJob: { type: 'durable-object', storage: 'sqlite' } },
-          manifest: { mainModule: 'index.js', modules },
-          ...(options.consumer === false
-            ? {}
-            : { triggers: [{ type: 'queue', name: QUEUE_NAME, maxBatchSize: 1, maxBatchTimeout: 0, maxRetries: 2 }] }),
-        },
+        config: briefingConfig,
       },
       {
         config: {
@@ -431,13 +435,11 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
       }
 
       const result = decodeBriefingServiceResult(body);
+      const settled = { httpStatus: status, submission: result.submission, error: undefined };
 
-      return {
-        httpStatus: status,
-        submission: result.submission,
-        ...(result.generationContext === undefined ? {} : { generationContext: result.generationContext }),
-        error: undefined,
-      };
+      return result.generationContext === undefined
+        ? settled
+        : { ...settled, generationContext: result.generationContext };
     };
 
     const readRawSubmission = (status: number, body: Schema.Json): RawSubmission => {

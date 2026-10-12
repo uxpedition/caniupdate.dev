@@ -22,7 +22,7 @@ type PackageSearchQueryContext = QueryFunctionContext<PackageSearchQueryKey>;
 export const packageSearchQueryOptions = (requestFetch: NuxtRequestFetch, searchTerm: MaybeRefOrGetter<string>) => {
   const normalizedSearchTerm = computed(() => toValue(searchTerm).trim());
 
-  return queryOptions({
+  const options = queryOptions({
     queryKey: computed<PackageSearchQueryKey>(() => [...PACKAGE_SEARCH_QUERY_KEY_PREFIX, normalizedSearchTerm.value]),
     queryFn: async ({ queryKey, signal }: PackageSearchQueryContext): Promise<ParsedPackagesSearchResult> => {
       const text = queryKey[3];
@@ -37,6 +37,12 @@ export const packageSearchQueryOptions = (requestFetch: NuxtRequestFetch, search
     staleTime: PACKAGE_SEARCH_STALE_TIME,
     retry: false,
     refetchOnWindowFocus: false,
-    ...(import.meta.client ? { gcTime: 5 * 60_000 } : {}),
   });
+
+  // Client-only: SSR leaves gcTime unset so the Query client default applies on the server.
+  if (import.meta.client) {
+    options.gcTime = 5 * 60_000;
+  }
+
+  return options;
 };

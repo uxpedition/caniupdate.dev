@@ -11,7 +11,10 @@ export const noReflectGetRule = defineRule({
     },
     messages: {
       reflectGet:
-        'Replace `Reflect.get` with typed property access. Parse dynamic input into a named domain type before reading it.',
+        'expected an owner-typed property read, found Reflect.get' +
+        '\nhelp: for a fixed key on an object this code owns, read the property directly after narrowing its type' +
+        '\nhelp: for external or untyped input, decode it into a named domain type with `Schema.decodeUnknownResult` before reading fields' +
+        '\nnote: preserve inherited getters, throwing accessors, explicit receivers, and RPC disposal; direct reads are not equivalent when a receiver differs',
     },
   },
   createOnce(context) {

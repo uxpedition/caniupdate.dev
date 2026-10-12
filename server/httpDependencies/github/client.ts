@@ -1,4 +1,4 @@
-import { Data, Duration, Effect, Option, Result, Schema } from 'effect';
+import { Data, Duration, Effect, Option, Predicate, Result, Schema } from 'effect';
 import { FetchHttpClient, Headers, HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
 
 const API_ORIGIN = 'https://api.github.com';
@@ -46,6 +46,8 @@ const GithubReleaseSchema = Schema.Struct({
 
 const GithubReleasePageSchema = Schema.Array(GithubReleaseSchema);
 
+const GithubReleasePageJsonSchema = Schema.fromJsonString(GithubReleasePageSchema);
+
 const GithubEntrySchema = Schema.Struct({
   name: Schema.String,
   path: Schema.String,
@@ -53,6 +55,8 @@ const GithubEntrySchema = Schema.Struct({
 });
 
 const GithubDirectorySchema = Schema.Array(GithubEntrySchema);
+
+const GithubDirectoryJsonSchema = Schema.fromJsonString(GithubDirectorySchema);
 
 const GithubResponseTooLargeError = Data.TaggedError('GithubResponseTooLargeError')<{
   readonly actual: number;
@@ -62,6 +66,12 @@ const GithubResponseTooLargeError = Data.TaggedError('GithubResponseTooLargeErro
 const GithubResponseDecodeError = Data.TaggedError('GithubResponseDecodeError')<{
   readonly cause: unknown;
 }>;
+
+// The text-to-JSON step is the only Encoding transformation in these codecs; domain field failures are Composite.
+const mapGithubDecodeError = (
+  error: Schema.SchemaError,
+): InstanceType<typeof GithubResponseDecodeError> | Schema.SchemaError =>
+  Predicate.isTagged(error.issue, 'Encoding') ? new GithubResponseDecodeError({ cause: error }) : error;
 
 const encodePathSegment = (segment: string): string => {
   const encoded = encodeURIComponent(segment);
@@ -140,20 +150,6 @@ const readResponseBody = (response: HttpClientResponse.HttpClientResponse): Effe
 const readResponseText = (response: HttpClientResponse.HttpClientResponse): Effect.Effect<string, unknown> =>
   Effect.map(readResponseBody(response), (body) => new TextDecoder().decode(body));
 
-const readResponseJson = (response: HttpClientResponse.HttpClientResponse): Effect.Effect<unknown, unknown> =>
-  Effect.gen(function* () {
-    const text = yield* readResponseText(response);
-
-    return yield* Effect.try({
-      try: () => {
-        const parsed: unknown = JSON.parse(text);
-
-        return parsed;
-      },
-      catch: (cause) => new GithubResponseDecodeError({ cause }),
-    });
-  });
-
 const fetchReleasePage = (
   client: HttpClient.HttpClient,
   repository: GithubRepository,
@@ -166,8 +162,11 @@ const fetchReleasePage = (
       githubRequest(releasesUrl(repository, page), 'application/vnd.github+json', token),
     );
 
-    const body = yield* readResponseJson(response);
-    const releases = yield* Schema.decodeUnknownEffect(GithubReleasePageSchema)(body, { errors: 'all' });
+    const text = yield* readResponseText(response);
+
+    const releases = yield* Schema.decodeUnknownEffect(GithubReleasePageJsonSchema)(text, { errors: 'all' }).pipe(
+      Effect.mapError(mapGithubDecodeError),
+    );
 
     return { releases, hasNext: hasNextPage(response) };
   }).pipe(Effect.timeout(REQUEST_TIMEOUT));
@@ -215,9 +214,11 @@ export const listGithubDirectory = Effect.fn('Github.listGithubDirectory')(funct
     githubRequest(contentsUrl(repository, path, ref), 'application/vnd.github+json', token),
   );
 
-  const body = yield* readResponseJson(response);
+  const text = yield* readResponseText(response);
 
-  return yield* Schema.decodeUnknownEffect(GithubDirectorySchema)(body, { errors: 'all' });
+  return yield* Schema.decodeUnknownEffect(GithubDirectoryJsonSchema)(text, { errors: 'all' }).pipe(
+    Effect.mapError(mapGithubDecodeError),
+  );
 }, Effect.timeout(REQUEST_TIMEOUT));
 
 export const getGithubFile = Effect.fn('Github.getGithubFile')(function* (

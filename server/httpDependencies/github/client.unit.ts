@@ -149,6 +149,12 @@ describe('listGithubReleases', () => {
     await expect(result).rejects.toMatchObject({ _tag: 'SchemaError' });
   });
 
+  it('reports a body that is not JSON as a decode error rather than a schema error', async () => {
+    const { result } = runWithStub(listGithubReleases(repository), [new Response('{"tag_name":', { status: 200 })]);
+
+    await expect(result).rejects.toMatchObject({ _tag: 'GithubResponseDecodeError' });
+  });
+
   it('rejects redirects instead of following a token-bearing request', async () => {
     const { calls, result } = runWithStub(listGithubReleases(repository, 'ghp_secret'), [
       new Response('', { status: 302, headers: { location: 'https://evil.example/steal' } }),
@@ -185,6 +191,14 @@ describe('listGithubDirectory', () => {
     ]);
 
     await expect(result).rejects.toMatchObject({ _tag: 'SchemaError' });
+  });
+
+  it('reports a directory body that is not JSON as a decode error', async () => {
+    const { result } = runWithStub(listGithubDirectory(repository, '', 'v1.0.0'), [
+      new Response('[{"name":', { status: 200 }),
+    ]);
+
+    await expect(result).rejects.toMatchObject({ _tag: 'GithubResponseDecodeError' });
   });
 });
 
