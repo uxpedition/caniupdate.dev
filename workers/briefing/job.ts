@@ -322,7 +322,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
    * Decode the packet and confirm it hashes to the object the submitter addressed. The packet is bounded evidence,
    * and the addressed name is the hash the submitter derived, so a mismatch is refused rather than stored.
    */
-  #verifiedPacket(packet: BriefingEvidence): { evidence: BriefingEvidence; hash: string } {
+  #verifiedPacket(packet: BriefingEvidence) {
     let evidence: BriefingEvidence;
 
     try {

@@ -8,7 +8,9 @@ const textEncoder = new TextEncoder();
 
 const byteLength = (value: string): number => textEncoder.encode(value).byteLength;
 
-const boundedText = (value: string, maxBytes: number): { text: string; truncated: boolean } => {
+type BoundedText = { text: string; truncated: boolean };
+
+const boundedText = (value: string, maxBytes: number): BoundedText => {
   if (byteLength(value) <= maxBytes) return { text: value, truncated: false };
 
   let bytes = 0;
@@ -171,7 +173,9 @@ function parseHeadingLine(
   return atxHeading(lines[line] ?? '', line, packageName) ?? setextHeading(lines, line, packageName);
 }
 
-function updateFence(current: Fence | null, length: number, line: FenceLine): { fence: Fence | null; length: number } {
+type FenceState = { fence: Fence | null; length: number };
+
+function updateFence(current: Fence | null, length: number, line: FenceLine): FenceState {
   if (current === null) return { fence: line.marker, length: line.length };
 
   if (line.marker === current && line.length >= length) return { fence: null, length: 0 };
@@ -218,12 +222,9 @@ function sectionEnd(headings: readonly Heading[], selected: Heading, lineCount: 
   return headings.find((heading) => heading.line > selected.line && isBoundary(heading, selected))?.line ?? lineCount;
 }
 
-function extractChangelogSections(
-  body: string,
-  packageName: string,
-  from: string,
-  to: string,
-): { sections: ChangelogSection[]; reason: string | null } {
+type ChangelogExtraction = { sections: ChangelogSection[]; reason: string | null };
+
+function extractChangelogSections(body: string, packageName: string, from: string, to: string): ChangelogExtraction {
   const lines = body.split(/\r\n|\n|\r/);
   const headings = parseHeadings(body, packageName);
   const versionHeadings = headings.filter((heading) => heading.version !== null);

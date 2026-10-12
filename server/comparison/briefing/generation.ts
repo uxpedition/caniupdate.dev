@@ -210,10 +210,12 @@ const decodeContent = (
  * `[0] … [n]` instead of leaving the gaps a filtered packet position would. Bullets are rewritten to the same
  * numbers, and the packet itself keeps the positions the model cited.
  */
+type ResponseEvidence = { readonly bullets: readonly BriefingBullet[]; readonly sources: readonly BriefingSource[] };
+
 const collectResponseEvidence = (
   bullets: readonly BriefingBullet[],
   sources: readonly BriefingSource[],
-): { readonly bullets: readonly BriefingBullet[]; readonly sources: readonly BriefingSource[] } => {
+): ResponseEvidence => {
   const referenced = new Set(bullets.flatMap((bullet) => bullet.evidenceNumbers));
   const kept = sources.filter((source) => source.kind === 'coverage' || referenced.has(source.number));
   const displayNumbers = new Map(kept.map((source, position) => [source.number, position]));

@@ -99,7 +99,7 @@ const readFrame = (buffer: Buffer): { frame: Frame; rest: Buffer } | undefined =
   };
 };
 
-const closeDetails = (payload: Buffer): { code: number; reason: string } => ({
+const closeDetails = (payload: Buffer): Subscription['close'] => ({
   code: payload.length >= 2 ? payload.readUInt16BE(0) : 1005,
   reason: payload.length > 2 ? payload.subarray(2).toString('utf8') : '',
 });
