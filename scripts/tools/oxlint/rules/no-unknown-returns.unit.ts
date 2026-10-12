@@ -8,21 +8,50 @@ import { noUnknownReturnsRule } from './no-unknown-returns';
 
 const tester = new RuleTester({ languageOptions: { parserOptions: { lang: 'ts' } } });
 
-const expectedMessage =
-  'expected a concrete return contract, found `unknown` in the return type' +
-  '\nhelp: for external JSON, decode before returning, e.g. `Schema.decodeSync(Schema.fromJsonString(DomainSchema))(text)`' +
-  '\nhelp: transport-only readers can return bytes or text; keep size bounds at the transport boundary' +
-  '\nhelp: reuse producer or fixture contracts; use `T` for unchanged forwarding, validated details for error helpers, and `never` for throw-only helpers' +
-  '\nnote: `unknown` is valid while parsing untrusted data, but should not escape an API without establishing a concrete contract' +
-  '\nnote: a type annotation or assertion does not validate external data; keep runtime decoding and cleanup';
-
-describe('rules/no-unknown-returns diagnostic', () => {
+describe('rules/no-unknown-returns', () => {
   tester.run('guides callers toward concrete boundary contracts', noUnknownReturnsRule, {
-    valid: ['function parse(text: string): { readonly id: string } { return { id: text }; }'],
+    valid: [
+      'function parse(text: string): { readonly id: string } { return { id: text }; }',
+      "import { Effect } from 'effect'; declare function load(): Effect.Effect<string, Error, never>;",
+      "import { Effect } from '@acme/effect'; declare function load(): Effect.Effect<unknown>;",
+      "import { Effect } from 'effect'; namespace Shadow { export namespace Effect { export interface Effect<A> { readonly value: A; } } export declare function load(): Effect.Effect<unknown>; }",
+    ],
     invalid: [
       {
         code: 'async function receive(): Promise<unknown> { return JSON.parse("{}"); }',
-        errors: [{ message: expectedMessage }],
+        errors: [{ messageId: 'unknownReturn' }],
+      },
+      {
+        code: "import { Effect } from 'effect'; declare function load(): Effect.Effect<unknown, Error>;",
+        errors: [{ messageId: 'unknownReturn' }],
+      },
+      {
+        code: "import { Effect } from 'effect'; declare function load(): Effect.Effect<string, unknown>;",
+        errors: [{ messageId: 'unknownReturn' }],
+      },
+      {
+        code: "import { Effect } from 'effect'; declare function load(): Effect.Effect<string, Error, unknown>;",
+        errors: [{ messageId: 'unknownReturn' }],
+      },
+      {
+        code: "import { Effect as Eff } from 'effect'; type Loaded = Eff.Effect<unknown, never, never>; declare function load(): Loaded;",
+        errors: [{ messageId: 'unknownReturn' }],
+      },
+      {
+        code: "import * as Ns from 'effect'; declare function load(): Ns.Effect.Effect<unknown>;",
+        errors: [{ messageId: 'unknownReturn' }],
+      },
+      {
+        code: "import { Effect } from 'effect'; type Loaded<A> = Effect.Effect<A>; declare function load(): Loaded<unknown>;",
+        errors: [{ messageId: 'unknownReturn' }],
+      },
+      {
+        code: "import { Effect } from 'effect'; declare function load(): Promise<Effect.Effect<unknown>>;",
+        errors: [{ messageId: 'unknownReturn' }],
+      },
+      {
+        code: "import { Effect } from 'effect'; declare function load(): Effect.Effect<Promise<unknown>, Error>;",
+        errors: [{ messageId: 'unknownReturn' }],
       },
     ],
   });

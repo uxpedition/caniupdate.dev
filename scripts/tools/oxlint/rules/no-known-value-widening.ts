@@ -227,7 +227,9 @@ export const noKnownValueWideningRule = defineRule({
     },
     messages: {
       widening:
-        'The explicit {{target}} type on {{subject}} discards known type evidence. Keep inference, validate with `satisfies`, or use a named owner contract.',
+        '{{subject}} widens a known value to {{target}}\n  expected: the inferred or named shape of the value\n  found: explicit {{target}} type\n  note: this broadening discards evidence the compiler would otherwise keep\n  help: keep inference, validate with `satisfies`, or use a named owner contract',
+      anonymousContract:
+        '{{subject}} uses an anonymous object contract\n  expected: a named owner type, or the inferred shape\n  found: anonymous object type literal\n  note: the literal keeps its declared members, so this is a style policy rather than lost evidence\n  help: let inference express the shape, or declare a named owner type',
     },
   },
   createOnce(context) {
@@ -241,7 +243,7 @@ export const noKnownValueWideningRule = defineRule({
       if (!hasKnownEvidence(context.sourceCode, expression)) return;
       context.report({
         node: expression,
-        messageId: 'widening',
+        messageId: destination.kind === 'anonymous object' ? 'anonymousContract' : 'widening',
         data: { subject, target: destination.kind },
       });
     };
