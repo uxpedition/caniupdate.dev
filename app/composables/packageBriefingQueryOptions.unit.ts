@@ -137,18 +137,15 @@ const installTelemetryCollector = () => {
   };
 };
 
-/** Any non-null, non-function container: the gate before probing captured fetch call options. */
-const isOptionContainer = Schema.is(Schema.Struct({}));
-
 const isScalarString = Schema.is(Schema.String);
 
 const traceparentAt = (index: number): string | undefined => {
   const options: unknown = requestFetch.mock.calls[index]?.[1];
 
-  if (!isOptionContainer(options) || !('headers' in options)) return undefined;
+  if (!Predicate.isObjectOrArray(options) || !('headers' in options)) return undefined;
   const headers = options.headers;
 
-  if (!isOptionContainer(headers) || !('traceparent' in headers)) return undefined;
+  if (!Predicate.isObjectOrArray(headers) || !('traceparent' in headers)) return undefined;
 
   return isScalarString(headers.traceparent) ? headers.traceparent : undefined;
 };
@@ -295,6 +292,16 @@ describe('packageBriefingQueryOptions', () => {
     expect(exported).not.toContain('/api/package/');
     expect(exported).not.toContain('private-provider-detail');
   });
+
+  it.each(['upstream returned plain text', 42])(
+    'surfaces a primitive rejection %j unchanged after one attempt, without resubmitting',
+    async (rejection) => {
+      requestFetch.mockRejectedValueOnce(rejection);
+
+      await expect(runQuery([], new AbortController().signal, PAGE_CONTEXT)).rejects.toBe(rejection);
+      expect(requestFetch).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('resubmits once after a sanitized 503 and resolves the retried submission', async () => {
     vi.useFakeTimers();
