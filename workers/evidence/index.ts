@@ -46,6 +46,10 @@ export type EvidenceEnv = {
   readonly GITHUB_TOKEN?: string;
 };
 
+type WritableComparisonEvidenceServices = {
+  -readonly [K in keyof ComparisonEvidenceServices]: ComparisonEvidenceServices[K];
+};
+
 const archiveAdmission = new BoundedArchiveAdmission();
 
 const responseAdmission = new BoundedResponseAdmission();
@@ -74,11 +78,13 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
       this.#storageFailure = cause;
     }
 
-    this.#services = {
-      archiveAdmission,
-      ...(this.#cache === undefined ? {} : { cache: this.#cache }),
-      ...(env.GITHUB_TOKEN === undefined ? {} : { githubToken: env.GITHUB_TOKEN }),
-    };
+    const services: WritableComparisonEvidenceServices = { archiveAdmission };
+
+    if (this.#cache !== undefined) services.cache = this.#cache;
+
+    if (env.GITHUB_TOKEN !== undefined) services.githubToken = env.GITHUB_TOKEN;
+
+    this.#services = services;
   }
 
   async fetch(request: Request): Promise<Response> {
