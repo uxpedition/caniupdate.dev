@@ -1,3 +1,5 @@
+import type { Schema } from 'effect';
+
 import type {
   DeclarationComparison,
   DeclaredPackageVersion,
@@ -26,10 +28,11 @@ const formatNumber = (value: number): string => new Intl.NumberFormat('en-US').f
 
 const formatBytes = (value: number | null): string => (value === null ? 'Unavailable' : `${formatNumber(value)} bytes`);
 
-const formatJson = <T>(value: T): string => {
+// Manifest `exports` and `typesVersions` are the registry's JSON values, parsed by `Schema.Json`.
+const formatJson = (value: Schema.Json | undefined): string => {
   if (value === null || value === undefined) return 'Not declared';
 
-  return JSON.stringify(value, null, 2) ?? 'Not declared';
+  return JSON.stringify(value, null, 2);
 };
 
 const formatEntries = (entries: readonly string[]): string => (entries.length === 0 ? EMPTY_VALUE : entries.join('\n'));

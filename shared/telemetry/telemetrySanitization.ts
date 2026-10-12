@@ -38,6 +38,8 @@ type NativeScopeLogs = NativeResourceLogs['scopeLogs'][number];
 
 type NativeLogRecord = NonNullable<NativeScopeLogs['logRecords']>[number];
 
+type MutableNativeLogRecord = { -readonly [Key in keyof NativeLogRecord]: NativeLogRecord[Key] };
+
 type ProjectedAttribute = { key: string; value: { stringValue: string } };
 
 type NativeLogSeverity = {
@@ -302,7 +304,7 @@ const projectLogRecord = (record: NativeLogRecord): NativeLogRecord | undefined 
   const traceId = record.traceId !== undefined && isHexTraceId(record.traceId) ? record.traceId : undefined;
   const spanId = record.spanId !== undefined && isHexSpanId(record.spanId) ? record.spanId : undefined;
 
-  return {
+  const projected: MutableNativeLogRecord = {
     timeUnixNano: record.timeUnixNano,
     observedTimeUnixNano: record.observedTimeUnixNano,
     severityNumber: record.severityNumber,
@@ -314,9 +316,14 @@ const projectLogRecord = (record: NativeLogRecord): NativeLogRecord | undefined 
       record.attributes.length,
       attributes.length,
     ),
-    ...(traceId === undefined ? {} : { traceId }),
-    ...(spanId === undefined ? {} : { spanId }),
   };
+
+  // Absent IDs stay absent (not undefined) so the strict shared decoder sees the same key presence as before.
+  if (traceId !== undefined) projected.traceId = traceId;
+
+  if (spanId !== undefined) projected.spanId = spanId;
+
+  return projected;
 };
 
 const projectScopeLogs = (scopeLog: NativeScopeLogs): NativeScopeLogs | undefined => {

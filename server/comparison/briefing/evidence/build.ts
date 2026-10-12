@@ -16,8 +16,6 @@ const MAX_GAP_BYTES = 512;
 
 const textEncoder = new TextEncoder();
 
-const json = <T>(value: T): string => JSON.stringify(value) ?? 'null';
-
 const byteLength = (value: string): number => textEncoder.encode(value).byteLength;
 
 const boundedGap = (value: string): string => {
@@ -124,7 +122,7 @@ function structuredSource(
   urls: readonly string[],
   priority: number,
 ): BriefingEvidenceCandidate {
-  const source: BriefingSourceDraft = { id, kind: 'fact', label, urls: unique(urls), text: json(value) };
+  const source: BriefingSourceDraft = { id, kind: 'fact', label, urls: unique(urls), text: JSON.stringify(value) };
 
   return { source, priority };
 }
