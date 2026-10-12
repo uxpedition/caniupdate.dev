@@ -269,6 +269,22 @@ describe('generateBriefing', () => {
     await expect(run(citingPacket())).resolves.toMatchObject({ status: 'unavailable', reason: 'invalid-response' });
   });
 
+  it('rejects a bullet carrying a property outside the response contract', async () => {
+    const bulletsWithExtraKey = validBullets.map((bullet) => ({ ...bullet, confidence: 'high' }));
+
+    fetchMock.mockImplementation(async () => providerResponse(bulletsWithExtraKey));
+
+    await expect(run(citingPacket())).resolves.toMatchObject({ status: 'unavailable', reason: 'invalid-response' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a response with more bullets than the briefing allows', async () => {
+    fetchMock.mockImplementation(async () => providerResponse(Array.from({ length: 6 }, () => validBullets).flat()));
+
+    await expect(run(citingPacket())).resolves.toMatchObject({ status: 'unavailable', reason: 'invalid-response' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     'https://attacker.example',
     'mailto:attacker@example.com',

@@ -91,7 +91,7 @@ export const isErrorAttributeKey = (key: string): key is ErrorAttributeKey => Ob
 
 const readErrorString = (error: Error, key: 'name' | 'message' | 'stack'): string | undefined => {
   try {
-    const value: unknown = Reflect.get(error, key);
+    const value: unknown = error[key];
 
     return isScalarString(value) ? value : undefined;
   } catch {

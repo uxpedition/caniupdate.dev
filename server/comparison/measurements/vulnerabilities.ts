@@ -12,26 +12,33 @@ const unavailable: PackageVulnerabilities = { status: 'unavailable', count: null
 
 const COLLECTION_TIMEOUT = Duration.seconds(30);
 
+type AvailableAdvisory = Extract<PackageAdvisory, { detailsStatus: 'available' }>;
+
+type AdvisoryBuilder = { -readonly [Key in keyof AvailableAdvisory]: AvailableAdvisory[Key] };
+
 function toPackageAdvisory(packageName: string, detail: OsvVulnerability, url: string): PackageAdvisory {
   const { id, modified, published, summary, aliases, severity, references } = detail;
+  const advisory: AdvisoryBuilder = { id, url, detailsStatus: 'available', modified };
 
-  return {
-    id,
-    url,
-    detailsStatus: 'available',
-    modified,
-    ...(published === undefined ? {} : { published }),
-    ...(summary === undefined ? {} : { summary }),
-    ...(aliases === undefined ? {} : { aliases }),
-    ...(severity === undefined ? {} : { severity }),
-    ...(references === undefined ? {} : { references }),
-    // Keep ranges intact rather than claiming every fixed event is an upgrade for this version.
-    ...(detail.affected === undefined
-      ? {}
-      : {
-          affected: detail.affected.filter(({ package: pkg }) => pkg.ecosystem === 'npm' && pkg.name === packageName),
-        }),
-  };
+  // Optional fields stay absent when OSV omitted them; exactOptionalPropertyTypes forbids assigning undefined.
+  if (published !== undefined) advisory.published = published;
+
+  if (summary !== undefined) advisory.summary = summary;
+
+  if (aliases !== undefined) advisory.aliases = aliases;
+
+  if (severity !== undefined) advisory.severity = severity;
+
+  if (references !== undefined) advisory.references = references;
+
+  // Keep ranges intact rather than claiming every fixed event is an upgrade for this version.
+  if (detail.affected !== undefined) {
+    advisory.affected = detail.affected.filter(
+      ({ package: pkg }) => pkg.ecosystem === 'npm' && pkg.name === packageName,
+    );
+  }
+
+  return advisory;
 }
 
 function toVersionVulnerabilities(
