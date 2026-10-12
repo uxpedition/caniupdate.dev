@@ -21,7 +21,7 @@ export const packageMetadataQueryOptions = (
 ) => {
   const normalizedPackageName = computed(() => toValue(packageName)?.trim() ?? '');
 
-  return queryOptions({
+  const options = queryOptions({
     queryKey: computed<PackageMetadataQueryKey>(() => [
       ...PACKAGE_METADATA_QUERY_KEY_PREFIX,
       normalizedPackageName.value,
@@ -38,6 +38,12 @@ export const packageMetadataQueryOptions = (
     staleTime: PACKAGE_METADATA_STALE_TIME,
     retry: false,
     refetchOnWindowFocus: false,
-    ...(import.meta.client ? { gcTime: 5 * 60_000 } : {}),
   });
+
+  // Client-only: SSR leaves gcTime unset so the Query client default applies on the server.
+  if (import.meta.client) {
+    options.gcTime = 5 * 60_000;
+  }
+
+  return options;
 };

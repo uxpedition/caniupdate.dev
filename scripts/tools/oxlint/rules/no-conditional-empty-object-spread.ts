@@ -30,7 +30,9 @@ export const noConditionalEmptyObjectSpreadRule = defineRule({
     },
     messages: {
       avoid:
-        'This conditional spread hides property omission behind an empty object. Build the object in separate statements and add the property only when present.',
+        'expected explicit optional-field construction, found a conditional empty-object spread' +
+        '\nhelp: build the object in separate statements and assign the property only when its value is present' +
+        '\nnote: assigning `undefined` creates an own key, which changes `in`, `Object.keys`, and `hasOwn`; absent, `undefined`, `null`, and `false` are distinct values and must stay distinct',
     },
   },
   createOnce(context) {
