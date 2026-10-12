@@ -76,10 +76,8 @@ const initializeTelemetry = async (): Promise<TelemetryRuntime> => {
     ? new URL('/api/telemetry', window.location.origin).toString().replace(/\/$/, '')
     : undefined;
 
-  const runtimeOptions = {
-    ...(endpoint === undefined ? {} : { endpoint }),
-    serviceName: 'can-i-update-browser',
-  };
+  const serviceOptions = { serviceName: 'can-i-update-browser' };
+  const runtimeOptions = endpoint === undefined ? serviceOptions : { ...serviceOptions, endpoint };
 
   let telemetry = createTelemetryRuntime(runtimeOptions);
 
