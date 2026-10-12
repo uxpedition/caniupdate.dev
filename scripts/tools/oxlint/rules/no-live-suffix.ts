@@ -33,7 +33,10 @@ export const noLiveSuffixRule = defineRule({
 		},
 		messages: {
 			liveSuffix:
-				"The `{{name}}` name ends in `Live`, which mirrors external naming. Choose a descriptive local name, such as an explicit `...Layer` or capability name.",
+				"expected a descriptive local capability name, found `{{name}}` ending in Live" +
+				"\nhelp: choose a descriptive local name for the capability, such as a `...Layer` name for an Effect Layer" +
+				"\nhelp: import a third-party `Live` export under a local alias, such as `import { FooLive as FooLayer }`" +
+				"\nnote: renaming an export changes the module contract; update every importer in the same change",
 		},
 	},
 	create(context) {
