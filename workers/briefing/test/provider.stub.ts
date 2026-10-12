@@ -143,12 +143,17 @@ export async function startProviderFixture(options: { readonly port?: number } =
       return requests.filter(({ body }) => body.includes(packageName)).length;
     },
     traceHeadersFor(packageName: string): readonly { readonly traceparent?: string; readonly b3?: string }[] {
-      return requests
-        .filter(({ body }) => body.includes(packageName))
-        .map(({ traceparent, b3 }) => ({
+      const headers: { readonly traceparent?: string; readonly b3?: string }[] = [];
+
+      for (const { body, traceparent, b3 } of requests) {
+        if (!body.includes(packageName)) continue;
+        headers.push({
           ...(traceparent === undefined ? {} : { traceparent }),
           ...(b3 === undefined ? {} : { b3 }),
-        }));
+        });
+      }
+
+      return headers;
     },
     setMode(next: ProviderMode): void {
       mode = next;

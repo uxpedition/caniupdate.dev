@@ -254,9 +254,13 @@ function packetResult(
   baseGaps: readonly string[],
   omitted: ReadonlySet<string>,
 ): BriefingEvidence | null {
-  const truncated = unique(
-    candidates.filter((candidate) => candidate.truncated).map((candidate) => candidate.source.id),
-  );
+  const truncatedIds: string[] = [];
+
+  for (const candidate of candidates) {
+    if (candidate.truncated) truncatedIds.push(candidate.source.id);
+  }
+
+  const truncated = unique(truncatedIds);
 
   const gaps = packetGaps(baseGaps, omitted, truncated);
   const coverage = coverageSource(input, gaps, [...omitted], truncated);
