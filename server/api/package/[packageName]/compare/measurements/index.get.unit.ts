@@ -171,7 +171,7 @@ describe('measurement evidence boundary', () => {
   it('rejects an inventory-shaped response instead of forwarding full archive evidence', async () => {
     const response = measurementResponse();
 
-    const invalid: unknown = {
+    const invalid = {
       ...response,
       from: {
         ...response.from,

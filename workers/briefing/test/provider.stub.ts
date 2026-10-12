@@ -11,6 +11,10 @@ import { Schema } from 'effect';
 
 const isScalarString = Schema.is(Schema.String);
 
+type CapturedProviderRequest = { body: string; traceparent?: string; b3?: string };
+
+type ProviderTraceHeaders = Omit<CapturedProviderRequest, 'body'>;
+
 export const MODEL = 'test-model';
 
 export const FIXTURE_API_KEY = 'fixture-key';
@@ -99,7 +103,7 @@ export function providerFixture(): ProviderFixture {
  * fixed port its `workers/briefing/.dev.vars` endpoint names.
  */
 export async function startProviderFixture(options: { readonly port?: number } = {}): Promise<ProviderFixture> {
-  const requests: { readonly body: string; readonly traceparent?: string; readonly b3?: string }[] = [];
+  const requests: CapturedProviderRequest[] = [];
   const stalled: ServerResponse[] = [];
   let mode: ProviderMode = { kind: 'valid' };
 
@@ -108,11 +112,15 @@ export async function startProviderFixture(options: { readonly port?: number } =
       const chunks: Buffer[] = [];
       request.on('data', (chunk: Buffer) => chunks.push(chunk));
       await once(request, 'end');
-      requests.push({
+
+      const captured: CapturedProviderRequest = {
         body: Buffer.concat(chunks).toString('utf8'),
-        ...(isScalarString(request.headers.traceparent) ? { traceparent: request.headers.traceparent } : {}),
-        ...(isScalarString(request.headers.b3) ? { b3: request.headers.b3 } : {}),
-      });
+      };
+
+      if (isScalarString(request.headers.traceparent)) captured.traceparent = request.headers.traceparent;
+
+      if (isScalarString(request.headers.b3)) captured.b3 = request.headers.b3;
+      requests.push(captured);
 
       if (mode.kind === 'stall') {
         stalled.push(response);
@@ -143,12 +151,21 @@ export async function startProviderFixture(options: { readonly port?: number } =
       return requests.filter(({ body }) => body.includes(packageName)).length;
     },
     traceHeadersFor(packageName: string): readonly { readonly traceparent?: string; readonly b3?: string }[] {
-      return requests
-        .filter(({ body }) => body.includes(packageName))
-        .map(({ traceparent, b3 }) => ({
-          ...(traceparent === undefined ? {} : { traceparent }),
-          ...(b3 === undefined ? {} : { b3 }),
-        }));
+      const headers: ProviderTraceHeaders[] = [];
+
+      for (const { body, traceparent, b3 } of requests) {
+        if (!body.includes(packageName)) continue;
+
+        const header: ProviderTraceHeaders = {};
+
+        if (traceparent !== undefined) header.traceparent = traceparent;
+
+        if (b3 !== undefined) header.b3 = b3;
+
+        headers.push(header);
+      }
+
+      return headers;
     },
     setMode(next: ProviderMode): void {
       mode = next;

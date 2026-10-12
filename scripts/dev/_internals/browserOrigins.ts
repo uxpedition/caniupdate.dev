@@ -33,7 +33,13 @@ export const browserOrigins = (
     ...Object.values(interfaces).flatMap((addresses) => browserHostnames(addresses ?? [])),
   ].toSorted();
 
-  return hostnames
-    .filter((hostname, index) => hostnames[index - 1] !== hostname)
-    .map((hostname) => `http://${hostname}:${frontendPort}`);
+  const origins: string[] = [];
+
+  // The duplicate test reads the sorted input, so a repeated hostname is dropped against its original predecessor.
+  for (const [index, hostname] of hostnames.entries()) {
+    if (index > 0 && hostnames[index - 1] === hostname) continue;
+    origins.push(`http://${hostname}:${frontendPort}`);
+  }
+
+  return origins;
 };

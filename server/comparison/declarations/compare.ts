@@ -61,14 +61,25 @@ function peers(version: DeclaredPackageVersion) {
   );
 }
 
+type ModuleDeclaration = NonNullable<DeclarationComparison['moduleFormat']['from']>;
+
+type TypeDeclaration = NonNullable<DeclarationComparison['types']['from']>;
+
+type Writable<T> = { -readonly [Key in keyof T]: T[Key] };
+
+type TypeDeclarationFields = Omit<Writable<TypeDeclaration>, 'exports'>;
+
 function moduleDeclaration(version: DeclaredPackageVersion) {
   const { type, main, module } = version.moduleFormat;
+  const declaration: Writable<ModuleDeclaration> = {};
 
-  return {
-    ...(type === undefined ? {} : { type }),
-    ...(main === undefined ? {} : { main }),
-    ...(module === undefined ? {} : { module }),
-  };
+  if (type !== undefined) declaration.type = type;
+
+  if (main !== undefined) declaration.main = main;
+
+  if (module !== undefined) declaration.module = module;
+
+  return declaration;
 }
 
 // Walks registry-declared conditional export JSON; objects and arrays both branch, scalars end the walk.
@@ -83,12 +94,15 @@ function hasTypeCondition(value: Schema.Json): boolean {
 function typeDeclaration(version: DeclaredPackageVersion) {
   const { types, typings, typesVersions, exports } = version.moduleFormat;
 
-  return {
-    ...(types === undefined ? {} : { types }),
-    ...(typings === undefined ? {} : { typings }),
-    ...(typesVersions === undefined ? {} : { typesVersions }),
-    exports: exports !== undefined && hasTypeCondition(exports) ? exports : null,
-  };
+  const declaration: TypeDeclarationFields = {};
+
+  if (types !== undefined) declaration.types = types;
+
+  if (typings !== undefined) declaration.typings = typings;
+
+  if (typesVersions !== undefined) declaration.typesVersions = typesVersions;
+
+  return { ...declaration, exports: exports !== undefined && hasTypeCondition(exports) ? exports : null };
 }
 
 export function compareDeclarations(from: DeclaredPackageVersion, to: DeclaredPackageVersion): DeclarationComparison {

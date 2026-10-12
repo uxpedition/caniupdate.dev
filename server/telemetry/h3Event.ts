@@ -20,9 +20,6 @@ type EventContainer = {
   readonly headers?: unknown;
 };
 
-/** Any non-null, non-function container object: the gate before shape probing on a raw event. */
-const isEventObject = Schema.is(Schema.Struct({}));
-
 const isScalarString = Schema.is(Schema.String);
 
 const isRequestContainer = Schema.is(Schema.Struct({ request: Schema.Unknown }));
@@ -269,11 +266,11 @@ const createLegacyWebRequest = (
     method === 'GET' || method === 'HEAD' ? undefined : nodeRequestBody(request, nodeResponseFromEvent(event));
 
   try {
-    return new Request(url, {
-      method,
-      headers,
-      ...(body === undefined ? {} : { body, duplex: 'half' }),
-    });
+    // A streamed body requires half duplex; bodyless methods omit both keys entirely.
+    const init: RequestInit & { readonly duplex?: 'half' } =
+      body === undefined ? { method, headers } : { method, headers, body, duplex: 'half' };
+
+    return new Request(url, init);
   } catch {
     void body?.cancel().catch(() => undefined);
     throw new TelemetryIngressError(400);
@@ -282,7 +279,7 @@ const createLegacyWebRequest = (
 
 /** Preserve the H3 1 Node request body as a backpressured Web stream for bounded ingress. */
 export const toTelemetryRequest = (event: EventContainer): Request => {
-  if (!isEventObject(event)) throw new TelemetryIngressError(400);
+  if (!Predicate.isObjectOrArray(event)) throw new TelemetryIngressError(400);
   const nodeRequest = nodeRequestFromEvent(event);
 
   if (nodeRequest !== undefined) {
@@ -318,7 +315,7 @@ const eventClientAddress = (event: EventContainer): string | undefined =>
   contextClientAddress(event) ?? nodeClientAddress(event);
 
 export const telemetryClientAddress = (event: EventContainer, request: Request): string | undefined => {
-  if (isEventObject(event)) {
+  if (Predicate.isObjectOrArray(event)) {
     const address = eventClientAddress(event);
 
     if (address !== undefined) return address;

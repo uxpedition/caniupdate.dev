@@ -8,7 +8,9 @@ import type {
 } from '#shared/comparison/comparison.defs';
 import type { PackageAdvisory, PackageVulnerabilities } from '#shared/comparison/evidence/osv.defs';
 
-function unpackedSize(version: ComparisonVersion): { value: number | null; source: 'registry' | 'tarball' | null } {
+type UnpackedSize = { value: number | null; source: 'registry' | 'tarball' | null };
+
+function unpackedSize(version: ComparisonVersion): UnpackedSize {
   const declared = version.dist.unpackedSize;
 
   if (declared !== undefined && Number.isSafeInteger(declared) && declared >= 0)

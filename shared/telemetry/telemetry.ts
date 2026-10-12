@@ -2,7 +2,7 @@ import { Duration, Effect, Layer, Logger, ManagedRuntime, Schema, Tracer } from 
 import { FetchHttpClient, HttpBody } from 'effect/http';
 import { OtlpExporter, OtlpLogger, OtlpSerialization, OtlpTracer } from 'effect/observability';
 
-import { ConsoleLoggerLive } from './logging';
+import { JsonConsoleLoggerLayer } from './logging';
 import { decodeTelemetryPayload } from './telemetry.defs';
 import { TelemetryLogMessageSchema, TelemetryServiceNameSchema, TelemetrySpanNameSchema } from './telemetry.schema';
 import { sanitizeTelemetryLogs, sanitizeTelemetryTraces } from './telemetrySanitization';
@@ -30,13 +30,20 @@ type TelemetryResourceOptions = {
   attributes?: { 'deployment.environment.name': string };
 };
 
+/** Mutable mirror of the console-only subset of TelemetryRuntimeOptions; built key-by-key so absent keys stay absent. */
+type MutableFallbackRuntimeOptions = {
+  serviceName: string;
+  environment?: string;
+  serviceVersion?: string;
+};
+
 const EXPORT_BATCH_SIZE = 64;
 
 const EXPORT_SHUTDOWN_TIMEOUT = Duration.millis(250);
 
 const DISPOSE_TIMEOUT = Duration.seconds(1);
 
-const safeResourceOptions = (options: TelemetryRuntimeOptions) => {
+const safeResourceOptions = (options: TelemetryRuntimeOptions): TelemetryResourceOptions => {
   const environment = ['local', 'development', 'test', 'preview', 'production'].includes(options.environment ?? '')
     ? options.environment
     : undefined;
@@ -48,11 +55,14 @@ const safeResourceOptions = (options: TelemetryRuntimeOptions) => {
       ? options.serviceVersion
       : undefined;
 
-  return {
-    serviceName: options.serviceName,
-    ...(serviceVersion === undefined ? {} : { serviceVersion }),
-    ...(environment === undefined ? {} : { attributes: { 'deployment.environment.name': environment } }),
-  };
+  const resource: TelemetryResourceOptions = { serviceName: options.serviceName };
+
+  // Optional keys are omitted, not set to undefined: exactOptionalPropertyTypes and key-presence checks depend on it.
+  if (serviceVersion !== undefined) resource.serviceVersion = serviceVersion;
+
+  if (environment !== undefined) resource.attributes = { 'deployment.environment.name': environment };
+
+  return resource;
 };
 
 const isApprovedLogMessage = Schema.is(TelemetryLogMessageSchema);
@@ -134,7 +144,7 @@ const createLoggerLayer = (endpoint: string, options: TelemetryRuntimeOptions, r
       }).pipe(Effect.map(filterNativeLogger)),
     ],
     { mergeWithExisting: true },
-  ).pipe(Layer.provideMerge(OtlpExporter.layerFlusher), Layer.provideMerge(ConsoleLoggerLive));
+  ).pipe(Layer.provideMerge(OtlpExporter.layerFlusher), Layer.provideMerge(JsonConsoleLoggerLayer));
 
 const createTracerLayer = (endpoint: string, options: TelemetryRuntimeOptions, resource: TelemetryResourceOptions) =>
   Layer.effect(
@@ -151,7 +161,7 @@ const createTracerLayer = (endpoint: string, options: TelemetryRuntimeOptions, r
 
 const createLayer = (options: TelemetryRuntimeOptions): Layer.Layer<TelemetryServices> => {
   const endpoint = options.endpoint?.trim().replace(/\/+$/, '');
-  const baseLayer = Layer.mergeAll(ConsoleLoggerLive, OtlpExporter.layerFlusher);
+  const baseLayer = Layer.mergeAll(JsonConsoleLoggerLayer, OtlpExporter.layerFlusher);
 
   if (endpoint === undefined || endpoint.length === 0 || !Schema.is(TelemetryServiceNameSchema)(options.serviceName)) {
     return baseLayer;
@@ -214,11 +224,11 @@ export const runWithTelemetry = async <A, E, R extends TelemetryServices>(
 
       await scheduleDisposal(runtime, waitUntil);
 
-      const fallbackOptions: TelemetryRuntimeOptions = {
-        serviceName: options.serviceName,
-        ...(options.environment === undefined ? {} : { environment: options.environment }),
-        ...(options.serviceVersion === undefined ? {} : { serviceVersion: options.serviceVersion }),
-      };
+      const fallbackOptions: MutableFallbackRuntimeOptions = { serviceName: options.serviceName };
+
+      if (options.environment !== undefined) fallbackOptions.environment = options.environment;
+
+      if (options.serviceVersion !== undefined) fallbackOptions.serviceVersion = options.serviceVersion;
 
       runtime = createTelemetryRuntime(fallbackOptions);
       await runtime.context();

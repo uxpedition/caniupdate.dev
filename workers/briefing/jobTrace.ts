@@ -19,6 +19,10 @@ export interface GenerationTraceStorage {
 
 type TraceableRecord = { traceContext?: TraceContext; packet?: BriefingEvidence };
 
+type WritableTelemetryOptions = { -readonly [K in keyof TelemetryRuntimeOptions]: TelemetryRuntimeOptions[K] };
+
+type GenerationLogAnnotations = { traceId: string; spanId: string; parentSpanId?: string };
+
 export type GenerationTraceEvent = 'briefing.generation.accepted' | 'briefing.generation.trace_context.attached';
 
 export type RunningLease = { readonly fence: number; readonly generationContext?: TraceContext };
@@ -32,11 +36,13 @@ const telemetryHeadersFrom = (input?: string): Record<string, string> | undefine
 export const briefingTelemetryOptions = (endpoint?: string, headers?: string): TelemetryRuntimeOptions => {
   const decodedHeaders = telemetryHeadersFrom(headers);
 
-  return {
-    ...(endpoint === undefined ? {} : { endpoint }),
-    ...(decodedHeaders === undefined ? {} : { headers: decodedHeaders }),
-    serviceName: 'can-i-update-briefing',
-  };
+  const options: WritableTelemetryOptions = { serviceName: 'can-i-update-briefing' };
+
+  if (endpoint !== undefined) options.endpoint = endpoint;
+
+  if (decodedHeaders !== undefined) options.headers = decodedHeaders;
+
+  return options;
 };
 
 /** Called under the Durable Object lock so submitters and a Queue run adopt one persisted root context. */
@@ -109,13 +115,12 @@ export const runTracedGeneration = (
 
   return Effect.gen(function* () {
     const span = yield* Effect.currentSpan;
+    const annotations: GenerationLogAnnotations = { traceId: span.traceId, spanId: span.spanId };
+
+    if (generationContext !== undefined) annotations.parentSpanId = generationContext.spanId;
+
     yield* Effect.logInfo('briefing.generation.started').pipe(
-      Effect.annotateLogs({
-        traceId: span.traceId,
-        spanId: span.spanId,
-        ...(generationContext === undefined ? {} : { parentSpanId: generationContext.spanId }),
-        ...identityAttributes,
-      }),
+      Effect.annotateLogs({ ...annotations, ...identityAttributes }),
       Effect.ignore,
     );
 

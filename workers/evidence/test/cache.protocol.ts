@@ -45,6 +45,11 @@ export const CacheFixtureErrorSchema = Schema.Struct({
 
 export type CacheFixtureError = typeof CacheFixtureErrorSchema.Type;
 
+// Fixed fixture-owned wire errors; emitters construct them with `.make({})`.
+export const CacheFixtureRequestErrorSchema = Schema.TaggedStruct('FixtureRequestError', {});
+
+export const CacheFixtureRouteUnavailableSchema = Schema.TaggedStruct('FixtureRouteUnavailable', {});
+
 export const CacheFixtureOutcomeSchema = Schema.Union([
   Schema.Struct({ ok: Schema.Literal(true), value: Schema.String }),
   Schema.Struct({ ok: Schema.Literal(false), error: CacheFixtureErrorSchema }),
