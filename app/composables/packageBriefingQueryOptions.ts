@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/vue-query';
 import type { QueryFunctionContext } from '@tanstack/vue-query';
-import { Duration, Effect, Predicate, Schema, Tracer } from 'effect';
+import { Data, Duration, Effect, Predicate, Schema, Tracer } from 'effect';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
@@ -175,6 +175,13 @@ type SocketMessage =
   | { readonly _tag: 'status'; readonly status: BriefingStatus; readonly revision: number }
   | CompletedBriefing;
 
+/** Constructors for local socket states, destructured once at module scope so each frame calls them directly. */
+const { ignored, status, completed, disconnected, $is } = Data.taggedEnum<SocketMessage | SocketOutcome>();
+
+const isIgnoredSocketMessage = $is('ignored');
+
+const isCompletedSocketMessage = $is('completed');
+
 /** Parses one text frame against the worker's protocol; malformed JSON or a protocol violation yields undefined. */
 const decodeJobEventFrame = (data: string): BriefingJobEvent | undefined => {
   try {
@@ -186,19 +193,18 @@ const decodeJobEventFrame = (data: string): BriefingJobEvent | undefined => {
 
 /** Classifies one decoded frame against the highest revision this subscription has already applied. */
 const messageFromJobEvent = (frame: BriefingJobEvent, highest: number): SocketMessage => {
-  if (frame.revision <= highest) return { _tag: 'ignored' };
+  if (frame.revision <= highest) return ignored();
 
-  if (frame.status === 'available') return { _tag: 'completed', briefing: frame.briefing, revision: frame.revision };
+  if (frame.status === 'available') return completed({ briefing: frame.briefing, revision: frame.revision });
 
   if (frame.status === 'unavailable') {
-    return {
-      _tag: 'completed',
+    return completed({
       briefing: { status: 'unavailable', reason: frame.reason, bullets: [], sources: [] },
       revision: frame.revision,
-    };
+    });
   }
 
-  return { _tag: 'status', status: frame.status, revision: frame.revision };
+  return status({ status: frame.status, revision: frame.revision });
 };
 
 /**
@@ -240,11 +246,11 @@ const listenForJobEvents = (
         return;
       }
 
-      if (message._tag === 'ignored') return;
+      if (isIgnoredSocketMessage(message)) return;
 
       highest = message.revision;
 
-      if (message._tag === 'completed') {
+      if (isCompletedSocketMessage(message)) {
         complete(Effect.succeed(message));
 
         return;
@@ -256,7 +262,7 @@ const listenForJobEvents = (
     }
 
     function onClose(): void {
-      complete(Effect.succeed({ _tag: 'disconnected', revision: highest }));
+      complete(Effect.succeed(disconnected({ revision: highest })));
     }
 
     function detachListeners(): void {
@@ -320,7 +326,7 @@ export const waitForJobEvent = async (
       const outcome = yield* readJobEventSocket(url, highest, onStatus);
       highest = outcome.revision;
 
-      if (outcome._tag === 'completed') return outcome.briefing;
+      if (isCompletedSocketMessage(outcome)) return outcome.briefing;
       const delay = RECONNECT_DELAYS_MS.at(attempts);
 
       if (delay === undefined)
