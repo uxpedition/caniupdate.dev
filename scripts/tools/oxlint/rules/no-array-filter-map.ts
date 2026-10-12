@@ -12,7 +12,11 @@ export const noArrayFilterMapRule = defineRule({
     },
     messages: {
       arrayFilterMap:
-        'Avoid consecutive array `{{first}}` and `{{second}}` passes. Prefer `.values().{{first}}(...).{{second}}(...).toArray()` where iterator helpers are supported, or a single `flatMap`/mutating reducer. Preserve callback ordering, indexes, and filtering semantics.',
+        'expected one equivalent transformation pass, found consecutive array `{{first}}` and `{{second}}` passes' +
+        '\nhelp: for side-effect-free callbacks, prefer a small loop; preserve original indexes for map-then-filter and retained-element indexes for filter-then-map' +
+        '\nnote: fusion interleaves callbacks; two passes finish every first callback before starting any second callback. Analyze observable effects and callback array arguments before fusing' +
+        '\nnote: array map/filter skip sparse holes, while values() yields undefined for them; iterator helpers also require runtime support' +
+        '\nnote: Effect v4 Array.filterMap expects Result, not Option; an explicit loop avoids per-element wrapper allocation',
     },
   },
   createOnce(context) {
