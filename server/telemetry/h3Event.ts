@@ -269,11 +269,11 @@ const createLegacyWebRequest = (
     method === 'GET' || method === 'HEAD' ? undefined : nodeRequestBody(request, nodeResponseFromEvent(event));
 
   try {
-    return new Request(url, {
-      method,
-      headers,
-      ...(body === undefined ? {} : { body, duplex: 'half' }),
-    });
+    // A streamed body requires half duplex; bodyless methods omit both keys entirely.
+    const init: RequestInit & { readonly duplex?: 'half' } =
+      body === undefined ? { method, headers } : { method, headers, body, duplex: 'half' };
+
+    return new Request(url, init);
   } catch {
     void body?.cancel().catch(() => undefined);
     throw new TelemetryIngressError(400);

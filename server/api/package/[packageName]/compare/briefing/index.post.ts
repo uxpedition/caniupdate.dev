@@ -192,6 +192,21 @@ const readBriefingSubmissionRequest = async (event: H3Event): Promise<BriefingSu
   return { packageName, from, to };
 };
 
+type AcceptedSubmissionAnnotations = {
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string;
+  linkedGeneration?: TraceContext;
+};
+
+type FailedSubmissionAnnotations = {
+  name: string;
+  traceId: string;
+  spanId: string;
+  reason?: string;
+  parentSpanId?: string;
+};
+
 const logAcceptedSubmission = (
   parsed: TraceContext | undefined,
   result: BriefingServiceResult,
@@ -212,15 +227,15 @@ const logAcceptedSubmission = (
       );
     }
 
-    yield* Effect.logInfo('briefing.submission.accepted').pipe(
-      Effect.annotateLogs({
-        traceId: span.traceId,
-        spanId: span.spanId,
-        ...(parsed === undefined ? {} : { parentSpanId: parsed.spanId }),
-        ...(generationContext === undefined ? {} : { linkedGeneration: generationContext }),
-        ...identityAttributes,
-      }),
-    );
+    // Optional keys are set only when present so absent fields stay absent in exported logs (not set to undefined).
+    const annotations: AcceptedSubmissionAnnotations = { traceId: span.traceId, spanId: span.spanId };
+
+    if (parsed !== undefined) annotations.parentSpanId = parsed.spanId;
+
+    if (generationContext !== undefined) annotations.linkedGeneration = generationContext;
+    Object.assign(annotations, identityAttributes);
+
+    yield* Effect.logInfo('briefing.submission.accepted').pipe(Effect.annotateLogs(annotations));
   });
 
 const failBriefingSubmission = (
@@ -230,16 +245,20 @@ const failBriefingSubmission = (
 ) =>
   Effect.gen(function* () {
     const span = yield* Effect.currentSpan;
-    yield* Effect.logError('Briefing submission failed').pipe(
-      Effect.annotateLogs({
-        name: cause.failureName,
-        ...(cause.reason === undefined ? {} : { reason: cause.reason }),
-        traceId: span.traceId,
-        spanId: span.spanId,
-        ...(parsed === undefined ? {} : { parentSpanId: parsed.spanId }),
-        ...identityAttributes,
-      }),
-    );
+
+    // Optional keys are set only when present so absent fields stay absent in exported logs (not set to undefined).
+    const annotations: FailedSubmissionAnnotations = {
+      name: cause.failureName,
+      traceId: span.traceId,
+      spanId: span.spanId,
+    };
+
+    if (cause.reason !== undefined) annotations.reason = cause.reason;
+
+    if (parsed !== undefined) annotations.parentSpanId = parsed.spanId;
+    Object.assign(annotations, identityAttributes);
+
+    yield* Effect.logError('Briefing submission failed').pipe(Effect.annotateLogs(annotations));
 
     return yield* Effect.fail(createError({ statusCode: 503, statusMessage: cause.statusMessage }));
   });
@@ -321,10 +340,9 @@ const handleBriefingSubmission = async (event: H3Event) => {
 
   return runWithTelemetry(
     program,
-    {
-      serviceName: 'can-i-update-nuxt',
-      ...(telemetry.enabled ? { endpoint: telemetry.endpoint, headers: telemetry.headers } : {}),
-    },
+    telemetry.enabled
+      ? { serviceName: 'can-i-update-nuxt', endpoint: telemetry.endpoint, headers: telemetry.headers }
+      : { serviceName: 'can-i-update-nuxt' },
     telemetryWaitUntil(event.context),
   );
 };
