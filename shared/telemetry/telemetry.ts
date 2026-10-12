@@ -2,7 +2,7 @@ import { Duration, Effect, Layer, Logger, ManagedRuntime, Schema, Tracer } from 
 import { FetchHttpClient, HttpBody } from 'effect/http';
 import { OtlpExporter, OtlpLogger, OtlpSerialization, OtlpTracer } from 'effect/observability';
 
-import { ConsoleLoggerLive } from './logging';
+import { JsonConsoleLoggerLayer } from './logging';
 import { decodeTelemetryPayload } from './telemetry.defs';
 import { TelemetryLogMessageSchema, TelemetryServiceNameSchema, TelemetrySpanNameSchema } from './telemetry.schema';
 import { sanitizeTelemetryLogs, sanitizeTelemetryTraces } from './telemetrySanitization';
@@ -134,7 +134,7 @@ const createLoggerLayer = (endpoint: string, options: TelemetryRuntimeOptions, r
       }).pipe(Effect.map(filterNativeLogger)),
     ],
     { mergeWithExisting: true },
-  ).pipe(Layer.provideMerge(OtlpExporter.layerFlusher), Layer.provideMerge(ConsoleLoggerLive));
+  ).pipe(Layer.provideMerge(OtlpExporter.layerFlusher), Layer.provideMerge(JsonConsoleLoggerLayer));
 
 const createTracerLayer = (endpoint: string, options: TelemetryRuntimeOptions, resource: TelemetryResourceOptions) =>
   Layer.effect(
@@ -151,7 +151,7 @@ const createTracerLayer = (endpoint: string, options: TelemetryRuntimeOptions, r
 
 const createLayer = (options: TelemetryRuntimeOptions): Layer.Layer<TelemetryServices> => {
   const endpoint = options.endpoint?.trim().replace(/\/+$/, '');
-  const baseLayer = Layer.mergeAll(ConsoleLoggerLive, OtlpExporter.layerFlusher);
+  const baseLayer = Layer.mergeAll(JsonConsoleLoggerLayer, OtlpExporter.layerFlusher);
 
   if (endpoint === undefined || endpoint.length === 0 || !Schema.is(TelemetryServiceNameSchema)(options.serviceName)) {
     return baseLayer;
