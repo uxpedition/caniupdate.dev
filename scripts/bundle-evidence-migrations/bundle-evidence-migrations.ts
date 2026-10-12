@@ -3,15 +3,12 @@ import { lstat, readFile, readdir, rename, rm, writeFile } from 'node:fs/promise
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Schema } from 'effect';
+import { Predicate, Schema } from 'effect';
 
 const MIGRATION_FOLDER = /^\d{14}_[a-z0-9_-]+$/i;
 
-/** Any non-null, non-function container: the gate before probing a thrown node-fs failure cause. */
-const isContainerObject = Schema.is(Schema.Struct({}));
-
 const isEnoentCause = (cause: unknown): boolean =>
-  isContainerObject(cause) && 'code' in cause && cause.code === 'ENOENT';
+  Predicate.isObjectOrArray(cause) && 'code' in cause && cause.code === 'ENOENT';
 
 const BREAKPOINT = '--> statement-breakpoint';
 
