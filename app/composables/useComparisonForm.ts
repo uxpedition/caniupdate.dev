@@ -45,11 +45,9 @@ const createVersionCatalog = (metadata: ParsedPackageMetadata): VersionCatalog =
     const value = `${VERSION_OPTION_PREFIX}${version}`;
     versionByOptionValue.set(value, version);
 
-    return {
-      value,
-      label: version,
-      ...(index === 0 && distTagOptions.length > 0 ? { separatorBefore: true } : {}),
-    };
+    const option = { value, label: version };
+
+    return index === 0 && distTagOptions.length > 0 ? { ...option, separatorBefore: true } : option;
   });
 
   return { versionByOptionValue, options: [...distTagOptions, ...packageVersionOptions] };
@@ -115,12 +113,11 @@ const usePackageSearchOptions = (draft: Ref<ComparisonFormDraft>) => {
 
   const packageOptions = computed<readonly ComboboxOption[]>(
     () =>
-      searchResult.value?.data.map(({ name, version, description }) => ({
-        value: name,
-        label: name,
-        meta: version,
-        ...(description === undefined ? {} : { description }),
-      })) ?? [],
+      searchResult.value?.data.map(({ name, version, description }) => {
+        const option = { value: name, label: name, meta: version };
+
+        return description === undefined ? option : { ...option, description };
+      }) ?? [],
   );
 
   return { searchResult, error, isError, isFetching, packageOptions };

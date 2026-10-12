@@ -28,8 +28,10 @@ const INLINE_URL_PATTERN = /(?:^|[^A-Za-z0-9_])(?:[a-z][a-z0-9+.-]*:(?=\S)|\/\/|
 const CHAT_COMPLETIONS_SUFFIX = '/chat/completions';
 
 const BriefingContentSchema = Schema.Struct({
-  bullets: Schema.Array(BriefingBulletSchema),
+  bullets: Schema.Array(BriefingBulletSchema).check(Schema.isMinLength(MIN_BULLETS), Schema.isMaxLength(MAX_BULLETS)),
 });
+
+const BriefingContentJsonSchema = Schema.fromJsonString(BriefingContentSchema);
 
 export type BriefingConfig =
   | { readonly status: 'not-configured' }
@@ -133,37 +135,6 @@ export const readBriefingConfig = (env: BriefingEnvironment): BriefingConfig => 
 
 const invalidResponse = (): BriefingInvalidResponseError => new BriefingInvalidResponseError({});
 
-const RecordContainerSchema = Schema.Record(Schema.String, Schema.Unknown);
-
-type RecordContainer = typeof RecordContainerSchema.Type;
-
-const isRecordContainer = Schema.is(RecordContainerSchema);
-
-const hasExactKeys = (value: unknown, expected: readonly string[]): value is RecordContainer => {
-  if (!isRecordContainer(value)) return false;
-  const keys = Object.keys(value);
-
-  return keys.length === expected.length && expected.every((key) => Object.hasOwn(value, key));
-};
-
-const parseJson = (content: string): Effect.Effect<unknown, BriefingInvalidResponseError> =>
-  Effect.try({
-    try: () => {
-      const parsed: unknown = JSON.parse(content);
-
-      return parsed;
-    },
-    catch: () => invalidResponse(),
-  });
-
-const hasValidContentShape = (value: unknown): value is RecordContainer & { readonly bullets: readonly unknown[] } => {
-  if (!hasExactKeys(value, ['bullets']) || !Array.isArray(value.bullets)) return false;
-
-  if (value.bullets.length < MIN_BULLETS || value.bullets.length > MAX_BULLETS) return false;
-
-  return value.bullets.every((bullet) => hasExactKeys(bullet, ['kind', 'basis', 'text', 'evidenceNumbers']));
-};
-
 const isValidBullet = (bullet: BriefingBullet, numbers: ReadonlySet<number>): boolean => {
   // Stored snapshots retain their original kinds; fresh generations contain comparison insights only.
   if (
@@ -188,13 +159,11 @@ const decodeContent = (
   evidence: BriefingEvidence,
 ): Effect.Effect<readonly BriefingBullet[], BriefingInvalidResponseError> =>
   Effect.gen(function* () {
-    const parsed = yield* parseJson(content);
-
-    if (!hasValidContentShape(parsed)) return yield* Effect.fail(invalidResponse());
-
-    const decoded = yield* Schema.decodeUnknownEffect(BriefingContentSchema)(parsed, { errors: 'all' }).pipe(
-      Effect.mapError(() => invalidResponse()),
-    );
+    // Malformed JSON, missing or excess keys, and out-of-range bullet counts all reject as one invalid response.
+    const decoded = yield* Schema.decodeUnknownEffect(BriefingContentJsonSchema)(content, {
+      errors: 'all',
+      onExcessProperty: 'error',
+    }).pipe(Effect.mapError(() => invalidResponse()));
 
     const numbers = new Set(evidence.sources.map((source) => source.number));
 
@@ -210,10 +179,12 @@ const decodeContent = (
  * `[0] … [n]` instead of leaving the gaps a filtered packet position would. Bullets are rewritten to the same
  * numbers, and the packet itself keeps the positions the model cited.
  */
+type ResponseEvidence = { readonly bullets: readonly BriefingBullet[]; readonly sources: readonly BriefingSource[] };
+
 const collectResponseEvidence = (
   bullets: readonly BriefingBullet[],
   sources: readonly BriefingSource[],
-): { readonly bullets: readonly BriefingBullet[]; readonly sources: readonly BriefingSource[] } => {
+): ResponseEvidence => {
   const referenced = new Set(bullets.flatMap((bullet) => bullet.evidenceNumbers));
   const kept = sources.filter((source) => source.kind === 'coverage' || referenced.has(source.number));
   const displayNumbers = new Map(kept.map((source, position) => [source.number, position]));

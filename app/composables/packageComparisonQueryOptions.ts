@@ -28,7 +28,7 @@ export const packageComparisonQueryOptions = (
   const normalizedFromVersion = computed(() => toValue(fromVersion).trim());
   const normalizedToVersion = computed(() => toValue(toVersion).trim());
 
-  return queryOptions({
+  const options = queryOptions({
     queryKey: computed<PackageComparisonQueryKey>(() => [
       ...PACKAGE_COMPARISON_QUERY_KEY_PREFIX,
       normalizedPackageName.value,
@@ -53,6 +53,12 @@ export const packageComparisonQueryOptions = (
     staleTime: PACKAGE_COMPARISON_STALE_TIME,
     retry: false,
     refetchOnWindowFocus: false,
-    ...(import.meta.client ? { gcTime: 5 * 60_000 } : {}),
   });
+
+  // Client-only: SSR leaves gcTime unset so the Query client default applies on the server.
+  if (import.meta.client) {
+    options.gcTime = 5 * 60_000;
+  }
+
+  return options;
 };
