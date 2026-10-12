@@ -3,15 +3,22 @@ import { describe, expect, it } from 'vitest';
 
 import handler from './config.get';
 
+type ConfigFixtureEnvironment = {
+  NUXT_PUBLIC_TELEMETRY_ENABLED?: string;
+  NUXT_OTEL_ENDPOINT: string;
+  NUXT_OTEL_HEADERS: string;
+};
+
 const requestConfig = async (enabled?: string) => {
   const event = mockEvent('http://localhost/api/telemetry/config');
-  event.context.cloudflare = {
-    env: {
-      ...(enabled === undefined ? {} : { NUXT_PUBLIC_TELEMETRY_ENABLED: enabled }),
-      NUXT_OTEL_ENDPOINT: 'http://127.0.0.1:4318',
-      NUXT_OTEL_HEADERS: '{"authorization":"Bearer private-collector-secret"}',
-    },
+
+  const env: ConfigFixtureEnvironment = {
+    NUXT_OTEL_ENDPOINT: 'http://127.0.0.1:4318',
+    NUXT_OTEL_HEADERS: '{"authorization":"Bearer private-collector-secret"}',
   };
+
+  if (enabled !== undefined) env.NUXT_PUBLIC_TELEMETRY_ENABLED = enabled;
+  event.context.cloudflare = { env };
 
   return handler(event);
 };
