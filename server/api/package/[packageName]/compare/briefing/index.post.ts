@@ -82,7 +82,7 @@ const copyNodeDevelopmentRpcServiceResultData = (submission: RpcResultData): Rpc
       throw new TypeError('Briefing service returned an accessor property');
     }
 
-    const value: unknown = Reflect.get(submission, key);
+    const value: unknown = submission[key];
     Object.defineProperty(data, key, { enumerable: true, value });
   }
 

@@ -8,8 +8,9 @@ import { readServerTelemetryConfig } from '../telemetry/runtimeConfig';
 const isScalarNumber = Schema.is(Schema.Number);
 
 const errorStatusCode = (cause: unknown): number | undefined => {
-  if (!(cause instanceof Error)) return undefined;
-  const status: unknown = Reflect.get(cause, 'statusCode');
+  // `in` keeps inherited accessors (e.g. HTTPError.statusCode) visible; a throwing getter propagates to the hook's catch.
+  if (!(cause instanceof Error) || !('statusCode' in cause)) return undefined;
+  const status: unknown = cause.statusCode;
 
   return isScalarNumber(status) ? status : undefined;
 };
