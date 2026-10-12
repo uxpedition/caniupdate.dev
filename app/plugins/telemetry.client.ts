@@ -1,4 +1,4 @@
-import { Effect, Schema } from 'effect';
+import { Effect } from 'effect';
 
 import type { NuxtApp } from '#app';
 import { defineNuxtPlugin } from '#imports';
@@ -46,11 +46,8 @@ type TelemetryPluginState = {
   disposed: boolean;
 };
 
-const HotRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
-
-type HotRecord = typeof HotRecordSchema.Type;
-
-type TelemetryHotData = HotRecord & { telemetryClientApps?: Map<NuxtApp, TelemetryPluginState> };
+// Only this plugin's key is typed; other platform HMR data is left untouched because it is never read or replaced.
+type TelemetryHotData = { telemetryClientApps?: Map<NuxtApp, TelemetryPluginState> };
 
 type TelemetryHotModule = {
   readonly data: TelemetryHotData;
@@ -76,10 +73,8 @@ const initializeTelemetry = async (): Promise<TelemetryRuntime> => {
     ? new URL('/api/telemetry', window.location.origin).toString().replace(/\/$/, '')
     : undefined;
 
-  const runtimeOptions = {
-    ...(endpoint === undefined ? {} : { endpoint }),
-    serviceName: 'can-i-update-browser',
-  };
+  const serviceOptions = { serviceName: 'can-i-update-browser' };
+  const runtimeOptions = endpoint === undefined ? serviceOptions : { ...serviceOptions, endpoint };
 
   let telemetry = createTelemetryRuntime(runtimeOptions);
 

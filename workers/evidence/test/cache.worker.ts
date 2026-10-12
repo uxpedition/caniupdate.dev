@@ -1,6 +1,6 @@
 import type * as Cloudflare from '@cloudflare/workers-types';
 import { DurableObject } from 'cloudflare:workers';
-import { Schema } from 'effect';
+import { Predicate, Schema } from 'effect';
 
 import type { ComparisonEvidenceCacheOptions } from '../../../server/comparison/evidence/services';
 import { SqlEvidenceCache } from '../store';
@@ -10,6 +10,8 @@ import {
   CacheFixtureCommandSchema,
   type CacheFixtureError,
   type CacheFixtureOutcome,
+  CacheFixtureRequestErrorSchema,
+  CacheFixtureRouteUnavailableSchema,
 } from './cache.protocol';
 
 type Request = Cloudflare.Request;
@@ -21,8 +23,6 @@ declare const Response: typeof Cloudflare.Response;
 const CHUNK_BYTES = 128 * 1024;
 
 const decodeCacheFixtureCommand = Schema.decodeUnknownSync(CacheFixtureCommandSchema, { errors: 'all' });
-
-const isContainerObject = Schema.is(Schema.Struct({}));
 
 const isScalarString = Schema.is(Schema.String);
 
@@ -53,28 +53,34 @@ function jsonResponse(body: FixtureResponseBody, status = 200): Response {
   });
 }
 
-function stringProperty(cause: unknown, key: string): string | undefined {
-  if (!isContainerObject(cause) || !(key in cause)) return undefined;
-  const property: unknown = Reflect.get(cause, key);
+// The category guard rejects primitives such as a thrown string before `hasProperty` (`in`) or the read.
+function stringProperty(cause: unknown, key: 'name' | 'message' | '_tag' | 'operation' | 'detail'): string | undefined {
+  if (!Predicate.isObjectOrArray(cause) || !Predicate.hasProperty(cause, key)) return undefined;
+  const property: unknown = cause[key];
 
   return isScalarString(property) ? property : undefined;
 }
 
 type CauseLeaf = { name: string | undefined; message: string | undefined };
 
+type CauseContainer = { readonly cause?: unknown };
+
+// The link remains untrusted; this category guard permits one direct read without adding a Proxy has trap.
+const isCauseContainer = (cause: unknown): cause is CauseContainer => Predicate.isObjectOrArray(cause);
+
 // Walks native `Error.cause` links to the innermost container and projects only its validated name and message.
 // Cycles, primitive links, missing causes, and DrizzleQueryError leaves yield no leaf.
 function innermostCause(cause: unknown): CauseLeaf | undefined {
-  if (!isContainerObject(cause)) return undefined;
-  let current: unknown = Reflect.get(cause, 'cause');
+  if (!isCauseContainer(cause)) return undefined;
+  let current: unknown = cause.cause;
 
   if (current === undefined) return undefined;
   const seen = new Set<object>();
 
-  while (isContainerObject(current)) {
+  while (isCauseContainer(current)) {
     if (seen.has(current)) return undefined;
     seen.add(current);
-    const nested: unknown = Reflect.get(current, 'cause');
+    const nested: unknown = current.cause;
 
     if (nested === undefined) {
       if (stringProperty(current, 'name') === 'DrizzleQueryError') return undefined;
@@ -122,7 +128,10 @@ export class EvidenceCacheFixture extends DurableObject {
 
   async fetch(request: Request): Promise<Response> {
     if (request.method !== 'POST') {
-      return jsonResponse({ ok: false, loaderCalls: this.loaderCalls, error: { _tag: 'FixtureRequestError' } }, 405);
+      return jsonResponse(
+        { ok: false, loaderCalls: this.loaderCalls, error: CacheFixtureRequestErrorSchema.make({}) },
+        405,
+      );
     }
 
     let requestBody: unknown;
@@ -130,7 +139,10 @@ export class EvidenceCacheFixture extends DurableObject {
     try {
       requestBody = await request.json();
     } catch {
-      return jsonResponse({ ok: false, loaderCalls: this.loaderCalls, error: { _tag: 'FixtureRequestError' } }, 400);
+      return jsonResponse(
+        { ok: false, loaderCalls: this.loaderCalls, error: CacheFixtureRequestErrorSchema.make({}) },
+        400,
+      );
     }
 
     let command: CacheFixtureCommand;
@@ -138,7 +150,10 @@ export class EvidenceCacheFixture extends DurableObject {
     try {
       command = decodeCacheFixtureCommand(requestBody);
     } catch {
-      return jsonResponse({ ok: false, loaderCalls: this.loaderCalls, error: { _tag: 'FixtureRequestError' } }, 400);
+      return jsonResponse(
+        { ok: false, loaderCalls: this.loaderCalls, error: CacheFixtureRequestErrorSchema.make({}) },
+        400,
+      );
     }
 
     try {
@@ -333,6 +348,6 @@ export class EvidenceCacheFixture extends DurableObject {
 
 export default {
   async fetch(): Promise<Response> {
-    return jsonResponse({ error: { _tag: 'FixtureRouteUnavailable' } }, 404);
+    return jsonResponse({ error: CacheFixtureRouteUnavailableSchema.make({}) }, 404);
   },
 };

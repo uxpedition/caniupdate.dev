@@ -65,17 +65,30 @@ const ParsedPackagesSearchResponseSchema = Schema.Struct({
 
 export type ParsedPackagesSearchResult = typeof ParsedPackagesSearchResponseSchema.Type;
 
+type RegistryPackage = RegistryPackagesSearchResponse['objects'][number]['package'];
+
+type ParsedPackage = ParsedPackagesSearchResult['data'][number];
+
+type ParsedPackageBuilder = { -readonly [Key in keyof ParsedPackage]: ParsedPackage[Key] };
+
+// Schema-derived output is readonly; the builder owns this object until it returns it.
+function toParsedPackage(pkg: RegistryPackage): ParsedPackage {
+  const parsed: ParsedPackageBuilder = {
+    name: pkg.name,
+    version: pkg.version,
+    versionPublishedAt: pkg.date,
+  };
+
+  if (pkg.description !== undefined) parsed.description = pkg.description;
+
+  if (pkg.license !== undefined) parsed.license = pkg.license;
+
+  return parsed;
+}
+
 export function toSearchResults(response: RegistryPackagesSearchResponse): ParsedPackagesSearchResult {
   return {
-    data: response.objects.map(({ package: pkg }) => ({
-      name: pkg.name,
-      version: pkg.version,
-      versionPublishedAt: pkg.date,
-
-      ...(pkg.description === undefined ? {} : { description: pkg.description }),
-
-      ...(pkg.license === undefined ? {} : { license: pkg.license }),
-    })),
+    data: response.objects.map(({ package: pkg }) => toParsedPackage(pkg)),
 
     total: response.total,
     time: response.time,

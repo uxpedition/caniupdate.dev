@@ -140,12 +140,13 @@ const safeExceptionEvent = (event: ExceptionEventExtended): ExceptionEvent => {
           }),
         );
 
-  return {
+  const safeEvent = {
     timestamp: isScalarString(event.timestamp) ? event.timestamp : '',
     type,
     value: message ?? '',
-    ...(retainedFrames.length === 0 ? {} : { stacktrace: { frames: retainedFrames } }),
   };
+
+  return retainedFrames.length === 0 ? safeEvent : { ...safeEvent, stacktrace: { frames: retainedFrames } };
 };
 
 const toSafeLog = (event: ExceptionEvent, current: FaroState): SafeErrorLog => {
@@ -279,11 +280,12 @@ const makeHandle = (): FaroErrorsAdapter => ({
     state.errorSources.set(error, source);
 
     try {
-      state.faro.api.pushError(error, {
-        originalError: error,
-        skipDedupe: true,
-        ...(options.fatal !== undefined ? { fatal: options.fatal } : {}),
-      });
+      const pushOptions = { originalError: error, skipDedupe: true };
+
+      state.faro.api.pushError(
+        error,
+        options.fatal === undefined ? pushOptions : { ...pushOptions, fatal: options.fatal },
+      );
 
       return true;
     } catch {
