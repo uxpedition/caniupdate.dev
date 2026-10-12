@@ -25,6 +25,8 @@ For ownership changes, trace the affected callers against the [architecture over
 ## Contracts preserve meaning
 
 - Derive types from shared Effect schemas where data crosses a trust boundary. Static types describe decoded data; they do not validate network, storage, RPC, Queue, or socket payloads.
+- Keep raw `unknown` local to parsing and error inspection; the owning operation returns decoded values. Compose JSON text with its domain schema when that preserves error classification and transport bounds. A schema used only for a type alias, or an unrelated serializer generic, does not establish validation.
+- Distinguish a shallow object-category gate from domain validation. `Predicate.isObjectOrArray` retains arrays and rejects primitives and functions; `Schema.is(Schema.Struct({}))` does not establish that category. Use the owning schema for actual boundary decoding.
 - Model meaningful states as discriminated unions. Each variant should carry the evidence or reason its consumer needs, rather than requiring combinations of booleans to reconstruct state.
 - Choose absence semantics per contract. Missing declarations, explicit `null`, empty collections, and unavailable evidence can mean different things. Preserve those distinctions through normalization, persistence, and rendering.
 - Normalize only what the domain permits. Conditional export and `typesVersions` order affects precedence; sorting it for convenience changes meaning.
@@ -69,6 +71,8 @@ For database changes, read the [database ADR](docs/engineering/adrs/drizzle-data
 
 - Keep a change focused on one outcome. Include the reason and material tradeoffs; record durable architecture decisions in the existing ADR structure rather than relying only on a chat or PR.
 - Match verification to the risk. Pure comparisons need behavioral checks; persistence, queues, alarms, and sockets need real runtime evidence where their semantics matter. Stub external providers, not the platform behavior under examination.
+- Review lint remediation against the original contract, not just the remaining warning count. Partial assertion and match patterns are not constructed tagged values; naming an exact anonymous contract improves ownership, not runtime evidence. Diagnostics should distinguish those cases and give behavior-preserving help.
+- Transformation cleanup preserves callback ordering, indexes, sparse-array behavior, and property presence. A fused pass can interleave callbacks that previously ran in separate phases; verify equivalence before optimizing.
 - Permanent tests protect consumer-visible behavior, boundaries, precedence, uncertainty, cancellation, and recovery. Prefer deterministic, isolated tests over assertions tied to private structure or mock forwarding.
 - UI verification exercises the rendered surface, including hydration and navigation. A successful API request or SSR HTML response is not evidence that controls work; frontend/framework changes need Chromium and Firefox checks.
 - For every acceptance criterion, the reviewer identifies exercised evidence, a concrete defect, or an explicit verification gap. Claims about behavior follow traced execution or observed results, not naming or code shape alone.
