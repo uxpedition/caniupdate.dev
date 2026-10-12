@@ -35,18 +35,18 @@ export function sizeChange(size: SizeComparison): string {
   return `${sign}${readableSize(Math.abs(size.delta))}${percent}`;
 }
 
-const declarationSummaries: Record<string, (version: DeclaredPackageVersion) => string> = {
-  'comparison.dependencies': (version) => {
+const declarationSummaries = {
+  'comparison.dependencies': (version: DeclaredPackageVersion) => {
     const count = new Set([...Object.keys(version.dependencies), ...Object.keys(version.optionalDependencies)]).size;
 
     return count === 0 ? 'None declared' : `${count} dependencies`;
   },
-  'comparison.peers': (version) => {
+  'comparison.peers': (version: DeclaredPackageVersion) => {
     const count = Object.keys(version.peerDependencies).length;
 
     return count === 0 ? 'None declared' : `${count} ${count === 1 ? 'peer' : 'peers'}`;
   },
-  'comparison.moduleFormat': (version) =>
+  'comparison.moduleFormat': (version: DeclaredPackageVersion) =>
     [
       version.moduleFormat.type,
       version.moduleFormat.main ? 'main entry' : '',
@@ -54,19 +54,24 @@ const declarationSummaries: Record<string, (version: DeclaredPackageVersion) => 
     ]
       .filter(Boolean)
       .join(' · ') || 'None declared',
-  'comparison.exports': (version) =>
+  'comparison.exports': (version: DeclaredPackageVersion) =>
     version.moduleFormat.exports === undefined || version.moduleFormat.exports === null ? 'Not declared' : 'Declared',
-  'comparison.types': (version) => {
+  'comparison.types': (version: DeclaredPackageVersion) => {
     if (version.moduleFormat.types || version.moduleFormat.typings) return 'Types entry declared';
 
     return version.moduleFormat.typesVersions ? 'Versioned types declared' : 'None declared';
   },
-  'comparison.installScripts': (version) => {
+  'comparison.installScripts': (version: DeclaredPackageVersion) => {
     const count = Object.keys(version.installScriptCommands).length;
 
     return count === 0 ? 'None declared' : `${count} install ${count === 1 ? 'script' : 'scripts'}`;
   },
 };
+
+type DeclarationSourceId = keyof typeof declarationSummaries;
+
+const isDeclarationSourceId = (sourceId: string): sourceId is DeclarationSourceId =>
+  Object.hasOwn(declarationSummaries, sourceId);
 
 const isMeasuredVersion = (
   version: MeasuredPackageVersion | DeclaredPackageVersion,
@@ -98,9 +103,11 @@ function evidenceSummary(
   if (sourceId === 'comparison.advisories') return advisorySummary(version, original);
 
   if (sourceId === 'comparison.tarball') return tarballSummary(version, original);
+
+  if (!isDeclarationSourceId(sourceId)) return original;
   const declarationVersion: DeclaredPackageVersion = version;
 
-  return declarationSummaries[sourceId]?.(declarationVersion) ?? original;
+  return declarationSummaries[sourceId](declarationVersion);
 }
 
 export type ComparisonSummaryInput = {

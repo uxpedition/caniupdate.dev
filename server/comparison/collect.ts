@@ -47,8 +47,26 @@ export const EVIDENCE_COLLECTOR_REVISION = 'comparison-evidence-v1';
 
 export const ARCHIVE_INSPECTOR_REVISION = 'archive-inspector-v2';
 
-const cacheKey = <T>(scope: string, input: T): string => {
-  const serialized = JSON.stringify(input) ?? 'undefined';
+// Each identity is a closed object built at one call site below; the github key serializes whole manifests so every
+// field the release-note lookup depends on contributes to the digest.
+type CacheIdentity =
+  | { readonly revision: string; readonly packageName: string; readonly version: string }
+  | {
+      readonly revision: string;
+      readonly packageName: string;
+      readonly fromVersion: string;
+      readonly toVersion: string;
+    }
+  | { readonly revision: string; readonly integrity: { readonly algorithm: string; readonly value: string } }
+  | {
+      readonly revision: string;
+      readonly packageName: string;
+      readonly from: RegistryVersionManifest;
+      readonly to: RegistryVersionManifest;
+    };
+
+const cacheKey = (scope: string, input: CacheIdentity): string => {
+  const serialized = JSON.stringify(input);
   const digest = createHash('sha256').update(serialized).digest('hex');
 
   return `${scope}:${digest}`;

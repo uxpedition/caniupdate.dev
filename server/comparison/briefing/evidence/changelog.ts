@@ -415,11 +415,11 @@ function toMaintainerCandidates(records: readonly MaintainerRecord[]): BriefingE
       text: record.text,
     };
 
-    return {
-      source,
-      priority: 4,
-      ...(record.truncated ? { truncated: true } : {}),
-    } satisfies BriefingEvidenceCandidate;
+    const candidate: BriefingEvidenceCandidate = { source, priority: 4 };
+
+    if (record.truncated) candidate.truncated = true;
+
+    return candidate;
   });
 }
 

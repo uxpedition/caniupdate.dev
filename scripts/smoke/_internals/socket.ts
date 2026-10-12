@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import { createConnection, type Socket } from 'node:net';
 
-import { Schema } from 'effect';
+import { Predicate, Schema } from 'effect';
 
 export class SocketFailure extends Error {
   override readonly name = 'SocketFailure';
@@ -23,9 +23,6 @@ export type Subscription = {
   readonly close: { readonly code: number; readonly reason: string };
 };
 
-/** Any non-null, non-function container: the gate before probing a socket frame object. */
-const isContainerObject = Schema.is(Schema.Struct({}));
-
 const isScalarString = Schema.is(Schema.String);
 
 const isJsonNumber = Schema.is(Schema.Number);
@@ -34,7 +31,7 @@ const FRAME_STATUSES = ['queued', 'running', 'available', 'unavailable'];
 
 /** A frame the scenario should read: an object carrying this protocol's status and revision. */
 const isJobEvent = (value: unknown): value is BriefingJobEvent => {
-  if (!isContainerObject(value) || !('status' in value) || !isScalarString(value.status)) return false;
+  if (!Predicate.isObjectOrArray(value) || !('status' in value) || !isScalarString(value.status)) return false;
 
   if (!('revision' in value) || !isJsonNumber(value.revision)) return false;
 

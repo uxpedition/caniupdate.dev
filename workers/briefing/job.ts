@@ -80,6 +80,9 @@ export type JobRecord = {
   reason?: BriefingUnavailableReason;
 };
 
+/** Mutable view of the stored JobRecord contract, used only while a terminal record is being assembled. */
+type WritableJobRecord = { -readonly [K in keyof JobRecord]: JobRecord[K] };
+
 export type BriefingEnv = {
   readonly BRIEFING_JOBS: DurableObjectNamespace<BriefingJob>;
   readonly BRIEFING_QUEUE: Queue<BriefingJobMessage>;
@@ -529,15 +532,17 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
 
     if (record.state === 'available' || record.state === 'unavailable') return await this.#terminalEvent(record);
 
-    const settled: JobRecord = {
+    const settled: WritableJobRecord = {
       hash: record.hash,
       generationId: record.generationId,
       revision: record.revision + 1,
       state: outcome.state,
       dispatchAttempts: record.dispatchAttempts,
-      ...(record.fence === undefined ? {} : { fence: record.fence }),
-      ...(outcome.state === 'unavailable' ? { reason: outcome.reason } : {}),
     };
+
+    if (record.fence !== undefined) settled.fence = record.fence;
+
+    if (outcome.state === 'unavailable') settled.reason = outcome.reason;
 
     await this.ctx.storage.put(JOB_KEY, settled);
     await this.ctx.storage.deleteAlarm();

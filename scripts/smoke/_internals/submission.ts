@@ -45,13 +45,13 @@ export const submit = async (
 ): Promise<{ status: number; body: BriefingSubmission }> => {
   // A device-shaped call reaches the frontend by the address it loaded the page from, so the request carries that
   // Origin and the Host a browser on that device would send.
+  const init: RequestInit = { method: 'POST', signal: AbortSignal.timeout(120_000) };
+
+  if (origin !== undefined) init.headers = { Origin: origin };
+
   const response = await fetch(
     `${origin ?? FRONTEND_ORIGIN}/api/package/${encodeURIComponent(packageName)}/compare/briefing?from=${from}&to=${to}`,
-    {
-      method: 'POST',
-      ...(origin === undefined ? {} : { headers: { Origin: origin } }),
-      signal: AbortSignal.timeout(120_000),
-    },
+    init,
   );
 
   const body: unknown = await response.json();
