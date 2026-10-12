@@ -2,7 +2,34 @@ import { Schema } from 'effect';
 
 const isScalarString = Schema.is(Schema.String);
 
-const ERROR_TYPES: Readonly<Record<string, true>> = {
+type ErrorTypeName = 'Error' | 'TypeError' | 'RangeError' | 'ReferenceError' | 'SyntaxError' | 'URIError' | 'EvalError';
+
+type ErrorSourceName =
+  | 'browser'
+  | 'vue'
+  | 'app'
+  | 'chunk'
+  | 'server'
+  | 'browser.vue'
+  | 'browser.app'
+  | 'browser.chunk'
+  | 'browser.rejection'
+  | 'browser.error'
+  | 'browser.socket'
+  | 'nuxt'
+  | 'nuxt.ssr'
+  | 'nuxt.vue'
+  | 'evidence'
+  | 'briefing'
+  | 'platform';
+
+/** Exhaustive over the union, so a new member cannot be added to the type without a table entry. */
+const finiteTable =
+  <T extends string>(table: Readonly<Record<T, true>>) =>
+  (value: string): value is T =>
+    Object.hasOwn(table, value);
+
+const ERROR_TYPES: Readonly<Record<ErrorTypeName, true>> = {
   Error: true,
   TypeError: true,
   RangeError: true,
@@ -12,7 +39,7 @@ const ERROR_TYPES: Readonly<Record<string, true>> = {
   EvalError: true,
 };
 
-const ERROR_SOURCES: Readonly<Record<string, true>> = {
+const ERROR_SOURCES: Readonly<Record<ErrorSourceName, true>> = {
   browser: true,
   vue: true,
   app: true,
@@ -32,12 +59,16 @@ const ERROR_SOURCES: Readonly<Record<string, true>> = {
   platform: true,
 };
 
-const ERROR_KEYS: Readonly<Record<string, true>> = {
+const ERROR_KEYS: Readonly<Record<ErrorAttributeKey, true>> = {
   'exception.type': true,
   'exception.message': true,
   'exception.stacktrace': true,
   'error.source': true,
 };
+
+const isErrorTypeName = finiteTable(ERROR_TYPES);
+
+const isErrorSourceName = finiteTable(ERROR_SOURCES);
 
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 
@@ -81,9 +112,9 @@ const normalizedStackTrace = (value: string): string | undefined => {
 export const sanitizeErrorAttribute = (key: ErrorAttributeKey, value: string): string | undefined => {
   if (value.length > 16_384) return undefined;
 
-  if (key === 'exception.type') return Object.hasOwn(ERROR_TYPES, value) ? value : 'Error';
+  if (key === 'exception.type') return isErrorTypeName(value) ? value : 'Error';
 
-  if (key === 'error.source') return Object.hasOwn(ERROR_SOURCES, value) ? value : undefined;
+  if (key === 'error.source') return isErrorSourceName(value) ? value : undefined;
 
   if (key === 'exception.stacktrace') return normalizedStackTrace(value);
 
@@ -114,11 +145,14 @@ export const sanitizeErrorStack = (stack: string): string | undefined => {
 };
 
 /** Canonical sanitized attribute set for one diagnostic; unreviewed sources export nothing. */
-export const sanitizedErrorAttributes = (source: string, cause: unknown): Record<string, string> | undefined => {
+export const sanitizedErrorAttributes = (
+  source: string,
+  cause: unknown,
+): Partial<Record<ErrorAttributeKey, string>> | undefined => {
   const safeSource = sanitizeErrorAttribute('error.source', source);
 
   if (safeSource === undefined) return undefined;
-  const attributes: Record<string, string> = { 'error.source': safeSource };
+  const attributes: Partial<Record<ErrorAttributeKey, string>> = { 'error.source': safeSource };
 
   if (!(cause instanceof Error)) {
     attributes['exception.type'] = 'Error';
