@@ -53,6 +53,7 @@ function jsonResponse(body: FixtureResponseBody, status = 200): Response {
   });
 }
 
+// The category guard rejects primitives such as a thrown string before `hasProperty` (`in`) or the read.
 function stringProperty(cause: unknown, key: 'name' | 'message' | '_tag' | 'operation' | 'detail'): string | undefined {
   if (!Predicate.isObjectOrArray(cause) || !Predicate.hasProperty(cause, key)) return undefined;
   const property: unknown = cause[key];
