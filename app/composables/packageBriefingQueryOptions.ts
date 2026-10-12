@@ -115,13 +115,14 @@ const runBriefingSubmissionAttempt = (
   const operation = Effect.gen(function* () {
     const span = yield* Effect.currentSpan;
     const traceContext = { traceId: span.traceId, spanId: span.spanId };
-    yield* Effect.logInfo('briefing.submission.started').pipe(
-      Effect.annotateLogs({
-        ...traceContext,
-        ...(parent === undefined ? {} : { parentSpanId: parent.spanId }),
-        ...attributes,
-      }),
-    );
+
+    // Key order and precedence match the prior single-object form: attributes are merged last.
+    const logAnnotations =
+      parent === undefined
+        ? { ...traceContext, ...attributes }
+        : { ...traceContext, parentSpanId: parent.spanId, ...attributes };
+
+    yield* Effect.logInfo('briefing.submission.started').pipe(Effect.annotateLogs(logAnnotations));
 
     return yield* Effect.tryPromise({
       try: () =>
@@ -381,7 +382,7 @@ export const packageBriefingQueryOptions = (
   const normalizedFromVersion = computed(() => toValue(fromVersion).trim());
   const normalizedToVersion = computed(() => toValue(toVersion).trim());
 
-  return queryOptions({
+  const options = queryOptions({
     queryKey: computed<PackageBriefingQueryKey>(() => [
       ...PACKAGE_BRIEFING_QUERY_KEY_PREFIX,
       normalizedPackageName.value,
@@ -402,6 +403,12 @@ export const packageBriefingQueryOptions = (
     staleTime: PACKAGE_COMPARISON_STALE_TIME,
     retry: false,
     refetchOnWindowFocus: false,
-    ...(import.meta.client ? { gcTime: 5 * 60_000 } : {}),
   });
+
+  // Client-only: SSR leaves gcTime unset so the Query client default applies on the server.
+  if (import.meta.client) {
+    options.gcTime = 5 * 60_000;
+  }
+
+  return options;
 };
