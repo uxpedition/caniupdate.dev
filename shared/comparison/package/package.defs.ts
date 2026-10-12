@@ -189,37 +189,59 @@ const toOptionalPeers = (peerDependenciesMeta: RegistryVersionManifest['peerDepe
   return optionalPeers;
 };
 
-const toPackageDist = (dist: RegistryVersionManifest['dist']): ParsedPackageVersion['dist'] => ({
-  tarball: dist.tarball,
+// Schema-derived outputs are readonly; these builders own their object until they return it.
+type Writable<T> = { -readonly [Key in keyof T]: T[Key] };
 
-  ...(dist.integrity === undefined ? {} : { integrity: dist.integrity }),
-  ...(dist.unpackedSize === undefined ? {} : { unpackedSize: dist.unpackedSize }),
-  ...(dist.fileCount === undefined ? {} : { fileCount: dist.fileCount }),
-});
+type PackageIdentity = Pick<Writable<ParsedPackageVersion>, 'name' | 'version' | 'description'>;
 
-const toModuleFormat = (manifest: RegistryVersionManifest): ParsedPackageVersion['moduleFormat'] => ({
-  ...(manifest.type === undefined ? {} : { type: manifest.type }),
-  ...(manifest.main === undefined ? {} : { main: manifest.main }),
-  ...(manifest.module === undefined ? {} : { module: manifest.module }),
-  ...(manifest.exports === undefined ? {} : { exports: manifest.exports }),
-  ...(manifest.types === undefined ? {} : { types: manifest.types }),
-  ...(manifest.typings === undefined ? {} : { typings: manifest.typings }),
-  ...(manifest.typesVersions === undefined ? {} : { typesVersions: manifest.typesVersions }),
-});
+type PackageDeprecation = Pick<Writable<ParsedPackageVersion>, 'deprecated' | 'deprecationMessage'>;
+
+const toPackageDist = (dist: RegistryVersionManifest['dist']): ParsedPackageVersion['dist'] => {
+  const packageDist: Writable<ParsedPackageVersion['dist']> = { tarball: dist.tarball };
+
+  if (dist.integrity !== undefined) packageDist.integrity = dist.integrity;
+
+  if (dist.unpackedSize !== undefined) packageDist.unpackedSize = dist.unpackedSize;
+
+  if (dist.fileCount !== undefined) packageDist.fileCount = dist.fileCount;
+
+  return packageDist;
+};
+
+const toModuleFormat = (manifest: RegistryVersionManifest): ParsedPackageVersion['moduleFormat'] => {
+  const moduleFormat: Writable<ParsedPackageVersion['moduleFormat']> = {};
+
+  if (manifest.type !== undefined) moduleFormat.type = manifest.type;
+
+  if (manifest.main !== undefined) moduleFormat.main = manifest.main;
+
+  if (manifest.module !== undefined) moduleFormat.module = manifest.module;
+
+  if (manifest.exports !== undefined) moduleFormat.exports = manifest.exports;
+
+  if (manifest.types !== undefined) moduleFormat.types = manifest.types;
+
+  if (manifest.typings !== undefined) moduleFormat.typings = manifest.typings;
+
+  if (manifest.typesVersions !== undefined) moduleFormat.typesVersions = manifest.typesVersions;
+
+  return moduleFormat;
+};
 
 export function toPackageVersion(manifest: RegistryVersionManifest): ParsedPackageVersion {
+  const identity: PackageIdentity = { name: manifest.name, version: manifest.version };
   const description = toDescription(manifest);
 
+  if (description !== undefined) identity.description = description;
+  const deprecation: PackageDeprecation = { deprecated: manifest.deprecated !== undefined };
+
+  if (manifest.deprecated !== undefined) deprecation.deprecationMessage = manifest.deprecated;
+
   return {
-    name: manifest.name,
-    version: manifest.version,
-    ...(description === undefined ? {} : { description }),
+    ...identity,
     dist: toPackageDist(manifest.dist),
     licenses: toLicenses(manifest),
-    deprecated: manifest.deprecated !== undefined,
-
-    ...(manifest.deprecated === undefined ? {} : { deprecationMessage: manifest.deprecated }),
-
+    ...deprecation,
     engines: toEngines(manifest.engines),
     dependencies: manifest.dependencies ?? {},
     peerDependencies: manifest.peerDependencies ?? {},
