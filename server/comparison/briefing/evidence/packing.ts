@@ -22,8 +22,6 @@ const textEncoder = new TextEncoder();
 
 const byteLength = (value: string): number => textEncoder.encode(value).byteLength;
 
-const json = <T>(value: T): string => JSON.stringify(value) ?? 'null';
-
 const boundedText = (value: string, maxBytes: number): string => {
   if (byteLength(value) <= maxBytes) return value;
 
@@ -179,7 +177,7 @@ function coverageSource(
     kind: 'coverage',
     label: 'Evidence coverage and limitations',
     urls: [],
-    text: json(coverageDetails(input, gaps, omitted, truncated)),
+    text: JSON.stringify(coverageDetails(input, gaps, omitted, truncated)),
   };
 }
 
@@ -196,11 +194,16 @@ const numberedSources = (
   { ...coverage, number: accepted.length + 1 },
 ];
 
-function packetByteLength(input: BriefingInput, gaps: readonly string[], sourceJson: readonly string[]): number {
-  const prefix = `{"packageName":${json(input.packageName)},"from":${json(input.from.version)},"to":${json(input.to.version)},"sources":[`;
-  const suffix = `],"gaps":${json(gaps)}}`;
+function packetByteLength(input: BriefingInput, gaps: readonly string[], sources: readonly BriefingSource[]): number {
+  const skeleton = JSON.stringify({
+    packageName: input.packageName,
+    from: input.from.version,
+    to: input.to.version,
+    sources,
+    gaps,
+  });
 
-  return byteLength(`${prefix}${sourceJson.join(',')}${suffix}`);
+  return byteLength(skeleton);
 }
 
 function assertIdentityFits(input: BriefingInput): void {
@@ -209,7 +212,7 @@ function assertIdentityFits(input: BriefingInput): void {
   }
 
   const minimalCoverage = coverageSource(input, [], [], []);
-  const serialized = numberedSources([], minimalCoverage).map((source) => json(source));
+  const serialized = numberedSources([], minimalCoverage);
 
   if (packetByteLength(input, [], serialized) > MAX_PACKET_BYTES) {
     throw new Error('Briefing identity exceeds evidence packet bounds');
@@ -237,14 +240,7 @@ function packetFits(
 ): boolean {
   const sources = numberedSources(accepted, coverage);
 
-  return (
-    sources.length <= MAX_SOURCES &&
-    packetByteLength(
-      input,
-      gaps,
-      sources.map((source) => json(source)),
-    ) <= MAX_PACKET_BYTES
-  );
+  return sources.length <= MAX_SOURCES && packetByteLength(input, gaps, sources) <= MAX_PACKET_BYTES;
 }
 
 function packetResult(
@@ -254,9 +250,13 @@ function packetResult(
   baseGaps: readonly string[],
   omitted: ReadonlySet<string>,
 ): BriefingEvidence | null {
-  const truncated = unique(
-    candidates.filter((candidate) => candidate.truncated).map((candidate) => candidate.source.id),
-  );
+  const truncatedIds: string[] = [];
+
+  for (const candidate of candidates) {
+    if (candidate.truncated) truncatedIds.push(candidate.source.id);
+  }
+
+  const truncated = unique(truncatedIds);
 
   const gaps = packetGaps(baseGaps, omitted, truncated);
   const coverage = coverageSource(input, gaps, [...omitted], truncated);

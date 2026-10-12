@@ -144,6 +144,14 @@ const isTelemetrySpanName = Schema.is(TelemetrySpanNameSchema);
 
 type SafeStringValue = TelemetryAttribute['value'];
 
+type SanitizedLogRecord = SanitizedLogsData['resourceLogs'][number]['scopeLogs'][number]['logRecords'][number];
+
+type MutableSanitizedLogRecord = { -readonly [Key in keyof SanitizedLogRecord]: SanitizedLogRecord[Key] };
+
+type SanitizedSpan = SanitizedTraceData['resourceSpans'][number]['scopeSpans'][number]['spans'][number];
+
+type MutableSanitizedSpan = { -readonly [Key in keyof SanitizedSpan]: SanitizedSpan[Key] };
+
 /** Decodes one raw OTLP attribute value into a sanitized value; library decoders match this shape. */
 type DecodeAttributeValue = (value: OtlpAttribute['value']) => Result.Result<SafeStringValue, Schema.SchemaError>;
 
@@ -271,14 +279,14 @@ const sanitizeResource = (resource: OtlpResource): TelemetryResource => {
   return Schema.decodeUnknownSync(TelemetryResourceSchema, { errors: 'all', onExcessProperty: 'error' })(resourceData);
 };
 
-const sanitizeLogRecord = (record: OtlpLogRecord) => {
+const sanitizeLogRecord = (record: OtlpLogRecord): MutableSanitizedLogRecord | undefined => {
   const body = Result.getOrUndefined(decodeSafeLogMessage(record.body));
 
   if (body === undefined) return undefined;
 
   const attributes = sanitizeAttributes(record.attributes);
 
-  return {
+  const safeRecord: MutableSanitizedLogRecord = {
     timeUnixNano: record.timeUnixNano,
     observedTimeUnixNano: record.observedTimeUnixNano,
     severityNumber: record.severityNumber,
@@ -290,9 +298,14 @@ const sanitizeLogRecord = (record: OtlpLogRecord) => {
       record.attributes.length,
       attributes.length,
     ),
-    ...(record.traceId === undefined ? {} : { traceId: record.traceId }),
-    ...(record.spanId === undefined ? {} : { spanId: record.spanId }),
   };
+
+  // Absent IDs stay absent (not undefined): Schema.optionalKey rejects an explicit undefined value.
+  if (record.traceId !== undefined) safeRecord.traceId = record.traceId;
+
+  if (record.spanId !== undefined) safeRecord.spanId = record.spanId;
+
+  return safeRecord;
 };
 
 const sanitizeLogs = (data: typeof OtlpLogsDataSchema.Type): SanitizedLogsData => {
@@ -336,15 +349,14 @@ const sanitizeSpanLink = (link: OtlpSpanLink) => {
   };
 };
 
-const sanitizeSpan = (span: OtlpSpan) => {
+const sanitizeSpan = (span: OtlpSpan): MutableSanitizedSpan | undefined => {
   if (!isTelemetrySpanName(span.name)) return undefined;
   const attributes = sanitizeAttributes(span.attributes);
   const events: Array<never> = [];
 
-  return {
+  const safeSpan: MutableSanitizedSpan = {
     traceId: span.traceId,
     spanId: span.spanId,
-    ...(span.parentSpanId === undefined ? {} : { parentSpanId: span.parentSpanId }),
     name: span.name,
     kind: span.kind,
     startTimeUnixNano: span.startTimeUnixNano,
@@ -357,6 +369,11 @@ const sanitizeSpan = (span: OtlpSpan) => {
     links: span.links.map(sanitizeSpanLink),
     droppedLinksCount: span.droppedLinksCount ?? 0,
   };
+
+  // Root spans carry no parent; the key must stay absent so the strict sanitized-span schema accepts it.
+  if (span.parentSpanId !== undefined) safeSpan.parentSpanId = span.parentSpanId;
+
+  return safeSpan;
 };
 
 const sanitizeTraces = (data: typeof OtlpTracesDataSchema.Type): SanitizedTraceData => {

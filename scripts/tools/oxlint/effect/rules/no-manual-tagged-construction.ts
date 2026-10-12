@@ -1,6 +1,11 @@
 import { defineRule } from '@oxlint/plugins';
 
-import { isMatchPatternObject, isStringLiteral, propertyName } from '../shared/tagged-values.ts';
+import {
+  isEffectMatchPatternObject,
+  isStringLiteral,
+  isVitestAssertionPatternObject,
+  propertyName,
+} from '../shared/tagged-values.ts';
 
 export const noManualTaggedConstructionRule = defineRule({
   meta: {
@@ -10,19 +15,23 @@ export const noManualTaggedConstructionRule = defineRule({
     },
     messages: {
       manualConstruction:
-        'Use the existing Schema tagged `.make`, tagged class/error constructor, or Data.taggedEnum variant constructor instead of writing a literal `_tag` object.',
+        'expected constructor-owned tagged construction, found literal `_tag: "{{tag}}"`' +
+        '\nhelp: reuse the owning Schema tagged `.make` or tagged class/error constructor' +
+        '\nhelp: for an internal union without constructors, define its variants once with `Data.taggedEnum`' +
+        '\nnote: tag constructors do not replace decoding external input; preserve raw malformed fixtures and assertion patterns',
     },
   },
   createOnce(context) {
     return {
       ObjectExpression(node) {
-        if (isMatchPatternObject(node)) return;
+        const sourceCode = context.sourceCode;
         const tag = node.properties.find(
           (property) =>
             property.type === 'Property' && propertyName(property) === '_tag' && isStringLiteral(property.value),
         );
-        if (tag !== undefined) {
-          context.report({ node: tag, messageId: 'manualConstruction' });
+        if (tag?.type === 'Property' && isStringLiteral(tag.value)) {
+          if (isEffectMatchPatternObject(sourceCode, node) || isVitestAssertionPatternObject(sourceCode, node)) return;
+          context.report({ node: tag, messageId: 'manualConstruction', data: { tag: tag.value.value } });
         }
       },
     };

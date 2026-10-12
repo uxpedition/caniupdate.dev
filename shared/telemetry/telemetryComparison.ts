@@ -12,8 +12,15 @@ const isVersion = Schema.is(TelemetryComparisonVersionSchema);
 
 const isSelector = Schema.is(TelemetryComparisonSelectorSchema);
 
+type ComparisonTelemetryKey =
+  | 'comparison.package.name'
+  | 'comparison.version.from'
+  | 'comparison.version.to'
+  | 'comparison.requested.from'
+  | 'comparison.requested.to';
+
 const addRequestedSelector = (
-  attributes: Record<string, string>,
+  attributes: Partial<Record<ComparisonTelemetryKey, string>>,
   key: 'comparison.requested.from' | 'comparison.requested.to',
   requested: string,
   resolved: string | undefined,
@@ -27,8 +34,8 @@ const addRequestedSelector = (
 export const comparisonTelemetryAttributes = (
   comparison: { readonly packageName: string; readonly from?: string; readonly to?: string },
   requested?: { readonly from: string; readonly to: string },
-): Record<string, string> => {
-  const attributes: Record<string, string> = {};
+): Partial<Record<ComparisonTelemetryKey, string>> => {
+  const attributes: Partial<Record<ComparisonTelemetryKey, string>> = {};
 
   if (isPackage(comparison.packageName)) attributes['comparison.package.name'] = comparison.packageName;
 

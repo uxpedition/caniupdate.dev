@@ -80,6 +80,9 @@ export type JobRecord = {
   reason?: BriefingUnavailableReason;
 };
 
+/** Mutable view of the stored JobRecord contract, used only while a terminal record is being assembled. */
+type WritableJobRecord = { -readonly [K in keyof JobRecord]: JobRecord[K] };
+
 export type BriefingEnv = {
   readonly BRIEFING_JOBS: DurableObjectNamespace<BriefingJob>;
   readonly BRIEFING_QUEUE: Queue<BriefingJobMessage>;
@@ -322,7 +325,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
    * Decode the packet and confirm it hashes to the object the submitter addressed. The packet is bounded evidence,
    * and the addressed name is the hash the submitter derived, so a mismatch is refused rather than stored.
    */
-  #verifiedPacket(packet: BriefingEvidence): { evidence: BriefingEvidence; hash: string } {
+  #verifiedPacket(packet: BriefingEvidence) {
     let evidence: BriefingEvidence;
 
     try {
@@ -529,15 +532,17 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
 
     if (record.state === 'available' || record.state === 'unavailable') return await this.#terminalEvent(record);
 
-    const settled: JobRecord = {
+    const settled: WritableJobRecord = {
       hash: record.hash,
       generationId: record.generationId,
       revision: record.revision + 1,
       state: outcome.state,
       dispatchAttempts: record.dispatchAttempts,
-      ...(record.fence === undefined ? {} : { fence: record.fence }),
-      ...(outcome.state === 'unavailable' ? { reason: outcome.reason } : {}),
     };
+
+    if (record.fence !== undefined) settled.fence = record.fence;
+
+    if (outcome.state === 'unavailable') settled.reason = outcome.reason;
 
     await this.ctx.storage.put(JOB_KEY, settled);
     await this.ctx.storage.deleteAlarm();

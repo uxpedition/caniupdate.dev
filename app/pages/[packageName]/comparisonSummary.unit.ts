@@ -68,10 +68,8 @@ const unavailableDeclarations: PackageDeclarationsResponse = {
   },
 };
 
-const makeMeasuredVersion = (version: string, omitted: string[] = []): MeasuredPackageVersion => ({
-  ...makeDeclaredVersion(version),
-  vulnerabilities: { status: 'available', count: 0, advisories: [] },
-  bundleSize: {
+const makeMeasuredVersion = (version: string, omitted: string[] = []): MeasuredPackageVersion => {
+  const bundleSize = {
     provider: 'bundlephobia',
     url: `https://bundlephobia.com/api/size?package=example-package%40${version}`,
     name: 'example-package',
@@ -80,16 +78,21 @@ const makeMeasuredVersion = (version: string, omitted: string[] = []): MeasuredP
     gzip: version === '1.0.0' ? 500 : 650,
     status: 'available',
     retrievedAt: '2026-09-20T00:00:00.000Z',
-    ...(omitted.length === 0 ? {} : { ignoredMissingDependencies: omitted }),
-  },
-  tarball: {
-    status: 'available',
-    reasons: [],
-    url: `https://registry.npmjs.org/example-${version}.tgz`,
-    fileCount: version === '1.0.0' ? 2 : 3,
-    changelogCount: 0,
-  },
-});
+  } satisfies MeasuredPackageVersion['bundleSize'];
+
+  return {
+    ...makeDeclaredVersion(version),
+    vulnerabilities: { status: 'available', count: 0, advisories: [] },
+    bundleSize: omitted.length === 0 ? bundleSize : { ...bundleSize, ignoredMissingDependencies: omitted },
+    tarball: {
+      status: 'available',
+      reasons: [],
+      url: `https://registry.npmjs.org/example-${version}.tgz`,
+      fileCount: version === '1.0.0' ? 2 : 3,
+      changelogCount: 0,
+    },
+  };
+};
 
 const measurementComparison: MeasurementComparison = {
   sizes: {

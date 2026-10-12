@@ -5,16 +5,18 @@ import { describe, expect, it } from 'vitest';
 import { bundlephobiaSizeUrl } from '../../httpDependencies/bundlephobia/client';
 import { getPackageBundleSize } from './bundleSize';
 
-type FixtureMeasurement = {
-  readonly name: string;
-  readonly version: string;
-  readonly size: number;
-  readonly gzip: number;
-};
-
-const measurements: Record<string, FixtureMeasurement> = {
+const measurements = {
   '1.0.0': { name: 'widget', version: '1.0.0', size: 100, gzip: 50 },
   '2.0.0': { name: 'widget', version: '2.0.0', size: 250, gzip: 90 },
+};
+
+const isFixtureVersion = (version: string): version is keyof typeof measurements =>
+  Object.hasOwn(measurements, version);
+
+const measurementFor = (version: string) => {
+  if (!isFixtureVersion(version)) throw new Error(`No fixture measurement for ${version}`);
+
+  return measurements[version];
 };
 
 const load = (respond: (version: string) => { status: number; body: unknown }) => {
@@ -32,7 +34,7 @@ const load = (respond: (version: string) => { status: number; body: unknown }) =
 
 describe('getPackageBundleSize', () => {
   it('reports the measurement of each requested version', async () => {
-    expect(await load((version) => ({ status: 200, body: measurements[version] }))).toMatchObject({
+    expect(await load((version) => ({ status: 200, body: measurementFor(version) }))).toMatchObject({
       from: { status: 'available', name: 'widget', version: '1.0.0', size: 100, gzip: 50 },
       to: { status: 'available', name: 'widget', version: '2.0.0', size: 250, gzip: 90 },
     });
