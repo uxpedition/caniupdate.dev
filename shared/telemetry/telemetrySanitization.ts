@@ -76,7 +76,7 @@ const isNativeSeverityNumber = Schema.is(
 
 const isNativeSeverityText = Schema.is(Schema.Literals(['Trace', 'Debug', 'Info', 'Warn', 'Error', 'Fatal']));
 
-const ATTRIBUTE_VALUE_VALIDATORS: Readonly<Record<string, (value: string) => boolean>> = {
+const ATTRIBUTE_VALUE_VALIDATORS = {
   'comparison.package.name': Schema.is(TelemetryComparisonPackageSchema),
   'comparison.version.from': Schema.is(TelemetryComparisonVersionSchema),
   'comparison.version.to': Schema.is(TelemetryComparisonVersionSchema),
@@ -88,13 +88,21 @@ const ATTRIBUTE_VALUE_VALIDATORS: Readonly<Record<string, (value: string) => boo
   reason: isTelemetryFailureReason,
   name: isTelemetryFailureName,
   relationship: isTelemetryRelationship,
-};
+} satisfies Readonly<Record<string, (value: string) => boolean>>;
 
-const RESOURCE_VALUE_VALIDATORS: Readonly<Record<string, (value: string) => boolean>> = {
+type AttributeValueKey = keyof typeof ATTRIBUTE_VALUE_VALIDATORS;
+
+const isAttributeValueKey = (key: string): key is AttributeValueKey => Object.hasOwn(ATTRIBUTE_VALUE_VALIDATORS, key);
+
+const RESOURCE_VALUE_VALIDATORS = {
   'service.name': isTelemetryServiceName,
   'service.version': isTelemetryServiceVersion,
   'deployment.environment.name': isTelemetryEnvironment,
-};
+} satisfies Readonly<Record<string, (value: string) => boolean>>;
+
+type ResourceValueKey = keyof typeof RESOURCE_VALUE_VALIDATORS;
+
+const isResourceValueKey = (key: string): key is ResourceValueKey => Object.hasOwn(RESOURCE_VALUE_VALIDATORS, key);
 
 const decodeNativeValueString = Schema.decodeUnknownResult(Schema.Struct({ stringValue: Schema.String }), {
   errors: 'all',
@@ -148,9 +156,7 @@ const projectAttributes = (attributes: ReadonlyArray<{ readonly key: string; rea
     const projectedAttribute = isErrorAttributeKey(attribute.key)
       ? validatedErrorAttributeValue(attribute.key, readStringValue(attribute.value), seen)
       : validatedProjectFieldValue(
-          Object.hasOwn(ATTRIBUTE_VALUE_VALIDATORS, attribute.key)
-            ? ATTRIBUTE_VALUE_VALIDATORS[attribute.key]
-            : undefined,
+          isAttributeValueKey(attribute.key) ? ATTRIBUTE_VALUE_VALIDATORS[attribute.key] : undefined,
           seen,
           attribute.key,
           readStringValue(attribute.value),
@@ -167,9 +173,7 @@ const projectResource = (resource: NativeResource): NativeResource => {
   const seen = new Set<string>();
 
   for (const attribute of resource.attributes) {
-    const validate = Object.hasOwn(RESOURCE_VALUE_VALIDATORS, attribute.key)
-      ? RESOURCE_VALUE_VALIDATORS[attribute.key]
-      : undefined;
+    const validate = isResourceValueKey(attribute.key) ? RESOURCE_VALUE_VALIDATORS[attribute.key] : undefined;
 
     if (validate === undefined || seen.has(attribute.key)) continue;
     const value = readStringValue(attribute.value);
