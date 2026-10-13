@@ -49,7 +49,8 @@ unit-tests:
   stage: verify
   timeout: 5m
   script:
-    - nub run test
+    # Real-alarm suites spend most of their time waiting; the 3-CPU runner otherwise defaults to only 2 workers.
+    - nub run test --maxWorkers=4
 
 build-smoke:
   stage: verify
