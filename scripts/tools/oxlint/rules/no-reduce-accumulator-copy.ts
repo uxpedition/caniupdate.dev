@@ -76,11 +76,14 @@ export const noReduceAccumulatorCopyRule = defineRule({
     type: 'problem',
     docs: {
       description:
-        'Disallow copying growing reducer accumulators with Object.assign, Array.from, or array copy methods.',
+        'Disallow copying reducer accumulators inside reduce callbacks with Object.assign, Array.from, or array copy methods.',
     },
     messages: {
       accumulatorCopy:
-        'Do not copy the reducer accumulator on every iteration; growing copies can cause quadratic work. Mutate a fresh, locally owned accumulator and return it, or use an iterator pipeline/flatMap.',
+        'reducer callback copies its accumulator' +
+        '\nhelp: accumulate into a fresh, locally owned object or array; use flatMap for a pure expansion when it preserves the result' +
+        '\nnote: repeatedly copying a growing accumulator can cause quadratic work; this rule does not measure its size' +
+        '\nnote: preserve ordering, callback effects, and any retained intermediate snapshots; do not mutate caller-owned or shared state',
     },
   },
   createOnce(context) {

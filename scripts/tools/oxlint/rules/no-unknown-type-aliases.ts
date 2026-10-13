@@ -12,12 +12,13 @@ export const noUnknownTypeAliasesRule = defineRule({
   meta: {
     type: 'problem',
     docs: {
-      description:
-        'Disallow type aliases whose resolved type is unknown; unknown must remain visible at an allowed boundary.',
+      description: 'Disallow type aliases whose resolved type is unknown.',
     },
     messages: {
       unknownAlias:
-        'Type alias `{{alias}}` hides `unknown`. Keep `unknown` explicit at the parsing boundary or on an allowed `cause` field; otherwise use the parsed owner type.',
+        'type alias `{{alias}}` resolves to `unknown`' +
+        '\nhelp: keep `unknown` explicit at the parsing or error-cause boundary; otherwise use the decoded owner type' +
+        '\nnote: naming `unknown` does not establish a contract, and a union containing it still resolves to `unknown`',
     },
   },
   createOnce(context) {

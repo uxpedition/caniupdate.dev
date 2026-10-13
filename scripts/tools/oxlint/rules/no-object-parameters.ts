@@ -22,14 +22,18 @@ export const noObjectParametersRule = defineRule({
   meta: {
     type: 'problem',
     docs: {
-      description:
-        "Disallow object function parameters; inputs must use an owner-provided type and be parsed at their boundary. A guard's narrowed subject may be object-typed, but it must assert a concrete type.",
+      description: 'Disallow function parameters and type guard results that resolve to the broad object type.',
     },
     messages: {
       objectParameter:
-        'Parameter `{{parameter}}` uses the broad `object` type. Accept a named owner type; parse external input at its boundary before calling this function.',
+        'parameter `{{parameter}}` resolves to the broad `object` type' +
+        '\nhelp: accept the concrete owner type; decode external input at its boundary before calling this function' +
+        '\nnote: a type predicate may accept an object-typed subject, but must narrow it to a concrete type',
       objectPredicateResult:
-        'A guard must narrow its subject to a concrete type; asserting `object` discards all evidence.',
+        'type guard asserts the broad `object` type' +
+        '\nhelp: assert only the concrete type established by the guard; use the owning schema for domain validation' +
+        '\nhelp: for a shallow non-null object or array check, use `Predicate.isObjectOrArray` instead of a custom broad predicate' +
+        '\nnote: `object` excludes primitives but establishes no domain fields; do not claim a domain type without checking it',
     },
   },
   createOnce(context) {

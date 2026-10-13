@@ -223,13 +223,18 @@ export const noKnownValueWideningRule = defineRule({
     type: 'problem',
     docs: {
       description:
-        'Disallow syntactically established values from flowing into explicitly broad or anonymous target types that discard useful evidence.',
+        'Disallow explicit widening of syntactically known values and require named or inferred object contracts.',
     },
     messages: {
       widening:
-        '{{subject}} widens a known value to {{target}}\n  expected: the inferred or named shape of the value\n  found: explicit {{target}} type\n  note: this broadening discards evidence the compiler would otherwise keep\n  help: keep inference, validate with `satisfies`, or use a named owner contract',
+        '{{subject}} widens a known value to {{target}}' +
+        '\nhelp: keep the inferred shape, check assignability with `satisfies`, or use a precise named owner contract' +
+        '\nnote: broad annotations can discard known keys or value types; naming the same broad type does not restore that information' +
+        '\nnote: `satisfies` does not validate external data or permit arbitrary-string indexing of a finite-key object',
       anonymousContract:
-        '{{subject}} uses an anonymous object contract\n  expected: a named owner type, or the inferred shape\n  found: anonymous object type literal\n  note: the literal keeps its declared members, so this is a style policy rather than lost evidence\n  help: let inference express the shape, or declare a named owner type',
+        '{{subject}} uses an anonymous object contract' +
+        '\nhelp: let inference express the shape, or declare a named owner type' +
+        '\nnote: the literal keeps its declared members; this is a naming policy, not evidence of lost type information',
     },
   },
   createOnce(context) {

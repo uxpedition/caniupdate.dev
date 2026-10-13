@@ -22,13 +22,13 @@ export const noRuntimeTypeofRule = defineRule({
     type: 'problem',
     docs: {
       description:
-        'Reject direct runtime typeof checks, including inside type guards. Decode external data with Effect Schema.decodeUnknown* at its I/O boundary. Use Schema.is(DomainSchema)(value) for schema-backed type narrowing without decoding, or Predicate.is* for primitive/callable checks on already-typed values. Comparisons against "undefined" are allowed for binding-existence probes.',
+        'Disallow runtime typeof expressions except comparisons against "undefined" for binding-existence probes.',
     },
     messages: {
       runtimeTypeof:
         'direct runtime `typeof` checks are not allowed' +
         '\nhelp: for external input, decode its complete contract with `Schema.decodeUnknownResult(DomainSchema)(input)` at the I/O boundary and use the decoded value' +
-        '\nhelp: to check conformance to a schema\'s decoded type without transformation, use `Schema.is(DomainSchema)(value)`' +
+        "\nhelp: to check conformance to a schema's decoded type without transformation, use `Schema.is(DomainSchema)(value)`" +
         '\nhelp: for primitive or callable checks on an already-typed value, use an Effect predicate such as `Predicate.isFunction`' +
         '\nhelp: for a shallow non-null object or array gate, use `Predicate.isObjectOrArray`; `Schema.is(Schema.Struct({}))` does not prove object identity and accepts non-nullish primitives' +
         '\nnote: primitive predicates do not replace boundary decoding' +

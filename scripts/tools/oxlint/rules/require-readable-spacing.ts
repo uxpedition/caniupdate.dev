@@ -41,6 +41,15 @@ export const requireReadableSpacingRule: CreateRule = {
     docs: {
       description: 'Require readable spacing between declarations and logical statement groups.',
     },
+    messages: {
+      unexpectedBlankLine:
+        'unexpected blank line before this statement' +
+        '\nhelp: remove the blank line between the statements without removing comments',
+      expectedBlankLine:
+        'missing blank line before this statement' +
+        '\nhelp: separate these statement groups with a blank line, or apply the whitespace autofix' +
+        '\nnote: consecutive imports and overload signatures may remain grouped; preserve comments with their owning statement',
+    },
     schema: [],
   },
 };

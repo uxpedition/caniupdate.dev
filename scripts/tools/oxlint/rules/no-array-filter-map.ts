@@ -7,8 +7,7 @@ export const noArrayFilterMapRule = defineRule({
   meta: {
     type: 'suggestion',
     docs: {
-      description:
-        'Disallow adjacent array filter/map passes in favor of lazy iterator helpers or a single transformation.',
+      description: 'Prefer an equivalent single-pass transformation over adjacent array filter/map passes.',
     },
     messages: {
       arrayFilterMap:

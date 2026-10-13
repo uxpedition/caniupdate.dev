@@ -297,12 +297,13 @@ export const noWidenThenAssertRule = defineRule({
   meta: {
     type: 'problem',
     docs: {
-      description:
-        'Disallow local const flows that explicitly widen a known value before asserting the widened binding to a narrower type.',
+      description: 'Disallow const bindings that widen a known value to a broad type and later assert them narrower.',
     },
     messages: {
       widenThenAssert:
-        'Binding "{{name}}" discards type evidence and later recreates it with an assertion. Keep the precise type from initialization through use; parse boundary input once.',
+        'const `{{name}}` is widened to a broad type, then asserted to a narrower type' +
+        "\nhelp: retain the initializer's precise type through use; decode external input once into the owner type" +
+        '\nnote: an assertion makes a compile-time claim; it neither checks the value nor recovers evidence discarded by the broad annotation',
     },
   },
   createOnce(context) {

@@ -18,11 +18,14 @@ export const noServiceConstructorImportsRule = defineRule({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Disallow project-local make<CapabilityName> imports outside test and spec files.',
+      description: 'Reserve relative named make<UppercaseName> imports for test, spec, and unit files.',
     },
     messages: {
       serviceConstructorImport:
-        'Do not import Effect service constructor "{{name}}" into runtime code. Import the owning Layer, yield the contextual service, and allow its requirements to propagate to the composition root.',
+        'relative named import `{{name}}` uses the reserved make<UppercaseName> convention' +
+        '\nhelp: for an Effect service, import the owning Layer and yield the contextual service; let its requirements reach the composition root' +
+        '\nhelp: for a non-service factory, choose an owner-level name describing its operation and update its callers; do not add a Layer solely to satisfy this rule' +
+        '\nnote: this is an import-name convention, not proof that the value constructs an Effect service; test, spec, and unit files are exempt',
     },
   },
   create(context) {

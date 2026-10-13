@@ -71,7 +71,7 @@ export const noUnknownReturnsRule = defineRule({
     type: 'problem',
     docs: {
       description:
-        'Disallow explicit return annotations exposing unknown, including unions, Promise/PromiseLike wrappers, and the success slot of Effect. Keep unknown local to parsing and error inspection: return decoded domain values, bytes or text from transport-only readers, producer-owned contracts, caller types for unchanged forwarding, or validated details/never from error helpers.',
+        'Disallow explicit unknown return contracts, including unions, Promise/PromiseLike wrappers, and Effect success, error, and requirement slots.',
     },
     messages: {
       unknownReturn:
@@ -79,10 +79,10 @@ export const noUnknownReturnsRule = defineRule({
         '\nhelp: for external JSON, decode before returning, e.g. `Schema.decodeSync(Schema.fromJsonString(DomainSchema))(text)`' +
         '\nhelp: transport-only readers can return bytes or text; keep size bounds at the transport boundary' +
         '\nhelp: reuse producer or fixture contracts; use `T` for unchanged forwarding, validated details for error helpers, and `never` for throw-only helpers' +
-        '\nhelp: Effect success, error, and requirement slots are return contracts; declare the concrete success value, failure type, and service requirements' +
+        "\nhelp: for Effect, preserve the producer's failure and service types; normalize arbitrary caught failures at the owning boundary while retaining the original cause and cleanup behavior" +
         '\nnote: `unknown` is valid while parsing untrusted data, but should not escape an API without establishing a concrete contract' +
         '\nnote: a type annotation or assertion does not validate external data; keep runtime decoding and cleanup' +
-        '\nnote: dropping the annotation does not establish a contract; the producer still returns `unknown`, so decode or type the value at its source',
+        '\nnote: removing an annotation only helps when inference retains a concrete contract; do not hide an inferred `unknown` or replace it with an unrelated type parameter',
     },
   },
   createOnce(context) {

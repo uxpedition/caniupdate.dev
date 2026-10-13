@@ -13,7 +13,8 @@ export const noReflectGetRule = defineRule({
       reflectGet:
         'expected an owner-typed property read, found Reflect.get' +
         '\nhelp: for a fixed key on an object this code owns, read the property directly after narrowing its type' +
-        '\nhelp: for external or untyped input, decode it into a named domain type with `Schema.decodeUnknownResult` before reading fields' +
+        '\nhelp: for external application data, decode the owning schema with `Schema.decodeUnknownResult` before reading fields' +
+        '\nhelp: for runtime capabilities or error inspection, guard the object and key, read once, and validate the property value' +
         '\nnote: preserve inherited getters, throwing accessors, explicit receivers, and RPC disposal; direct reads are not equivalent when a receiver differs',
     },
   },

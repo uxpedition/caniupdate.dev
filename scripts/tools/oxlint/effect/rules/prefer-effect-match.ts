@@ -6,10 +6,13 @@ export const preferEffectMatchRule = defineRule({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Use Match from Effect for chained literal ternaries over the same value.',
+      description: 'Disallow chained ternaries that compare one value against literals; use Match from Effect.',
     },
     messages: {
-      preferMatch: 'Use Match from Effect instead of a chained literal ternary.',
+      preferMatch:
+        'chained ternary compares one value against literals' +
+        '\nhelp: use `Match.value(value).pipe(Match.when(literal, handler), Match.orElse(fallback))`, or `Match.whenOr(literalA, literalB, handler)` for branches that share a result' +
+        '\nnote: `Match` literal patterns use strict `===`, so `==` coercion does not carry over; `!=` and `!==` branches run when unequal, so use `Match.not` or reorder branches to keep polarity; the ternary re-evaluates the compared expression per test, while `Match.value` evaluates it once',
     },
   },
   createOnce(context) {

@@ -11,12 +11,17 @@ export const noManualEffectErrorTagRule = defineRule({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Use Effect tagged error handlers instead of manually branching on `_tag` in a catch handler.',
+      description: 'Prefer tagged catch helpers over manual `_tag` checks inside broad Effect catch handlers.',
     },
     messages: {
-      tag: 'Use Effect.catchTag or Effect.catchTags instead of manually discriminating a tagged error in a broad Effect catch handler.',
+      tag:
+        'manual `_tag` check in a broad Effect catch handler' +
+        '\nhelp: handle one tag with `Effect.catchTag("Tag", handler)` or several with `Effect.catchTags({ Tag: handler })`' +
+        '\nnote: tagged catch helpers preserve unmatched failures by default; retain any existing fallback recovery and branch polarity rather than silently changing which errors are handled',
       reason:
-        'Use Effect.catchReason or Effect.catchReasons instead of manually discriminating a tagged `reason` in a broad Effect catch handler.',
+        'manual `reason._tag` check in a broad Effect catch handler' +
+        '\nhelp: handle one nested reason with `Effect.catchReason("ErrorTag", "ReasonTag", handler)` or several with `Effect.catchReasons("ErrorTag", { ReasonTag: handler })`' +
+        '\nnote: the handler receives the unwrapped reason; unmatched reasons keep the parent tagged error in the error channel',
     },
   },
   createOnce(context) {

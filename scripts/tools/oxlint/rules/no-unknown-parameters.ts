@@ -31,13 +31,13 @@ export const noUnknownParametersRule = defineRule({
     type: 'problem',
     docs: {
       description:
-        'Require typed input contracts instead of explicit unknown parameter annotations, including unions containing unknown. Decode external values at their I/O boundary; preserve the caller\'s type for unchanged forwarding. Error-cause parameters named cause and type-predicate subjects may remain unknown, but predicates must assert a concrete type.',
+        'Require concrete input contracts, except unknown causes and subjects narrowed by concrete type predicates.',
     },
     messages: {
       unknownParameter:
         'expected a typed input contract for parameter `{{parameter}}`, found `unknown`' +
         '\nhelp: for external input, use a schema-generated decoder such as `Schema.decodeUnknownResult(DomainSchema)`, then pass the decoded domain type to this function' +
-        '\nhelp: if this function only forwards the value unchanged, use a type parameter such as `T` to preserve the caller\'s type' +
+        "\nhelp: if this function only forwards the value unchanged, use a type parameter such as `T` to preserve the caller's type" +
         '\nnote: `unknown` is allowed for error-cause parameters named `cause` and for the subject narrowed by a type predicate',
       unknownPredicateResult:
         'expected a concrete type in this type predicate, found `unknown`' +
