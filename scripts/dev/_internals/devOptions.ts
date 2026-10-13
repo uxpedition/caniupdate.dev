@@ -3,6 +3,7 @@ import { Data } from 'effect';
 export type Options = {
   readonly otelEndpoint?: string;
   readonly preview: boolean;
+  readonly migrateOnly: boolean;
   readonly persistTo: string;
   readonly evidencePort: number;
   readonly briefingPort: number;
@@ -12,7 +13,7 @@ export type Options = {
 };
 
 const USAGE =
-  'Usage: node scripts/dev/dev.ts [--preview] [--persist-to <dir>] [--evidence-port <port>] [--briefing-port <port>] ' +
+  'Usage: node scripts/dev/dev.ts [--preview] [--migrate-only] [--persist-to <dir>] [--evidence-port <port>] [--briefing-port <port>] ' +
   '[--frontend-port <port>] [--inspector-base <port>] [--otel-endpoint <url>]';
 
 export class UsageError extends Data.TaggedError('UsageError')<{
@@ -92,6 +93,7 @@ const applyValueOption = (options: MutableOptions, flag: string | undefined, val
 export const parseOptions = (argv: readonly string[]): Options => {
   const options: MutableOptions = {
     preview: false,
+    migrateOnly: false,
     persistTo: '.wrangler/state',
     evidencePort: 8790,
     briefingPort: 8791,
@@ -103,6 +105,7 @@ export const parseOptions = (argv: readonly string[]): Options => {
     const flag = argv[index];
 
     if (flag === '--preview') options.preview = true;
+    else if (flag === '--migrate-only') options.migrateOnly = true;
     else {
       index += 1;
       applyValueOption(options, flag, argv[index]);

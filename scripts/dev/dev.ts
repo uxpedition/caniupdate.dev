@@ -5,9 +5,9 @@
 // - the frontend on 5173: Nuxt with HMR, or the built Worker from `.output/server/wrangler.json` under `--preview`.
 //
 // The migration runs against the briefing Worker's configuration, because that is the only local owner of the D1
-// database. Every Wrangler session is pointed at one persistence root, so the D1 and Durable Object state survive a
-// build and a restart; a lock in that root refuses a second launcher (for example `preview` beside `dev`) that would
-// otherwise own the same state concurrently. Ctrl-C, or any child failing, stops all three processes.
+// database. Each Wrangler session owns a subdirectory of the persistence root: sharing one directory makes their
+// internal Cache API metadata race during cold startup. The root lock protects migration and all runtimes; existing
+// D1 and Durable Object stores are relocated before opening SQLite. Ctrl-C, or any child failing, stops all processes.
 
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -19,6 +19,7 @@ import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 
 import { browserOrigins } from './_internals/browserOrigins.ts';
 import { parseOptions, UsageError, type Options } from './_internals/devOptions.ts';
+import { migrateLocalState } from './_internals/localState.ts';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -33,6 +34,10 @@ class StateInUseError extends Data.TaggedError('StateInUseError')<{
 }> {}
 
 class StateLockFailedError extends Data.TaggedError('StateLockFailedError')<{
+  readonly message: string;
+}> {}
+
+class StateMigrationFailedError extends Data.TaggedError('StateMigrationFailedError')<{
   readonly message: string;
 }> {}
 
@@ -76,7 +81,7 @@ const applyMigrationsCommand = (launch: Options) =>
       '--config',
       'workers/briefing/wrangler.jsonc',
       '--persist-to',
-      launch.persistTo,
+      `${launch.persistTo}/briefing`,
     ],
     { cwd: root, stdin: 'inherit', stdout: 'inherit', stderr: 'inherit', forceKillAfter: '5 seconds' },
   );
@@ -91,7 +96,7 @@ const evidenceWorkerCommand = (launch: Options) =>
       '--config',
       'workers/evidence/wrangler.jsonc',
       '--persist-to',
-      launch.persistTo,
+      `${launch.persistTo}/evidence`,
       '--port',
       String(launch.evidencePort),
       '--inspector-port',
@@ -125,7 +130,7 @@ const briefingWorkerCommand = (launch: Options) =>
       '--config',
       'workers/briefing/wrangler.jsonc',
       '--persist-to',
-      launch.persistTo,
+      `${launch.persistTo}/briefing`,
       '--ip',
       '0.0.0.0',
       '--port',
@@ -157,7 +162,7 @@ const previewFrontendCommand = (launch: Options) =>
       '--config',
       '.output/server/wrangler.json',
       '--persist-to',
-      launch.persistTo,
+      `${launch.persistTo}/frontend`,
       '--ip',
       '0.0.0.0',
       '--port',
@@ -386,7 +391,14 @@ const program = Effect.gen(function* () {
 
   yield* acquireStateLock(launch);
 
+  yield* Effect.tryPromise({
+    try: () => migrateLocalState(launch.persistTo),
+    catch: (error) =>
+      new StateMigrationFailedError({ message: error instanceof Error ? error.message : String(error) }),
+  });
   yield* applyMigrations(launch);
+
+  if (launch.migrateOnly) return;
 
   const evidenceWorker = yield* startWorker('Evidence worker', evidenceWorkerCommand(launch));
   const briefingWorker = yield* startWorker('Briefing worker', briefingWorkerCommand(launch));

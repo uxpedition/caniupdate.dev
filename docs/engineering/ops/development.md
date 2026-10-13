@@ -35,7 +35,11 @@ Remove the temporary 3.3.11 pins and Zed override only after a later Vue languag
 
 Inspector ports are `9230`, `9231`, and `9232`. The browser reaches both the frontend and the briefing socket. The launcher configures socket origins for local interface addresses; the frontend adjusts loopback socket advertisements to the host used by the requesting device.
 
-The default persistence root is `.wrangler/state`. A `launcher.lock` prevents `dev` and `preview` from owning the same state concurrently. The launcher passes the root to Wrangler, which uses its `v3` subdirectory. Do not delete state or remove a live launcher's lock to bypass the check.
+The default persistence root is `.wrangler/state`. A `launcher.lock` prevents `dev`, `preview`, and manual migrations from owning the same state concurrently. Each Wrangler session owns a separate subdirectory: `evidence/v3`, `briefing/v3`, or `frontend/v3`. Sharing a Wrangler persistence directory lets concurrent cold starts contend over internal Cache API SQLite metadata, even when application database names differ.
+
+Before applying migrations or starting Workers, the locked launcher relocates legacy `v3/d1` into `briefing/v3/d1`, and the two application DO namespaces into their owning runtime's `v3/do` directory. Entire directories move, including SQLite journals; interrupted relocation resumes on the next run. If both old and new stores exist, startup fails without overwriting either: stop all runtimes, back up both stores, and reconcile them before restarting. Unrelated legacy namespaces and internal caches are left untouched; the new runtimes do not use the legacy internal caches. Do not delete state or remove a live launcher's lock to bypass the check.
+
+`nub run db:migrate:local` uses the same launcher with `--migrate-only`: it takes the lock, relocates legacy state if needed, applies local D1 migrations in the briefing directory, and exits without starting Workers. Use `nub run db:migrate:local --persist-to <directory>` for an intentionally independent persistence root.
 
 ## Where does configuration belong?
 
