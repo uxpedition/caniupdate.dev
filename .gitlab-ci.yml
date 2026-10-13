@@ -49,8 +49,8 @@ unit-tests:
   stage: verify
   timeout: 5m
   script:
-    # Real-alarm suites spend most of their time waiting; the 3-CPU runner otherwise defaults to only 2 workers.
-    - nub run test --maxWorkers=6
+    # Native alarm guards start first; other alarm paths use a test-only clock with real workerd delivery.
+    - nub run test --maxWorkers=4
 
 build-smoke:
   stage: verify

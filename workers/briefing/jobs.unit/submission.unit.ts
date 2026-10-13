@@ -419,63 +419,73 @@ describe('briefing job Worker', () => {
   it('does not regenerate when the same generation is delivered twice', async () => {
     const packet = packetFor('duplicate-fixture', '10.0.0', '10.1.0');
     const hash = briefingEvidenceHash(packet);
+    const runtime = await startRuntime({ stateDir: await openStateDir() });
     provider.setMode({ kind: 'stall' });
 
     try {
-      expect((await main.submit(packet)).submission?.status).toBe('queued');
+      expect((await runtime.submit(packet)).submission?.status).toBe('queued');
       await waitFor(
         async () => (provider.requestsFor(packet.packageName) >= 1 ? true : undefined),
         JOB_WAIT_MS,
         'the provider call',
       );
-      const running = await waitForJobEvent(main, hash, (event) => event.status === 'running');
+      const running = await waitForJobEvent(runtime, hash, (event) => event.status === 'running');
 
-      const queue = main.queue;
+      const queue = runtime.queue;
 
       if (queue === undefined) throw new Error('The fixture runtime has no Queue producer');
       await queue.send({ hash, generationId: 1 });
-      await delay(QUIET_MS);
-      expect(provider.requestsFor(packet.packageName)).toBe(1);
-
       provider.releaseStalls();
-      const stored = await waitForStoredBriefing(main.database, hash);
-      const completed = await waitForJobEvent(main, hash, (event) => event.status === 'available');
+      const stored = await waitForStoredBriefing(runtime.database, hash);
+      const completed = await waitForJobEvent(runtime, hash, (event) => event.status === 'available');
+      // This runtime has only these two messages. The broker logs each batch after its consumer returned, so this
+      // observes the duplicate being processed rather than sleeping while it waits behind the stalled original.
+      await waitFor(
+        async () => (runtime.queueAcknowledgements() === 2 ? true : undefined),
+        JOB_WAIT_MS,
+        'both original and duplicate Queue deliveries',
+      );
       expect(completed.revision).toBeGreaterThan(running.revision);
       expect(completed).toMatchObject({ status: 'available', briefing: stored });
       expect(provider.requestsFor(packet.packageName)).toBe(1);
     } finally {
       provider.setMode({ kind: 'valid' });
       provider.releaseStalls();
+      await runtime.dispose();
     }
   }, 120_000);
 
   it('never regenerates for a stale generation message', async () => {
     const packet = packetFor('stale-fixture', '11.0.0', '11.1.0');
     const hash = briefingEvidenceHash(packet);
+    const runtime = await startRuntime({ stateDir: await openStateDir() });
     provider.setMode({ kind: 'stall' });
 
     try {
-      expect((await main.submit(packet)).submission?.status).toBe('queued');
+      expect((await runtime.submit(packet)).submission?.status).toBe('queued');
       await waitFor(
         async () => (provider.requestsFor(packet.packageName) >= 1 ? true : undefined),
         JOB_WAIT_MS,
         'the provider call',
       );
 
-      const queue = main.queue;
+      const queue = runtime.queue;
 
       if (queue === undefined) throw new Error('The fixture runtime has no Queue producer');
       await queue.send({ hash, generationId: 0 });
-      await delay(QUIET_MS);
-      expect(provider.requestsFor(packet.packageName)).toBe(1);
-
       provider.releaseStalls();
-      const stored = await waitForStoredBriefing(main.database, hash);
+      const stored = await waitForStoredBriefing(runtime.database, hash);
+      await waitFor(
+        async () => (runtime.queueAcknowledgements() === 2 ? true : undefined),
+        JOB_WAIT_MS,
+        'both original and stale Queue deliveries',
+      );
       expect(stored).toMatchObject({ status: 'available', model: MODEL });
       expect(provider.requestsFor(packet.packageName)).toBe(1);
     } finally {
       provider.setMode({ kind: 'valid' });
       provider.releaseStalls();
+      await runtime.dispose();
     }
   }, 120_000);
 });

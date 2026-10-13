@@ -9,13 +9,10 @@
 // system. The `*.unit.ts` suffix is reserved for suites — vitest collects by it, and `test/**` carries the same
 // relaxed lint rules those suites get.
 
-import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 
 import type { D1Database, Queue } from '@cloudflare/workers-types';
 import { Schema } from 'effect';
@@ -41,9 +38,9 @@ import { briefingEvidenceHash } from '../../../server/comparison/briefing/genera
 import { readStoredBriefing } from '../../../server/comparison/briefing/store';
 import { installBriefingSchema } from '../../../test/helpers/briefingDatabase.harness';
 import type { BriefingJobMessage } from '../job';
+import { CLOCK_MODULE, CLOCK_SCRIPT } from './clock.harness';
 import { FIXTURE_API_KEY, MODEL, SOURCE_ID, providerFixture } from './provider.stub';
-
-const execFileAsync = promisify(execFile);
+import { loadWorkerBundle } from './workerBundle';
 
 /** Any non-null, non-function container: the gate before probing unconverted wire bodies. */
 const isContainerObject = Schema.is(
@@ -53,10 +50,6 @@ const isContainerObject = Schema.is(
 const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 
 const isScalarString = Schema.is(Schema.String);
-
-export const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
-
-const WRANGLER_BIN = join(REPO_ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 
 export const WORKER_NAME = 'can-i-update-local-briefing';
 
@@ -112,7 +105,7 @@ export const BRIEFING_ENVIRONMENTS = ENVIRONMENTS;
  * to this line fails loudly instead of silently reporting nothing. `RecordingLog` receives the message before any
  * terminal colouring, so the line is matched as plain text.
  */
-const QUEUE_DELIVERY = new RegExp(String.raw`QUEUE\s+${QUEUE_NAME}\s+\d+/\d+`);
+const QUEUE_DELIVERY = new RegExp(String.raw`QUEUE\s+${QUEUE_NAME}\s+(\d+)/(\d+)`);
 
 /** Captures every line the runtime logs, so a test can count real queue deliveries. */
 class RecordingLog extends Log {
@@ -205,6 +198,14 @@ export default {
       }
     }
 
+    if (url.pathname === '/fire-alarm' && request.method === 'POST') {
+      return json(await jobStub(env, url.searchParams.get('hash') ?? '').fireNextAlarm());
+    }
+
+    if (url.pathname === '/alarm-completions') {
+      return json(await jobStub(env, url.searchParams.get('hash') ?? '').completedAlarms());
+    }
+
     if (url.pathname === '/job') {
       try {
         return json(await jobStub(env, url.searchParams.get('hash') ?? '').reconciledSnapshot());
@@ -261,6 +262,8 @@ export type RuntimeFixture = {
   eventsUrl(hash: string): string;
   /** Queue messages this runtime's own broker delivered to the consumer; see `QUEUE_DELIVERY`. */
   queueDeliveries(): number;
+  /** Successfully acknowledged messages, counted only after the real Queue consumer returned. */
+  queueAcknowledgements(): number;
   /** Structured records emitted by Worker isolates, captured through Miniflare's log callback. */
   structuredLogs(): readonly string[];
   /** One request against the public hostname, through the real runtime, exactly as a browser sends it. */
@@ -279,6 +282,8 @@ export type RuntimeFixture = {
    * own, not a second object standing in for one.
    */
   evictJob(hash: string): Promise<void>;
+  /** Advance the test-only Worker clock to this job's persisted deadline and request native alarm delivery. */
+  fireNextAlarm(hash: string): Promise<void>;
   dispose(): Promise<void>;
 };
 
@@ -288,6 +293,8 @@ export type RuntimeOptions = {
   readonly aiConfig?: boolean;
   readonly producer?: boolean;
   readonly consumer?: boolean;
+  /** Opt in to test-only clock control; native real-time guards leave this unset. */
+  readonly controlledTime?: boolean;
   /** Off when a case deliberately removed the table and the restart must observe that state. */
   readonly installSchema?: boolean;
   /** Which shipped configuration's vars to run with. Defaults to the local default environment. */
@@ -299,43 +306,8 @@ export type RuntimeOptions = {
   readonly allowedOrigin?: string;
 };
 
-/** The Worker bundle is built once by the repo's own Wrangler, exactly as the deploy path builds it. */
-let workerBundle: Promise<Record<string, { type: 'esm'; contents: string }>> | undefined;
-
-async function bundleWorker(): Promise<Record<string, { type: 'esm'; contents: string }>> {
-  const outdir = await mkdtemp(join(tmpdir(), 'briefing-bundle-'));
-
-  try {
-    await execFileAsync(
-      process.execPath,
-      [
-        WRANGLER_BIN,
-        'deploy',
-        '--dry-run',
-        '--config',
-        join('workers', 'briefing', 'wrangler.jsonc'),
-        '--env=',
-        '--outdir',
-        outdir,
-      ],
-      { cwd: REPO_ROOT },
-    );
-    const modules: Record<string, { type: 'esm'; contents: string }> = {};
-
-    for (const entry of await readdir(outdir)) {
-      if (entry.endsWith('.js'))
-        modules[entry] = { type: 'esm', contents: await readFile(join(outdir, entry), 'utf8') };
-    }
-
-    return modules;
-  } finally {
-    await rm(outdir, { recursive: true, force: true });
-  }
-}
-
 export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixture> {
-  workerBundle ??= bundleWorker();
-  const modules = await workerBundle;
+  const modules = await loadWorkerBundle();
   const environment = ENVIRONMENTS[options.environment ?? 'local'];
   const allowedOrigin = options.allowedOrigin ?? environment.allowedOrigin;
   const log = new RecordingLog(LogLevel.INFO);
@@ -365,7 +337,12 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
       BRIEFING_JOBS: { type: 'durable-object', worker: WORKER_NAME, exportName: 'BriefingJob' },
     },
     exports: { BriefingJob: { type: 'durable-object', storage: 'sqlite' } },
-    manifest: { mainModule: 'index.js', modules },
+    manifest: options.controlledTime
+      ? {
+          mainModule: CLOCK_MODULE,
+          modules: { ...modules, [CLOCK_MODULE]: { type: 'esm', contents: CLOCK_SCRIPT } },
+        }
+      : { mainModule: 'index.js', modules },
   };
 
   // Only a consumer runtime declares the queue trigger; a producer-only runtime leaves `triggers` absent.
@@ -468,6 +445,8 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
       allowedOrigin,
       eventsUrl: (hash: string): string => `${environment.requests}/api/briefings/${hash}/events`,
       queueDeliveries: (): number => log.lines.filter((line) => QUEUE_DELIVERY.test(line)).length,
+      queueAcknowledgements: (): number =>
+        log.lines.reduce((total, line) => total + Number(QUEUE_DELIVERY.exec(line)?.[1] ?? 0), 0),
       structuredLogs: (): readonly string[] => structuredLogs,
       publicFetch: (input, init) => runtime.dispatchFetch(input, init),
       async submit<T>(packet: T): Promise<SubmitResult> {
@@ -503,6 +482,28 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
       },
       async evictJob(hash: string): Promise<void> {
         await runtime.unsafeEvictDurableObject(WORKER_NAME, 'BriefingJob', { name: hash, webSockets: 'hibernate' });
+      },
+      async fireNextAlarm(hash: string): Promise<void> {
+        if (!options.controlledTime) throw new Error('This runtime has no controlled clock');
+
+        const response = await harness.fetch(`https://harness.test/fire-alarm?hash=${hash}`, { method: 'POST' });
+
+        if (response.status !== 200) throw new Error(`Alarm control failed: ${await response.text()}`);
+
+        const decodeCompletion = Schema.decodeUnknownSync(Schema.Natural);
+        const before = decodeCompletion(await response.json());
+
+        await waitFor(
+          async () => {
+            const completed = await harness.fetch(`https://harness.test/alarm-completions?hash=${hash}`);
+
+            if (completed.status !== 200) throw new Error(`Alarm completion failed: ${await completed.text()}`);
+
+            return decodeCompletion(await completed.json()) > before ? true : undefined;
+          },
+          JOB_WAIT_MS,
+          `the native alarm handler for ${hash}`,
+        );
       },
       dispose: () => runtime.dispose(),
     };

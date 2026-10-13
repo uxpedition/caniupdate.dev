@@ -1,13 +1,11 @@
-// Integration test for the briefing job Worker's lease reconciliation under a storage outage: when the crashed
-// generation's D1 row cannot be read back at all, the real 90-second lease alarm must report cache-error rather than a
-// timeout. The wait is the production lease, not a shortened test value, so this suite lives in its own file beside
-// the other job suites and runs in parallel with them.
+// When the crashed generation's D1 row cannot be read, lease reconciliation reports cache-error, not a timeout.
+// The test-only clock advances to the persisted production lease deadline; workerd delivers the real alarm handler.
+// leaseExpiry.unit.ts retains the wall-clock lease guard, including native scheduling after a process restart.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { startProviderFixture, type ProviderFixture } from '../test/provider.stub';
 import {
-  LEASE_WAIT_MS,
   crashRunningGeneration,
   openStateDir,
   packetFor,
@@ -35,14 +33,15 @@ describe('briefing job Worker', () => {
     const hash = await crashRunningGeneration(stateDir, packet);
     expect(provider.requestsFor(packet.packageName)).toBe(1);
 
-    const resumed = await startRuntime({ stateDir, installSchema: false });
+    const resumed = await startRuntime({ stateDir, installSchema: false, controlledTime: true });
 
     try {
       expect((await resumed.jobEvent(hash))?.status).toBe('running');
       // The real D1 fault: the crashed generation's row cannot be read back at all.
       await resumed.database.prepare('DROP TABLE package_briefings').run();
 
-      const settled = await waitForJobEvent(resumed, hash, (event) => event.status === 'unavailable', LEASE_WAIT_MS);
+      await resumed.fireNextAlarm(hash);
+      const settled = await waitForJobEvent(resumed, hash, (event) => event.status === 'unavailable');
       expect(settled).toMatchObject({ status: 'unavailable', reason: 'cache-error' });
       expect(provider.requestsFor(packet.packageName)).toBe(1);
     } finally {

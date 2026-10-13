@@ -1,7 +1,6 @@
-// Integration tests for the briefing job Worker's dispatch-exhaustion path: a job whose Queue messages never reach a
-// consumer must become terminal after three 30-second recovery attempts, and an explicit later POST must then start a
-// fresh generation. The exhaustion case spans ~60s of real alarms, so this suite lives in its own file beside the
-// other job suites and runs in parallel with them.
+// A job whose Queue sends fail becomes terminal after three dispatch attempts; a later POST starts a new generation.
+// The test-only clock advances to each persisted production deadline, with native workerd alarm delivery and a
+// completion barrier between attempts. eviction.unit.ts keeps a wall-clock dispatch/hibernation guard.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -41,11 +40,15 @@ describe('briefing job Worker', () => {
     const packet = packetFor('dispatch-exhaustion-fixture', '13.0.0', '13.1.0');
     const hash = briefingEvidenceHash(packet);
 
-    const parked = await startRuntime({ stateDir, producer: false, consumer: false });
+    const parked = await startRuntime({ stateDir, producer: false, consumer: false, controlledTime: true });
 
     try {
       expect((await parked.submit(packet)).submission?.status).toBe('queued');
-      const failed = await waitForJobEvent(parked, hash, (event) => event.status === 'unavailable', 120_000);
+      const queued = await parked.jobEvent(hash);
+      await parked.fireNextAlarm(hash);
+      expect(await parked.jobEvent(hash)).toEqual(queued);
+      await parked.fireNextAlarm(hash);
+      const failed = await waitForJobEvent(parked, hash, (event) => event.status === 'unavailable');
       expect(failed).toMatchObject({ status: 'unavailable', reason: 'provider-error' });
       expect(provider.requestsFor(packet.packageName)).toBe(0);
       expect(await readStoredBriefing(parked.database, hash)).toBeUndefined();

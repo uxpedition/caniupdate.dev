@@ -2,6 +2,8 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'vitest/config';
 
+import { RealAlarmFirstSequencer } from './test/realAlarm.sequencer.ts';
+
 export default defineConfig({
   // Nuxt supplies this compile-time flag to server modules in development; Vitest otherwise leaves it undefined.
   define: { 'import.meta.dev': 'true' },
@@ -16,5 +18,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['{app,server,shared,scripts,workers}/**/*.unit.ts'],
+    globalSetup: ['workers/briefing/test/workerBundle.globalSetup.ts'],
+    sequence: { sequencer: RealAlarmFirstSequencer },
   },
 });

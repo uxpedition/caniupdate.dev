@@ -1,7 +1,6 @@
-// Integration test for the briefing job Worker's lease reconciliation: a generation that crashed after writing its D1
-// row must settle as available from that row once the real 90-second lease alarm fires, without buying a second paid
-// call. The wait is the production lease, not a shortened test value, so this suite lives in its own file beside the
-// other job suites and runs in parallel with them.
+// A generation that crashed after writing its D1 row must reconcile from that row without buying another paid call.
+// The test-only clock advances to the persisted production lease deadline; workerd delivers the real alarm handler.
+// leaseExpiry.unit.ts retains the wall-clock lease guard, including native scheduling after a process restart.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -10,7 +9,6 @@ import type { AvailablePackageBriefing } from '#shared/comparison/briefing/brief
 import { readStoredBriefing, saveBriefing } from '../../../server/comparison/briefing/store';
 import { startProviderFixture, type ProviderFixture } from '../test/provider.stub';
 import {
-  LEASE_WAIT_MS,
   crashRunningGeneration,
   openStateDir,
   packetFor,
@@ -54,7 +52,7 @@ describe('briefing job Worker', () => {
       sources: packet.sources.map((source, position) => ({ ...source, number: position })),
     };
 
-    const resumed = await startRuntime({ stateDir, installSchema: false });
+    const resumed = await startRuntime({ stateDir, installSchema: false, controlledTime: true });
 
     try {
       // The crashed generation never committed, so the row can only come from this write.
@@ -64,7 +62,8 @@ describe('briefing job Worker', () => {
       // The job is still the crashed generation's; only its lease running out may settle it.
       const running = await waitForJobEvent(resumed, hash, (event) => event.status === 'running');
 
-      const settled = await waitForJobEvent(resumed, hash, (event) => event.status === 'available', LEASE_WAIT_MS);
+      await resumed.fireNextAlarm(hash);
+      const settled = await waitForJobEvent(resumed, hash, (event) => event.status === 'available');
       expect(settled).toMatchObject({ status: 'available', briefing: recovered });
       expect(settled.revision).toBeGreaterThan(running.revision);
 

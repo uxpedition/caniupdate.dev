@@ -1,7 +1,6 @@
-// Integration tests for the briefing job Worker's dispatch-recovery path: a job that must be recovered by its own
-// 30-second alarm rather than by the Queue, and a job whose D1 read stays broken until its lease resolution reports
-// the outage. Each case spans real alarm windows (30s), so this suite lives in its own file beside the other job
-// suites and runs in parallel with them.
+// Queued jobs recover from their persisted dispatch alarm after a restart, including when D1 remains unreadable.
+// The test-only clock advances to each production deadline; workerd delivers the alarm and the real Queue message.
+// eviction.unit.ts keeps a wall-clock dispatch/hibernation guard.
 
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -49,10 +48,11 @@ describe('briefing job Worker', () => {
     }
 
     // The restart must observe the missing table, so this runtime does not reinstall the schema.
-    const resumed = await startRuntime({ stateDir, installSchema: false });
+    const resumed = await startRuntime({ stateDir, installSchema: false, controlledTime: true });
 
     try {
-      const failed = await waitForJobEvent(resumed, hash, (event) => event.status === 'unavailable', 90_000);
+      await resumed.fireNextAlarm(hash);
+      const failed = await waitForJobEvent(resumed, hash, (event) => event.status === 'unavailable');
       expect(failed).toMatchObject({ status: 'unavailable', reason: 'cache-error' });
       expect(provider.requestsFor(packet.packageName)).toBe(0);
 
@@ -83,11 +83,12 @@ describe('briefing job Worker', () => {
       await parked.dispose();
     }
 
-    const resumed = await startRuntime({ stateDir, installSchema: false });
+    const resumed = await startRuntime({ stateDir, installSchema: false, controlledTime: true });
 
     try {
-      // The redelivery comes from the 30-second recovery alarm, so this window spans that alarm plus the generation.
-      const stored = await waitForStoredBriefing(resumed.database, hash, 90_000);
+      // Advance to the persisted 30-second deadline; workerd still delivers the alarm and the real Queue message.
+      await resumed.fireNextAlarm(hash);
+      const stored = await waitForStoredBriefing(resumed.database, hash);
       expect(stored).toMatchObject({ status: 'available', model: MODEL });
       expect(provider.requestsFor(packet.packageName)).toBe(1);
     } finally {
