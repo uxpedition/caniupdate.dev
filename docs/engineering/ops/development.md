@@ -85,11 +85,27 @@ nub run test
 
 `lint:check` and `format:check` are non-fixing checks. The `lint` and `format` scripts modify files; use them intentionally rather than as read-only verification. Git hooks check lint, types, formatting, and commit messages, not tests; run tests separately.
 
+### CI and merge protection
+
+[`.gitlab-ci.yml`](../../../.gitlab-ci.yml) runs required validation for merge requests and pushes to `main`. Other branch pushes do not create duplicate pipelines. Jobs select the self-hosted group runner tagged `debian-home-server`, using its Docker executor on Linux/amd64; another runner must have that tag and executor/architecture support to take over. Runner concurrency determines whether the independent jobs execute simultaneously. Jobs use a pinned Node image, Nub from the `packageManager` pin, and `nub ci`; they invoke the existing non-fixing package gates without changing lint severities or adding a coverage threshold.
+
+The gates cover types across all three runtimes, lint, formatting, the complete Vitest suite, migration consistency, and the frontend build plus backend bundle checks. The build job then runs `nub run smoke:preview` against the built application locally, with a fixture-only briefing configuration and isolated persistence. This is not a deployed-preview check; public evidence providers and build-time font downloads remain network dependencies. CPU sampling is not part of the gate. Each validation job has a five-minute execution timeout, including bootstrap and dependency installation. The jobs can run concurrently when runner capacity permits; this is not a five-minute guarantee for runner queueing or total pipeline wall time. An over-budget job fails validation; investigate the bottleneck rather than silently extending the timeout or skipping checks.
+
+Validation has no deployment jobs, deployment credentials, reusable caches, or uploaded build/runtime artifacts. Project and group CI variables must remain free of unprotected deployment/provider secrets. Fork pipelines run in the fork, not with parent-project resources; merge-request access to protected variables/runners remains restricted.
+
+The GitLab project requires successful pipelines and does not accept skipped pipelines. `main` allows Maintainers to merge, but nobody to push directly; force pushes are disabled. Fast-forward merging requires a source branch containing the current `main`. Rebase when `main` advances, then wait for the new revision's pipeline before merging. Do not bypass validation with `[skip ci]`.
+
+These settings live in GitLab, not in YAML. Maintainers must preserve them under **Settings → Merge requests** and **Settings → Repository → Branch rules**, including when recreating or moving the project. See GitLab's [pipeline merge checks](https://docs.gitlab.com/user/project/merge_requests/auto_merge/#require-a-successful-pipeline-for-merge), [merge methods](https://docs.gitlab.com/user/project/merge_requests/methods/), and [fork pipeline controls](https://docs.gitlab.com/ci/pipelines/merge_request_pipelines/#run-pipelines-in-the-parent-project).
+
+Bootstrap this configuration through a merge request: its source branch supplies `.gitlab-ci.yml` for the MR pipeline even before the file is present on `main`. A successful local check or CI Lint simulation is not proof of hosted enforcement. Verify the first hosted MR pipeline, including a deliberately failing check that blocks merge, before treating the integration as proven. No deployment is authorized by a passing pipeline.
+
 ### Test harnesses
 
 Vitest discovery and runtime settings live in [`vitest.config.ts`](../../../vitest.config.ts). Colocate `.unit.ts` suites with their implementation; root `test/` contains shared helpers, not discovered suites. Follow the nearest suite: `.harness.ts` boots runtimes and returns teardown, while `.stub.ts` impersonates external systems.
 
 Inject Effect HTTP services and use H3 `mockEvent` for handlers. Restore stubbed globals, environment, and timers. Inject `FetchHttpClient.Fetch` per run when needed: its default fetch service can memoize a global stub. Assert boundary behavior, uncertainty, privacy, cancellation, and persistence rather than implementation details; see [verification conventions](../../../CODE_CONVENTIONS.md#evidence-driven-review).
+
+The pinned Miniflare 5 alpha declarations import Zod, but its published runtime dependency list omits it. The exact-pinned development dependency supplies those upstream types for clean installs; application boundary validation still uses Effect schemas. Do not remove it based only on an existing local dependency tree.
 
 Worker `.workerd.unit.ts`, `workers/briefing/jobs.unit/`, and `sockets.unit/` suites exercise real Miniflare/workerd storage, queues, sockets, and restarts. Some await real alarms with timeouts up to 180 seconds. Keep production leases intact rather than shortening them to accelerate tests.
 
@@ -116,7 +132,7 @@ Then run:
 ```bash
 node scripts/smoke/smoke.ts
 NUXT_PUBLIC_SITE_URL=http://localhost:5273 nub run build
-node scripts/smoke/smoke.ts --preview
+nub run smoke:preview
 ```
 
 The scenario uses temporary persistence and offset ports. It exercises submission, socket completion, a device-shaped Origin, restart, D1 reuse, and reconnect. Its fixture must be loopback; do not substitute a real provider. It starts no remote deployment and does not touch the normal `.wrangler/state` root. Evidence collection can still use public package providers, so this is not an offline test.

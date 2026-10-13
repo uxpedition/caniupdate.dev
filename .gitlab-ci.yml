@@ -1,0 +1,61 @@
+# Phase 1 CI: static gates, unit tests, and a built-runtime smoke.
+# Pins: Node image digest, Node and Nub versions (checked against .node-version and package.json), Nub archive SHA-256.
+# No deployment credentials, caches, artifacts, deployments, or allow_failure. Each job bootstraps its own workspace.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - when: never
+
+stages:
+  - verify
+
+variables:
+  WRANGLER_SEND_METRICS: 'false'
+  NUXT_TELEMETRY_DISABLED: '1'
+  PIN_NODE_VERSION: '26.8.1'
+  PIN_NUB_VERSION: '0.9.6'
+  NUB_ARCHIVE: 'nub-linux-x64.tar.gz'
+  NUB_ARCHIVE_SHA256: '77220dc6deb6ebbdb0a282c61b80a157e32016e088f3632d8fb4bf74a931e4ce'
+
+default:
+  tags:
+    - debian-home-server
+  image: node:26.8.1@sha256:f5d1cc40abc10c2843339a2134d07817cf33c405cb16bfd052b0ed790254c3a3
+  before_script:
+    - test "$(tr -d '[:space:]' < .node-version)" = "$PIN_NODE_VERSION"
+    - test "$(node -p 'process.versions.node')" = "$PIN_NODE_VERSION"
+    - test "$(node -p "require('./package.json').packageManager")" = "nub@$PIN_NUB_VERSION"
+    - curl -fsSL -o "$NUB_ARCHIVE" "https://github.com/nubjs/nub/releases/download/v$PIN_NUB_VERSION/$NUB_ARCHIVE"
+    - printf '%s  %s\n' "$NUB_ARCHIVE_SHA256" "$NUB_ARCHIVE" | sha256sum -c -
+    - mkdir -p "$HOME/.local/nub"
+    - tar -xzf "$NUB_ARCHIVE" -C "$HOME/.local/nub"
+    - export PATH="$HOME/.local/nub/bin:$PATH"
+    - nub --version | grep -qxF "v$PIN_NUB_VERSION"
+    - nub ci
+    - printf '%s\n' 'AI_BRIEFING_ENDPOINT="http://127.0.0.1:8787/v1/chat/completions"' 'AI_BRIEFING_API_KEY="local-fixture-key"' 'AI_BRIEFING_MODEL="local-fixture-model"' > workers/briefing/.dev.vars
+
+quality:
+  stage: verify
+  timeout: 5m
+  script:
+    - nub run type-check
+    - nub run lint:check
+    - nub run format:check
+    - nub run db:check
+
+unit-tests:
+  stage: verify
+  timeout: 5m
+  script:
+    - nub run test
+
+build-smoke:
+  stage: verify
+  timeout: 5m
+  variables:
+    NUXT_PUBLIC_SITE_URL: 'http://localhost:5273'
+  script:
+    - nub run build
+    - nub run smoke:preview

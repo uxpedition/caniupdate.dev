@@ -12,6 +12,7 @@
     "dev": "node scripts/dev/dev.ts",
     "generate": "nuxt generate",
     "preview": "node scripts/dev/dev.ts --preview",
+    "smoke:preview": "node scripts/smoke/smoke.ts --preview",
     "preinstall": "node scripts/check-package-manager/check-package-manager.mjs",
     "prepare": "nuxt prepare && lefthook install",
     "postinstall": "nuxt prepare",
@@ -22,8 +23,8 @@
     "test:watch": "vitest",
     "lint": "oxlint . --fix",
     "lint:check": "oxlint .",
-    "format": "oxfmt . --write",
-    "format:check": "oxfmt ."
+    "format": "oxfmt . .gitlab-ci.yml --write",
+    "format:check": "oxfmt . .gitlab-ci.yml --check"
   },
   "dependencies": {
     "@effect/ai-openai-compat": "4.0.0",
@@ -63,7 +64,8 @@
     "typescript": "6.0.3",
     "vitest": "^5.0.1",
     "vue-tsc": "3.3.11",
-    "wrangler": "4.140.0"
+    "wrangler": "4.140.0",
+    "zod": "4.4.3"
   },
   "devEngines": {
     "packageManager": {
