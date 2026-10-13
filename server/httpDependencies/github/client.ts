@@ -1,5 +1,12 @@
-import { Data, Duration, Effect, Option, Predicate, Result, Schema } from 'effect';
-import { FetchHttpClient, Headers, HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
+import { Cause, Data, Duration, Effect, Option, Predicate, Result, Schema } from 'effect';
+import {
+  FetchHttpClient,
+  Headers,
+  HttpClient,
+  HttpClientError,
+  HttpClientRequest,
+  HttpClientResponse,
+} from 'effect/http';
 
 const API_ORIGIN = 'https://api.github.com';
 
@@ -105,7 +112,7 @@ const githubRequest = (url: string, accept: string, token?: string): HttpClientR
 const executeGithubRequest = (
   client: HttpClient.HttpClient,
   request: HttpClientRequest.HttpClientRequest,
-): Effect.Effect<HttpClientResponse.HttpClientResponse, unknown> =>
+): Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError> =>
   Effect.gen(function* () {
     const noRedirectClient = client.pipe(HttpClient.followRedirects(0));
 
@@ -130,7 +137,9 @@ const contentLength = (response: HttpClientResponse.HttpClientResponse): number 
   return !Number.isNaN(parsed) && parsed >= 0 ? parsed : undefined;
 };
 
-const readResponseBody = (response: HttpClientResponse.HttpClientResponse): Effect.Effect<ArrayBuffer, unknown> =>
+const readResponseBody = (
+  response: HttpClientResponse.HttpClientResponse,
+): Effect.Effect<ArrayBuffer, InstanceType<typeof GithubResponseTooLargeError> | HttpClientError.HttpClientError> =>
   Effect.gen(function* () {
     const declaredLength = contentLength(response);
 
@@ -147,7 +156,9 @@ const readResponseBody = (response: HttpClientResponse.HttpClientResponse): Effe
     return body;
   });
 
-const readResponseText = (response: HttpClientResponse.HttpClientResponse): Effect.Effect<string, unknown> =>
+const readResponseText = (
+  response: HttpClientResponse.HttpClientResponse,
+): Effect.Effect<string, InstanceType<typeof GithubResponseTooLargeError> | HttpClientError.HttpClientError> =>
   Effect.map(readResponseBody(response), (body) => new TextDecoder().decode(body));
 
 const fetchReleasePage = (
@@ -155,7 +166,14 @@ const fetchReleasePage = (
   repository: GithubRepository,
   page: number,
   token?: string,
-): Effect.Effect<{ readonly releases: readonly GithubRelease[]; readonly hasNext: boolean }, unknown> =>
+): Effect.Effect<
+  { readonly releases: readonly GithubRelease[]; readonly hasNext: boolean },
+  | InstanceType<typeof GithubResponseTooLargeError>
+  | InstanceType<typeof GithubResponseDecodeError>
+  | HttpClientError.HttpClientError
+  | Schema.SchemaError
+  | Cause.TimeoutError
+> =>
   Effect.gen(function* () {
     const response = yield* executeGithubRequest(
       client,

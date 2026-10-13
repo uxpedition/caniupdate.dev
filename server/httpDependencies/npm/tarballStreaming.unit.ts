@@ -71,6 +71,41 @@ describe('tarball inspection lifecycle', () => {
     expect(entries).toEqual(['package/payload']);
   });
 
+  it('normalizes non-Error inspector rejections and keeps the original value as cause', async () => {
+    const body = await archiveWithEntry(Buffer.from('payload'));
+
+    const failure = await Effect.runPromise(
+      Effect.flip(
+        inspectTarball(body, async (parser) => {
+          for await (const entry of parser) for await (const chunk of entry) void chunk;
+
+          await Promise.reject('inspector rejected');
+        }),
+      ),
+    );
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.message).toBe('Tarball inspection failed');
+    expect(failure.cause).toBe('inspector rejected');
+  });
+
+  it('preserves Error instances rejected by the inspector', async () => {
+    const body = await archiveWithEntry(Buffer.from('payload'));
+    const inspectorError = new Error('Inspection failed after reading the archive');
+
+    const failure = await Effect.runPromise(
+      Effect.flip(
+        inspectTarball(body, async (parser) => {
+          for await (const entry of parser) for await (const chunk of entry) void chunk;
+
+          await Promise.reject(inspectorError);
+        }),
+      ),
+    );
+
+    expect(failure).toBe(inspectorError);
+  });
+
   it('joins failed inspection cleanup after reading a populated archive', async () => {
     const body = await archiveWithEntry(Buffer.from('payload'));
     const cleanupGate = Promise.withResolvers<void>();

@@ -1,10 +1,17 @@
 import { Effect, Fiber } from 'effect';
 import { describe, expect, it, vi } from 'vitest';
 
-import { BoundedArchiveAdmission, BoundedResponseAdmission } from './admission';
+import {
+  ArchiveCapacityError,
+  BoundedArchiveAdmission,
+  BoundedResponseAdmission,
+  ResponseCapacityError,
+} from './admission';
 
 type Admission = {
-  withPermit<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, unknown, R>;
+  withPermit<A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E | InstanceType<typeof ArchiveCapacityError> | InstanceType<typeof ResponseCapacityError>, R>;
 };
 
 const admissionCases: ReadonlyArray<{

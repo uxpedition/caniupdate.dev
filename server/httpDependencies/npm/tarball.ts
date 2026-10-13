@@ -2,12 +2,12 @@ import { Buffer } from 'node:buffer';
 import { createHash, timingSafeEqual, type Hash } from 'node:crypto';
 import { posix } from 'node:path';
 
-import { Effect, Schema } from 'effect';
+import { Effect } from 'effect';
 import { type Header } from 'tar-stream';
 
 import type { PackageTarball, PublishedFile, ShippedChangelog } from '../../../shared/comparison/evidence/tarball.defs';
 import type { RegistryVersionManifest } from '../../../shared/comparison/package/package.defs';
-import { inspectTarball, type TarParser } from './tarballStreaming';
+import { inspectTarball, toTarballError, type TarParser } from './tarballStreaming';
 
 const MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024;
 
@@ -306,7 +306,7 @@ function inspectEntry(
     }),
     (cause): Outcome<EntryResult> => {
       state.firstTaskFailure ??= cause;
-      parser.destroy(toError(cause));
+      parser.destroy(toTarballError(cause));
 
       return { ok: false, cause };
     },
@@ -353,17 +353,11 @@ async function inspectEntries(parser: TarParser, signal: AbortSignal): Promise<I
 
     return finalizeEntries(results, state);
   } catch (cause) {
-    parser.destroy(toError(state.firstTaskFailure ?? cause));
+    parser.destroy(toTarballError(state.firstTaskFailure ?? cause));
     await Promise.all(state.tasks);
     throw state.firstTaskFailure ?? cause;
   }
 }
-
-function toError(cause: unknown, fallback = 'Tarball stream failed'): Error {
-  return cause instanceof Error ? cause : new Error(isTarballCauseText(cause) ? cause : fallback);
-}
-
-const isTarballCauseText = Schema.is(Schema.String);
 
 const unavailableTarball = (url: string, cause: unknown): PackageTarball => ({
   url,
@@ -376,7 +370,7 @@ const unavailableTarball = (url: string, cause: unknown): PackageTarball => ({
 const inspectPackageTarball = (
   url: string,
   dist: RegistryVersionManifest['dist'],
-): Effect.Effect<InspectedTarball, unknown> =>
+): Effect.Effect<InspectedTarball, Error> =>
   Effect.tryPromise({
     try: async (signal) => {
       const body = await downloadTarball(url, signal);
@@ -384,7 +378,7 @@ const inspectPackageTarball = (
 
       return body;
     },
-    catch: (cause) => cause,
+    catch: toTarballError,
   }).pipe(
     Effect.flatMap((body) => inspectTarball(body, inspectEntries)),
     Effect.map((result): InspectedTarball => ({ status: result.reasons.length ? 'partial' : 'available', ...result })),
