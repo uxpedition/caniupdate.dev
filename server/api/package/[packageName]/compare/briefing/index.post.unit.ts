@@ -323,7 +323,7 @@ describe('briefing submission endpoint', () => {
         'comparison.version.from': '1.4.0',
         'comparison.version.to': '3.0.0',
       });
-      expect(loggedLine(log)).not.toMatch(/comparison\.requested|\^1\.0\.0|latest/);
+      expect(loggedLine(log)).not.toMatch(/\^1\.0\.0|latest/);
     } finally {
       log.mockRestore();
     }
@@ -548,7 +548,7 @@ describe('briefing submission endpoint', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('does not log requested selectors when evidence fails before a packet exists', async () => {
+  it('logs no comparison identity when evidence fails before a resolved packet exists', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     objectFetch.mockResolvedValue(new Response('private evidence details', { status: 503 }));
 
@@ -561,7 +561,8 @@ describe('briefing submission endpoint', () => {
       expect(log).toHaveBeenCalledTimes(1);
       const line = loggedLine(log);
       expect(annotationsFromLog(line)).toMatchObject({ name: 'PackageEvidenceClientError', reason: 'upstream' });
-      expect(line).not.toMatch(/comparison\.requested|latest/);
+      expect(annotationsFromLog(line)).not.toHaveProperty('comparison.package.name');
+      expect(line).not.toMatch(/latest/);
       expect(line).not.toContain('private.example');
       expect(line).not.toContain('token=secret');
       expect(submit).not.toHaveBeenCalled();

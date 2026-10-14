@@ -26,7 +26,7 @@ useSeoMeta({ title: 'Privacy · Can I Update?' });
     <p>
       We use Cloudflare to host the site. Cloudflare processes your IP address to serve requests and protect its
       network. Default request logs are disabled. We use application logs to diagnose errors. Diagnostic logs and, when
-      enabled, traces include the public npm package name and requested or resolved versions being compared, along with
+      enabled, traces include the public npm package name and the registry-resolved versions being compared, along with
       operation timing and correlation IDs. We exclude credentials, AI prompts, evidence packets and raw provider error
       text from these diagnostic records.
     </p>

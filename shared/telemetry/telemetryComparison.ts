@@ -1,58 +1,35 @@
-import { Schema } from 'effect';
+import { Predicate, Schema } from 'effect';
 
-import {
-  TelemetryComparisonPackageSchema,
-  TelemetryComparisonSelectorSchema,
-  TelemetryComparisonVersionSchema,
-} from './telemetry.schema';
+import { TelemetryComparisonPackageSchema, TelemetryComparisonVersionSchema } from './telemetry.schema';
 
 const isPackage = Schema.is(TelemetryComparisonPackageSchema);
 
 const isVersion = Schema.is(TelemetryComparisonVersionSchema);
 
-const isSelector = Schema.is(TelemetryComparisonSelectorSchema);
+type ComparisonTelemetryKey = 'comparison.package.name' | 'comparison.version.from' | 'comparison.version.to';
 
-type ComparisonTelemetryKey =
-  | 'comparison.package.name'
-  | 'comparison.version.from'
-  | 'comparison.version.to'
-  | 'comparison.requested.from'
-  | 'comparison.requested.to';
+export type ComparisonTelemetryAttributes = Partial<Record<ComparisonTelemetryKey, string>>;
 
-const addRequestedSelector = (
-  attributes: Partial<Record<ComparisonTelemetryKey, string>>,
-  key: 'comparison.requested.from' | 'comparison.requested.to',
-  requested: string,
-  resolved: string | undefined,
-): void => {
-  const selector = requested.trim();
+/** Call only with registry-resolved identity. Rejected inputs and requested selectors are not diagnostics. */
+export const comparisonTelemetryAttributes = (comparison: {
+  readonly packageName: string;
+  readonly from: string | { readonly version: string };
+  readonly to: string | { readonly version: string };
+}): ComparisonTelemetryAttributes => {
+  try {
+    const { packageName, from: resolvedFrom, to: resolvedTo } = comparison;
+    const from = Predicate.isString(resolvedFrom) ? resolvedFrom : resolvedFrom.version;
+    const to = Predicate.isString(resolvedTo) ? resolvedTo : resolvedTo.version;
 
-  if (isSelector(selector) && selector !== resolved) attributes[key] = selector;
-};
+    if (!isPackage(packageName) || !isVersion(from) || !isVersion(to)) return {};
 
-/** Resolved versions are separate from requested selectors; missing resolution never invents a version. */
-export const comparisonTelemetryAttributes = (
-  comparison: { readonly packageName: string; readonly from?: string; readonly to?: string },
-  requested?: { readonly from: string; readonly to: string },
-): Partial<Record<ComparisonTelemetryKey, string>> => {
-  const attributes: Partial<Record<ComparisonTelemetryKey, string>> = {};
-
-  if (isPackage(comparison.packageName)) attributes['comparison.package.name'] = comparison.packageName;
-
-  if (comparison.from !== undefined && isVersion(comparison.from))
-    attributes['comparison.version.from'] = comparison.from;
-
-  if (comparison.to !== undefined && isVersion(comparison.to)) attributes['comparison.version.to'] = comparison.to;
-
-  if (requested !== undefined) {
-    addRequestedSelector(
-      attributes,
-      'comparison.requested.from',
-      requested.from,
-      attributes['comparison.version.from'],
-    );
-    addRequestedSelector(attributes, 'comparison.requested.to', requested.to, attributes['comparison.version.to']);
+    return {
+      'comparison.package.name': packageName,
+      'comparison.version.from': from,
+      'comparison.version.to': to,
+    };
+  } catch {
+    // Incomplete or unreadable metadata is absent evidence, never an application failure.
+    return {};
   }
-
-  return attributes;
 };

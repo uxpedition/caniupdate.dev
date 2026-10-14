@@ -188,7 +188,7 @@ const readResolvedBriefingEvidence = (event: H3Event, request: BriefingSubmissio
           : cause,
     });
 
-    const identityAttributes = comparisonTelemetryAttributes(evidence, { from: request.from, to: request.to });
+    const identityAttributes = comparisonTelemetryAttributes(evidence);
     yield* Effect.annotateCurrentSpan(identityAttributes);
 
     return { evidence, identityAttributes };
@@ -210,12 +210,6 @@ const createBriefingSubmissionProgram = (event: H3Event, parsed: TraceContext | 
       try: () => readBriefingSubmissionRequest(event),
       catch: (cause) => cause,
     });
-
-    identityAttributes = comparisonTelemetryAttributes(
-      { packageName: request.packageName },
-      { from: request.from, to: request.to },
-    );
-    yield* Effect.annotateCurrentSpan(identityAttributes);
 
     const resolved = yield* readResolvedBriefingEvidence(event, request);
     identityAttributes = resolved.identityAttributes;

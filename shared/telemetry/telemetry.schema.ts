@@ -9,13 +9,6 @@ export const TelemetryComparisonVersionSchema = Schema.String.check(
   Schema.isPattern(/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/),
 );
 
-export const TelemetryComparisonSelectorSchema = Schema.String.check(
-  Schema.isMinLength(1),
-  Schema.isMaxLength(256),
-  Schema.isPattern(/^[0-9A-Za-z.*+^~<>=| _-]+$/),
-  Schema.makeFilter((value: string) => value.trim() === value, { expected: 'a trimmed npm version selector' }),
-);
-
 export const MAX_RESOURCE_GROUPS = 4;
 
 export const MAX_SCOPE_GROUPS = 4;
@@ -259,8 +252,6 @@ export const TelemetryAttributeKeySchema = Schema.Literals([
   'comparison.package.name',
   'comparison.version.from',
   'comparison.version.to',
-  'comparison.requested.from',
-  'comparison.requested.to',
   'outcome',
   'operation',
   'provider',

@@ -28,10 +28,7 @@ if (import.meta.client) {
     () => route.path,
     () => {
       if (route.name === 'packageName-versionPair') {
-        pageTraceContext.value = openComparisonPage(telemetry, packageName.value, {
-          from: fromVersion.value,
-          to: toVersion.value,
-        });
+        pageTraceContext.value = openComparisonPage(telemetry);
       }
     },
     { immediate: true },

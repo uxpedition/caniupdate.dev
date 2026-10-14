@@ -34,10 +34,10 @@ const firstRecord = <T>(records: readonly T[]): T => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('openComparisonPage', () => {
-  it('exports correlated page records without requested selectors', async () => {
+  it('records operation context without unresolved identity on its root span and opened log', async () => {
     const { requests, telemetry } = installCollector();
     await telemetry.context();
-    const traceContext = openComparisonPage(telemetry, '@scope/package', { from: '^1.2.0', to: 'latest' });
+    const traceContext = openComparisonPage(telemetry);
     await telemetry.dispose();
 
     const logsRequest = requests.find(({ url }) => url.endsWith('/v1/logs'));
@@ -50,21 +50,20 @@ describe('openComparisonPage', () => {
     const log = firstRecord(firstRecord(firstRecord(logs.resourceLogs).scopeLogs).logRecords);
     const span = firstRecord(firstRecord(firstRecord(traces.resourceSpans).scopeSpans).spans);
 
-    expect(JSON.stringify({ logs, traces })).not.toMatch(/comparison\.requested\.|\^1\.2\.0|latest/);
-    const expectedAttributes = [{ key: 'comparison.package.name', value: { stringValue: '@scope/package' } }];
+    expect(JSON.stringify({ logs, traces })).not.toMatch(
+      /comparison\.package|comparison\.requested|comparison\.version/,
+    );
 
     expect(log).toMatchObject({
       body: { stringValue: 'comparison.page.opened' },
       traceId: traceContext.traceId,
       spanId: traceContext.spanId,
     });
-    expect(log.attributes).toEqual(expect.arrayContaining(expectedAttributes));
     expect(span).toMatchObject({
       name: 'comparison.page',
       traceId: traceContext.traceId,
       spanId: traceContext.spanId,
     });
-    expect(span.attributes).toEqual(expect.arrayContaining(expectedAttributes));
     expect(span.attributes.map(({ key }) => key)).not.toContain('comparison.version.from');
     expect(span.attributes.map(({ key }) => key)).not.toContain('comparison.version.to');
     expect(log.attributes.map(({ key }) => key)).not.toContain('comparison.version.from');
