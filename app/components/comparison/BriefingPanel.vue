@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 
 import type { BriefingUnavailableReason, PackageBriefing } from '#shared/comparison/briefing/briefing.defs';
-import type { BriefingStatus } from '~/composables/packageBriefingQueryOptions';
+import type { BriefingStatus } from '~/composables/briefingSubscription';
 import { citationAnchorId } from '~/pages/[packageName]/comparisonCitations';
 
 const props = defineProps<{

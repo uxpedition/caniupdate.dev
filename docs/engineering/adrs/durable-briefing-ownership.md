@@ -21,5 +21,5 @@ Reconsider if cancellation or automatic regeneration becomes an explicit product
 ## Artifacts
 
 - [Current job lifecycle and recovery](../briefing.md#durable-job-lifecycle-and-recovery) and [generation failures](../briefing.md#result-storage-and-generation-failures).
-- [Job implementation](../../../workers/briefing/job.ts), [Queue and socket entrypoints](../../../workers/briefing/index.ts), and [browser follower](../../../app/composables/packageBriefingQueryOptions.ts): source evidence for ownership boundaries.
+- [Job implementation](../../../workers/briefing/job.ts), [Queue and socket entrypoints](../../../workers/briefing/index.ts), and [browser follower](../../../app/composables/briefingSubscription.ts): source evidence for ownership boundaries.
 - **Historical observation (local fixture, reported 2026-09-26):** The recorded smoke scenario submitted a job, received a terminal socket result, restarted the local runtime, reused the stored D1 result, and reconnected without another fixture-provider call. This describes that isolated local scenario; it does not establish production behavior or exactly-once billing.

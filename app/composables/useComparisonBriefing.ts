@@ -4,7 +4,8 @@ import type { MaybeRefOrGetter } from 'vue';
 
 import { useNuxtApp, useRequestFetch } from '#imports';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
-import { packageBriefingQueryOptions, type BriefingStatus } from '~/composables/packageBriefingQueryOptions';
+import type { BriefingStatus } from '~/composables/briefingSubscription';
+import { packageBriefingQueryOptions } from '~/composables/packageBriefingQueryOptions';
 
 export const useComparisonBriefing = (
   packageName: MaybeRefOrGetter<string>,
