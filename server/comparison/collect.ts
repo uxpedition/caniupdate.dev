@@ -2,8 +2,6 @@
 // package/version manifests; complete evidence (tarball inventory, advisories, bundle sizes, and release notes) is
 // collected only for the AI briefing pipeline.
 
-import { createHash } from 'node:crypto';
-
 import { Effect, Schema } from 'effect';
 import { HttpClient } from 'effect/http';
 
@@ -18,7 +16,7 @@ import type {
 import { PackageBundleSizeSchema } from '../../shared/comparison/evidence/bundlephobia.defs';
 import { PackageReleaseNotesSchema } from '../../shared/comparison/evidence/github.defs';
 import { PackageVulnerabilitiesSchema } from '../../shared/comparison/evidence/osv.defs';
-import { PackageTarballSchema, type PackageTarball } from '../../shared/comparison/evidence/tarball.defs';
+import type { PackageTarball } from '../../shared/comparison/evidence/tarball.defs';
 import { isExactSemver } from '../../shared/comparison/package/compareSemver';
 import {
   RegistryVersionManifestSchema,
@@ -27,16 +25,12 @@ import {
 } from '../../shared/comparison/package/package.defs';
 import { RegistryRequestError } from '../httpDependencies/npm/errors';
 import { getRegistryJson } from '../httpDependencies/npm/registry';
-import { getPackageTarball } from '../httpDependencies/npm/tarball';
 import { compareDeclarations } from './declarations/compare';
-import {
-  EvidenceCollectionError,
-  toEvidenceCacheFailure,
-  toPackageEvidenceFailure,
-  type PackageEvidenceFailure,
-} from './evidence/errors';
+import { cacheKey, runCached } from './evidence/cacheLookup';
+import type { PackageEvidenceFailure } from './evidence/errors';
 import { getPackageReleaseNotes } from './evidence/releaseNotes';
-import type { ComparisonEvidenceCacheOptions, ComparisonEvidenceServices } from './evidence/services';
+import type { ComparisonEvidenceServices } from './evidence/services';
+import { cachedTarball } from './evidence/tarball';
 import { getVersionBundleSize } from './measurements/bundleSize';
 import { compareMeasurements } from './measurements/compare';
 import { getPackageVulnerabilities } from './measurements/vulnerabilities';
@@ -44,100 +38,6 @@ import { getPackageVulnerabilities } from './measurements/vulnerabilities';
 export const EVIDENCE_CACHE_MAX_AGE_MS = 300_000;
 
 export const EVIDENCE_COLLECTOR_REVISION = 'comparison-evidence-v1';
-
-export const ARCHIVE_INSPECTOR_REVISION = 'archive-inspector-v2';
-
-// Each identity is a closed object built at one call site below; the github key serializes whole manifests so every
-// field the release-note lookup depends on contributes to the digest.
-type CacheIdentity =
-  | { readonly revision: string; readonly packageName: string; readonly version: string }
-  | {
-      readonly revision: string;
-      readonly packageName: string;
-      readonly fromVersion: string;
-      readonly toVersion: string;
-    }
-  | { readonly revision: string; readonly integrity: { readonly algorithm: string; readonly value: string } }
-  | {
-      readonly revision: string;
-      readonly packageName: string;
-      readonly from: RegistryVersionManifest;
-      readonly to: RegistryVersionManifest;
-    };
-
-const cacheKey = (scope: string, input: CacheIdentity): string => {
-  const serialized = JSON.stringify(input);
-  const digest = createHash('sha256').update(serialized).digest('hex');
-
-  return `${scope}:${digest}`;
-};
-
-const runCached = <T>(
-  key: string,
-  effect: Effect.Effect<T, unknown, HttpClient.HttpClient>,
-  services: ComparisonEvidenceServices | undefined,
-  options: ComparisonEvidenceCacheOptions<T>,
-): Effect.Effect<T, PackageEvidenceFailure, HttpClient.HttpClient> => {
-  const cache = services?.cache;
-
-  if (cache === undefined) {
-    return effect.pipe(
-      Effect.mapError(toPackageEvidenceFailure),
-      Effect.catchDefect((cause) => Effect.fail(new EvidenceCollectionError({ cause }))),
-    );
-  }
-
-  return Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient;
-
-    return yield* Effect.tryPromise({
-      try: () =>
-        cache.load(
-          key,
-          () =>
-            Effect.runPromise(
-              effect.pipe(
-                Effect.provideService(HttpClient.HttpClient, client),
-                Effect.mapError(toPackageEvidenceFailure),
-                Effect.catchDefect((cause) => Effect.fail(new EvidenceCollectionError({ cause }))),
-              ),
-            ),
-          options,
-        ),
-      catch: toEvidenceCacheFailure,
-    });
-  });
-};
-
-const safeTarballUrl = (url: string): boolean => {
-  try {
-    const parsed = new URL(url);
-
-    return (
-      parsed.origin === 'https://registry.npmjs.org' &&
-      parsed.username === '' &&
-      parsed.password === '' &&
-      parsed.hash === ''
-    );
-  } catch {
-    return false;
-  }
-};
-
-const archiveIntegrityPolicy = (manifest: RegistryVersionManifest) =>
-  manifest.dist.integrity === undefined
-    ? { algorithm: 'sha1', value: manifest.dist.shasum }
-    : { algorithm: 'sri', value: manifest.dist.integrity };
-
-const withArchiveAdmission = (
-  manifest: RegistryVersionManifest,
-  services: ComparisonEvidenceServices | undefined,
-): Effect.Effect<PackageTarball, PackageEvidenceFailure, HttpClient.HttpClient> => {
-  const inspect = getPackageTarball(manifest).pipe(Effect.mapError(toPackageEvidenceFailure));
-  const admission = services?.archiveAdmission;
-
-  return admission === undefined ? inspect : admission.withPermit(inspect);
-};
 
 // The registry does not negotiate content on this route: `install-v1+json` and `application/json` return the
 // same full manifest. Only the packument route abbreviates, so no `Accept` header is sent here.
@@ -210,31 +110,6 @@ export function getComparisonDeclarations(
     return yield* declarationsFrom(packageName, lookups);
   });
 }
-
-const cachedTarball = (
-  manifest: RegistryVersionManifest,
-  services?: ComparisonEvidenceServices,
-): Effect.Effect<PackageTarball, PackageEvidenceFailure, HttpClient.HttpClient> => {
-  const validUrl = safeTarballUrl(manifest.dist.tarball);
-
-  const inspect = (validUrl ? withArchiveAdmission(manifest, services) : getPackageTarball(manifest)).pipe(
-    Effect.mapError(toPackageEvidenceFailure),
-  );
-
-  if (services?.cache === undefined || !validUrl) return inspect;
-
-  const result = runCached(
-    cacheKey('archive', {
-      revision: ARCHIVE_INSPECTOR_REVISION,
-      integrity: archiveIntegrityPolicy(manifest),
-    }),
-    inspect,
-    services,
-    { ttlMs: null, cacheable: (value) => value.status !== 'unavailable', isValid: Schema.is(PackageTarballSchema) },
-  );
-
-  return result.pipe(Effect.map((value) => ({ ...value, url: manifest.dist.tarball })));
-};
 
 const cachedVulnerabilities = (
   packageName: string,
