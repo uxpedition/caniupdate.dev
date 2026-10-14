@@ -39,7 +39,7 @@ import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
 import { readStoredBriefing } from '../../../server/comparison/briefing/store';
 import { installBriefingSchema } from '../../../test/helpers/briefingDatabase.harness';
-import type { BriefingJobMessage } from '../job';
+import type { BriefingJobMessage } from '../jobState';
 import { CLOCK_MODULE, CLOCK_SCRIPT } from './clock.harness';
 import { FIXTURE_API_KEY, MODEL, SOURCE_ID, providerFixture } from './provider.stub';
 import { loadWorkerBundle } from './workerBundle';

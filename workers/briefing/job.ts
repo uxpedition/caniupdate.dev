@@ -21,10 +21,23 @@ import type {
   BriefingUnavailableReason,
   PackageBriefing,
 } from '../../shared/comparison/briefing/briefing.defs';
-import type { BriefingJobEvent, BriefingSubmission } from '../../shared/comparison/briefing/briefingJob.defs';
+import type { BriefingJobEvent } from '../../shared/comparison/briefing/briefingJob.defs';
 import type { BriefingServiceResult } from '../../shared/comparison/briefing/briefingService.defs';
 import { runWithTelemetry } from '../../shared/telemetry/telemetry';
 import type { TraceContext } from '../../shared/telemetry/traceContext.defs';
+import { dispatchBriefingJob } from './jobDispatch';
+import {
+  availableSubmission,
+  BriefingSubmissionError,
+  JOB_KEY,
+  pendingSubmission,
+  terminalJobRecord,
+  unavailableEvent,
+  type BriefingEnv,
+  type BriefingJobMessage,
+  type JobRecord,
+  type TerminalOutcome,
+} from './jobState';
 import {
   briefingTelemetryOptions,
   ensureGenerationTraceContext,
@@ -34,13 +47,6 @@ import {
 } from './jobTrace';
 
 // These globals belong to workerd; keep their types local instead of replacing Node's globals.
-type D1Database = Cloudflare.D1Database;
-
-type DurableObjectNamespace<T extends Cloudflare.Rpc.DurableObjectBranded | undefined = undefined> =
-  Cloudflare.DurableObjectNamespace<T>;
-
-type Queue<T> = Cloudflare.Queue<T>;
-
 type Request = Cloudflare.Request;
 
 type Response = Cloudflare.Response;
@@ -55,55 +61,8 @@ declare const WebSocket: typeof Cloudflare.WebSocket;
 
 const decodeEvidence = Schema.decodeUnknownSync(BriefingEvidenceSchema, { errors: 'all' });
 
-/** The Queue message is a pointer, never evidence: the object already owns the immutable packet. */
-export type BriefingJobMessage = {
-  readonly hash: string;
-  readonly generationId: number;
-};
-
-/**
- * Everything one evidence hash needs to survive a crash: the immutable packet while the job is pending, the
- * generation that owns dispatch, and the fencing token that keeps a stale owner from committing.
- */
-export type JobRecord = {
-  readonly hash: string;
-  readonly generationId: number;
-  readonly revision: number;
-  readonly state: 'queued' | 'running' | 'available' | 'unavailable';
-  readonly dispatchAttempts: number;
-  /** Optional diagnostic link for a pending generation; discarded by every terminal commit. */
-  traceContext?: TraceContext;
-  /** Present only while the job is queued or running; discarded by every terminal commit. */
-  packet?: BriefingEvidence;
-  leaseUntil?: number;
-  fence?: number;
-  reason?: BriefingUnavailableReason;
-};
-
-/** Mutable view of the stored JobRecord contract, used only while a terminal record is being assembled. */
-type WritableJobRecord = { -readonly [K in keyof JobRecord]: JobRecord[K] };
-
-export type BriefingEnv = {
-  readonly BRIEFING_JOBS: DurableObjectNamespace<BriefingJob>;
-  readonly BRIEFING_QUEUE: Queue<BriefingJobMessage>;
-  readonly BRIEFINGS_DB: D1Database;
-  readonly BRIEFING_PUBLIC_URL: string;
-  readonly BRIEFING_ALLOWED_ORIGIN: string;
-  readonly OTEL_EXPORTER_OTLP_ENDPOINT?: string;
-  readonly OTEL_EXPORTER_OTLP_HEADERS?: string;
-  readonly AI_BRIEFING_ENDPOINT?: string;
-  readonly AI_BRIEFING_API_KEY?: string;
-  readonly AI_BRIEFING_MODEL?: string;
-};
-
 /** 75-second provider deadline plus a 15-second persistence margin. Neither constant may shrink to speed a test. */
 const LEASE_MS = 90_000;
-
-const DISPATCH_RECOVERY_MS = 30_000;
-
-const MAX_DISPATCH_ATTEMPTS = 3;
-
-const JOB_KEY = 'job';
 
 /** The close a settled subscriber sees: a normal closure whose reason says the stream ended, not that it broke. */
 const SOCKET_COMPLETE = 1000;
@@ -118,26 +77,6 @@ const SOCKET_FAILURE_REASON = 'briefing unavailable';
 const TEXT_HEADERS = { 'content-type': 'text/plain; charset=utf-8' };
 
 /**
- * A submission the object cannot turn into a queued job or an available result. `message` is the sanitized reason
- * because a rejection crosses the service binding, and workerd RPC carries only an error's name and message: no
- * packet, prompt, endpoint, or credential may ride along.
- */
-export class BriefingSubmissionError extends Error {
-  readonly _tag = 'BriefingSubmissionError';
-  readonly reason: BriefingUnavailableReason;
-
-  constructor(reason: BriefingUnavailableReason) {
-    super(reason);
-    this.name = 'BriefingSubmissionError';
-    this.reason = reason;
-  }
-}
-
-type TerminalOutcome =
-  | { readonly state: 'available'; readonly briefing: AvailablePackageBriefing }
-  | { readonly state: 'unavailable'; readonly reason: BriefingUnavailableReason };
-
-/**
  * One D1 read, three policies: `run` continues only on a miss, `submit` rejects on failure, and `reconciledSnapshot`
  * refuses to destroy state on a transient failure. Keeping the outcomes apart here stops those policies from
  * collapsing into one.
@@ -146,12 +85,6 @@ type StoredLookup =
   | { readonly outcome: 'found'; readonly briefing: AvailablePackageBriefing }
   | { readonly outcome: 'missing' }
   | { readonly outcome: 'failed' };
-
-/** One dispatch attempt's durable bookkeeping, decided under the job lock and sent after it is released. */
-type DispatchPlan =
-  | { readonly action: 'skip' }
-  | { readonly action: 'exhausted' }
-  | { readonly action: 'send'; readonly hash: string; readonly generationId: number; readonly attempts: number };
 
 export class BriefingJob extends DurableObject<BriefingEnv> {
   /**
@@ -304,7 +237,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
 
     if (stored.outcome === 'failed') throw new BriefingSubmissionError('cache-error');
 
-    if (stored.outcome === 'found') return { submission: this.#availableSubmission(evidence, stored.briefing) };
+    if (stored.outcome === 'found') return { submission: availableSubmission(evidence, stored.briefing) };
 
     const config = readBriefingConfig(this.env);
 
@@ -314,7 +247,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
 
     // Only the submit that created the generation dispatches it, so a simultaneous second submit adds no message.
     if (accepted.created) await this.#dispatch();
-    const submission = this.#pendingSubmission(accepted.record, evidence);
+    const submission = pendingSubmission(accepted.record, evidence, this.env.BRIEFING_PUBLIC_URL);
 
     return accepted.generationContext === undefined
       ? { submission }
@@ -392,7 +325,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
       return { status: record.state, revision: record.revision };
     }
 
-    if (record.state === 'unavailable') return this.#unavailableEvent(record);
+    if (record.state === 'unavailable') return unavailableEvent(record);
 
     // Available: the D1 row is the result, so a transient read failure must not destroy the job's state.
     const stored = await this.#lookupStored(record.hash);
@@ -532,17 +465,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
 
     if (record.state === 'available' || record.state === 'unavailable') return await this.#terminalEvent(record);
 
-    const settled: WritableJobRecord = {
-      hash: record.hash,
-      generationId: record.generationId,
-      revision: record.revision + 1,
-      state: outcome.state,
-      dispatchAttempts: record.dispatchAttempts,
-    };
-
-    if (record.fence !== undefined) settled.fence = record.fence;
-
-    if (outcome.state === 'unavailable') settled.reason = outcome.reason;
+    const settled = terminalJobRecord(record, outcome);
 
     await this.ctx.storage.put(JOB_KEY, settled);
     await this.ctx.storage.deleteAlarm();
@@ -550,7 +473,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     const event: BriefingJobEvent =
       outcome.state === 'available'
         ? { status: 'available', revision: settled.revision, briefing: outcome.briefing }
-        : this.#unavailableEvent(settled);
+        : unavailableEvent(settled);
 
     for (const socket of this.ctx.getWebSockets()) this.#sendFrame(socket, event);
 
@@ -562,35 +485,13 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
    * by the alarm rather than leaving the job queued forever. Terminal after `MAX_DISPATCH_ATTEMPTS`.
    */
   async #dispatch(): Promise<void> {
-    const plan = await this.#synchronized(async (): Promise<DispatchPlan> => {
-      const record = await this.#readRecord();
-
-      if (record === undefined || record.state !== 'queued') return { action: 'skip' };
-      const attempts = record.dispatchAttempts + 1;
-
-      if (attempts > MAX_DISPATCH_ATTEMPTS) return { action: 'exhausted' };
-
-      // A dispatch attempt is internal bookkeeping, not a client-visible transition, so the revision does not move.
-      await this.ctx.storage.put(JOB_KEY, { ...record, dispatchAttempts: attempts });
-      await this.ctx.storage.setAlarm(Date.now() + DISPATCH_RECOVERY_MS);
-
-      return { action: 'send', hash: record.hash, generationId: record.generationId, attempts };
+    await dispatchBriefingJob({
+      storage: this.ctx.storage,
+      queue: this.env.BRIEFING_QUEUE,
+      read: async () => await this.#readRecord(),
+      locked: async (section) => await this.#synchronized(section),
+      commitUnavailable: async (reason) => await this.#commitUnavailable(reason),
     });
-
-    if (plan.action === 'skip') return;
-
-    if (plan.action === 'exhausted') {
-      await this.#commitUnavailable('provider-error');
-
-      return;
-    }
-
-    try {
-      await this.env.BRIEFING_QUEUE.send({ hash: plan.hash, generationId: plan.generationId });
-    } catch {
-      // The message was never accepted. The alarm redelivers, and the last attempt settles the job as failed.
-      if (plan.attempts >= MAX_DISPATCH_ATTEMPTS) await this.#commitUnavailable('provider-error');
-    }
   }
 
   async #readRecord(): Promise<JobRecord | undefined> {
@@ -610,41 +511,11 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   }
 
   async #terminalEvent(record: JobRecord): Promise<BriefingJobEvent> {
-    if (record.state === 'unavailable') return this.#unavailableEvent(record);
+    if (record.state === 'unavailable') return unavailableEvent(record);
     const stored = await this.#lookupStored(record.hash);
 
     if (stored.outcome !== 'found') throw new Error('The stored briefing for this job disappeared');
 
     return { status: 'available', revision: record.revision, briefing: stored.briefing };
-  }
-
-  #unavailableEvent(record: JobRecord): BriefingJobEvent {
-    return { status: 'unavailable', revision: record.revision, reason: record.reason ?? 'cache-error' };
-  }
-
-  #eventsUrl(hash: string): string {
-    return `${this.env.BRIEFING_PUBLIC_URL.replace(/\/+$/, '')}/api/briefings/${hash}/events`;
-  }
-
-  #pendingSubmission(record: JobRecord, evidence: BriefingEvidence): BriefingSubmission {
-    return {
-      status: record.state === 'running' ? 'running' : 'queued',
-      packageName: evidence.packageName,
-      from: evidence.from,
-      to: evidence.to,
-      hash: record.hash,
-      eventsUrl: this.#eventsUrl(record.hash),
-      revision: record.revision,
-    };
-  }
-
-  #availableSubmission(evidence: BriefingEvidence, briefing: AvailablePackageBriefing): BriefingSubmission {
-    return {
-      status: 'available',
-      packageName: evidence.packageName,
-      from: evidence.from,
-      to: evidence.to,
-      briefing,
-    };
   }
 }

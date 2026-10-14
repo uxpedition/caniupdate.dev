@@ -14,7 +14,7 @@ import type { BriefingServiceResult } from '../../shared/comparison/briefing/bri
 import { decodeStoredBriefingResult } from '../../shared/comparison/briefing/storedBriefing.defs';
 import type { StoredBriefingResult } from '../../shared/comparison/briefing/storedBriefing.defs';
 import { briefingAllowedOrigins } from './allowedOrigins';
-import { BriefingSubmissionError, type BriefingEnv, type BriefingJobMessage } from './job';
+import { BriefingSubmissionError, type BriefingEnv, type BriefingJobMessage } from './jobState';
 
 // Wrangler requires every Durable Object class named by a binding or a migration to be exported from the entrypoint
 // module, so the object is re-exported here rather than only from its own module.
