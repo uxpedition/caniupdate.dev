@@ -255,23 +255,79 @@ export const checkUnauthenticatedSocket = async (config: SmokeConfig, eventsUrl:
   }
 };
 
+const isClientId = Schema.is(Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}\.access$/i)));
+
+const isClientSecret = Schema.is(Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{64}|cfast_[A-Za-z0-9]{48})$/)));
+
+function validateAccessCredentials(headers: Record<string, string>): void {
+  const id = headers[ACCESS_HEADER_NAMES[0]] ?? '';
+  const secret = headers[ACCESS_HEADER_NAMES[1]] ?? '';
+
+  const checks = {
+    clientIdPresent: id !== '',
+    clientSecretPresent: secret !== '',
+    clientIdClean: id !== '' && !/[\s"']/.test(id),
+    clientSecretClean: secret !== '' && !/[\s"']/.test(secret),
+    clientIdFormat: isClientId(id),
+    clientSecretFormat: isClientSecret(secret),
+  };
+
+  process.stderr.write(JSON.stringify({ stage: 'access-credential-format', ...checks }) + '\n');
+
+  if (!Object.values(checks).every(Boolean)) throw new SmokeFailure('access-credential-format');
+}
+
+function logAdmission(probe: 'http' | 'websocket', response: AccessHandshakeResult, url: URL): void {
+  process.stderr.write(
+    JSON.stringify({
+      stage: 'authorized-socket-admission',
+      probe,
+      status: response.status,
+      accessRedirect: isAccessLoginLocation(response.location, url),
+      rayId: response.rayId,
+    }) + '\n',
+  );
+}
+
+async function probeHttpAdmission(url: URL, config: SmokeConfig): Promise<void> {
+  try {
+    const response = await fetch(url, {
+      headers: { ...config.accessHeaders, Origin: config.frontendOrigin.origin },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    const ray = response.headers.get('cf-ray');
+
+    logAdmission(
+      'http',
+      {
+        status: response.status,
+        location: response.headers.get('location'),
+        rayId: isRayId(ray) ? ray : null,
+      },
+      url,
+    );
+    await response.body?.cancel();
+  } catch {
+    throw new SmokeFailure('authorized-http-admission-transport');
+  }
+}
+
 export async function checkAuthorizedSocketAdmission(config: SmokeConfig): Promise<number> {
+  validateAccessCredentials(config.accessHeaders);
+
   const url = new URL(`/api/briefings/${'0'.repeat(64)}/events`, config.socketHttpOrigin);
+
+  await probeHttpAdmission(url, config);
+
   const response = await requestSocketHandshake(url, config.frontendOrigin.origin, config.accessHeaders);
+
+  logAdmission('websocket', response, url);
 
   // No job owns this sentinel hash: an authenticated upgrade reaches the application and returns its 404.
   // This proves host admission, not a completed subscription; only a pending comparison supplies a real job URL.
-  if (response.status !== 404) {
-    process.stderr.write(
-      JSON.stringify({
-        stage: 'authorized-socket-admission',
-        status: response.status,
-        accessRedirect: isAccessLoginLocation(response.location, url),
-        rayId: response.rayId,
-      }) + '\n',
-    );
-    throw new SmokeFailure('authorized-socket-admission');
-  }
+  if (response.status !== 404) throw new SmokeFailure('authorized-socket-admission');
 
   return response.status;
 }
