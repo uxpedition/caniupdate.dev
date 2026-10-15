@@ -9,18 +9,21 @@ import {
 
 // Removing either source-side or ingress scrubbing would expose these markers.
 describe('error diagnostic privacy', () => {
-  it('retains useful exception prose while removing emails, credentials and embedded URLs', () => {
-    const value = sanitizeErrorAttribute(
-      'exception.message',
-      'Cannot render react@2.0.0 for alice@example.com; Authorization: Bearer fixture-secret; api_key=another-secret; session token=card-secret; https://user:password@example.org/a?token=third-secret',
+  it('never reads raw error messages or opaque causes', () => {
+    const failure = new TypeError('RAW_PROSE_MARKER');
+    Object.defineProperty(failure, 'message', {
+      get: () => {
+        throw new Error('message must not be read');
+      },
+    });
+    failure.stack = 'TypeError: RAW_PROSE_MARKER';
+    expect(sanitizedErrorAttributes('nuxt', failure)).toEqual({
+      'error.source': 'nuxt',
+      'exception.type': 'TypeError',
+    });
+    expect(JSON.stringify(sanitizedErrorAttributes('nuxt', { message: 'OPAQUE_MARKER' }))).not.toContain(
+      'OPAQUE_MARKER',
     );
-
-    expect(value).toContain('Cannot render react@2.0.0');
-    expect(value).toContain('[REDACTED]');
-    expect(value).not.toMatch(
-      /alice|fixture-secret|another-secret|card-secret|third-secret|user:password|example\.org/,
-    );
-    expect(sanitizeErrorAttribute('exception.message', value ?? '')).toBe(value);
   });
 
   it('keeps asset locations without page origins, query fields, function names or local filesystem roots', () => {
@@ -32,14 +35,10 @@ describe('error diagnostic privacy', () => {
     expect(sanitizeErrorFrame('https://site.example/alice@example.com.js', 1, 1)).toBeUndefined();
   });
 
-  it('does not export arbitrary exception classifications or over-budget free text', () => {
+  it('does not export arbitrary exception classifications or unreviewed sources', () => {
     expect(sanitizeErrorAttribute('exception.type', 'alice@example.com')).toBe('Error');
     expect(sanitizeErrorAttribute('exception.type', 'TypeError')).toBe('TypeError');
     expect(sanitizeErrorAttribute('error.source', 'provider-response-secret')).toBeUndefined();
-    expect(sanitizeErrorAttribute('exception.message', 'x'.repeat(16_385))).toBeUndefined();
-    expect(sanitizeErrorAttribute('exception.message', `${'x'.repeat(1_000)} alice@example.com`)).not.toContain(
-      'alice',
-    );
   });
 
   it('normalizes browser and node stacks into code file frames only', () => {
@@ -57,13 +56,12 @@ describe('error diagnostic privacy', () => {
     expect(sanitizeErrorStack('TypeError: without frames')).toBeUndefined();
   });
 
-  it('builds server attributes from reviewed error fields and scrubbed prose', () => {
+  it('builds server attributes from reviewed error fields only', () => {
     const failure = new TypeError('SSR failed for frida@example.com Authorization: Bearer fixture-secret');
     failure.stack = 'TypeError: SSR failed\n    at file:///worker/server/render.vue:9:10';
     expect(sanitizedErrorAttributes('nuxt.ssr', failure)).toEqual({
       'error.source': 'nuxt.ssr',
       'exception.type': 'TypeError',
-      'exception.message': 'SSR failed for [REDACTED] [REDACTED]',
       'exception.stacktrace': 'render.vue:9:10',
     });
     expect(sanitizedErrorAttributes('nuxt', 'private opaque value')).toEqual({

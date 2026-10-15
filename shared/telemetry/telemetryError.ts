@@ -61,7 +61,6 @@ const ERROR_SOURCES: Readonly<Record<ErrorSourceName, true>> = {
 
 const ERROR_KEYS: Readonly<Record<ErrorAttributeKey, true>> = {
   'exception.type': true,
-  'exception.message': true,
   'exception.stacktrace': true,
   'error.source': true,
 };
@@ -70,26 +69,13 @@ const isErrorTypeName = finiteTable(ERROR_TYPES);
 
 const isErrorSourceName = finiteTable(ERROR_SOURCES);
 
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-
-const URL = /(?:https?|file):\/\/[^\s)"'<>]+/gi;
-
-const AUTH = /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
-
-const CREDENTIAL =
-  /\b(?:authorization|cookie|set-cookie|password|api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|client[_-]?secret|credentials|auth)["']?\s*[:=]\s*["']?[^\s;,"']+/gi;
-
-const TOKEN = /\b(?:npm_[A-Za-z0-9]+|gh[pousr]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)\b/g;
-
-const JWT = /\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g;
-
 const CODE_FILE = /^[A-Za-z0-9_.-]+\.(?:[cm]?js|tsx?|vue)$/;
 
-export type ErrorAttributeKey = 'exception.type' | 'exception.message' | 'exception.stacktrace' | 'error.source';
+export type ErrorAttributeKey = 'exception.type' | 'exception.stacktrace' | 'error.source';
 
 export const isErrorAttributeKey = (key: string): key is ErrorAttributeKey => Object.hasOwn(ERROR_KEYS, key);
 
-const readErrorString = (error: Error, key: 'name' | 'message' | 'stack'): string | undefined => {
+const readErrorString = (error: Error, key: 'name' | 'stack'): string | undefined => {
   try {
     const value: unknown = error[key];
 
@@ -108,7 +94,7 @@ const normalizedStackTrace = (value: string): string | undefined => {
   return frames.length === 0 ? undefined : frames.join('\n').slice(0, 2_048);
 };
 
-/** Only reviewed exception fields enter telemetry; regex scrubbing is not universal PII detection. */
+/** Reviewed type, source and code-file stack fields only; exception prose is never exported. */
 export const sanitizeErrorAttribute = (key: ErrorAttributeKey, value: string): string | undefined => {
   if (value.length > 16_384) return undefined;
 
@@ -116,16 +102,7 @@ export const sanitizeErrorAttribute = (key: ErrorAttributeKey, value: string): s
 
   if (key === 'error.source') return isErrorSourceName(value) ? value : undefined;
 
-  if (key === 'exception.stacktrace') return normalizedStackTrace(value);
-
-  return value
-    .replace(URL, '[REDACTED]')
-    .replace(AUTH, '[REDACTED]')
-    .replace(CREDENTIAL, '[REDACTED]')
-    .replace(TOKEN, '[REDACTED]')
-    .replace(JWT, '[REDACTED]')
-    .replace(EMAIL, '[REDACTED]')
-    .slice(0, 1_024);
+  return normalizedStackTrace(value);
 };
 
 /** Reduce V8/JSC/SpiderMonkey stack lines to normalized code file locations; everything else is omitted. */
@@ -163,14 +140,6 @@ export const sanitizedErrorAttributes = (
   const safeType = sanitizeErrorAttribute('exception.type', readErrorString(cause, 'name') ?? 'Error');
 
   if (safeType !== undefined) attributes['exception.type'] = safeType;
-  const message = readErrorString(cause, 'message');
-
-  if (message !== undefined) {
-    const safeMessage = sanitizeErrorAttribute('exception.message', message);
-
-    if (safeMessage !== undefined) attributes['exception.message'] = safeMessage;
-  }
-
   const safeStack = sanitizeErrorStack(readErrorString(cause, 'stack') ?? '');
 
   if (safeStack !== undefined) attributes['exception.stacktrace'] = safeStack;

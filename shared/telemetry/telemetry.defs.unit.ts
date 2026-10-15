@@ -135,6 +135,7 @@ describe('decodeTelemetryPayload', () => {
     });
     expect(safe.attributes).toContainEqual({ key: 'exception.type', value: { stringValue: 'TypeError' } });
     expect(safe.attributes).toContainEqual({ key: 'error.source', value: { stringValue: 'vue' } });
+    expect(safe.attributes.map(({ key }) => key)).not.toContain('exception.message');
     expect(JSON.stringify(decoded)).not.toMatch(/alice|fixture-secret|collector-secret/);
   });
   it('retains approved log identities and linked context while stripping unknown fields and annotations', () => {

@@ -112,7 +112,7 @@ describe('Faro error integration', () => {
     const serialized = JSON.stringify(logs);
 
     const failureRecords = records.filter(({ attributes }) =>
-      attributes.some(({ key, value }) => key === 'exception.message' && value.stringValue.includes('Render failed')),
+      attributes.some(({ key, value }) => key === 'error.source' && value.stringValue === 'vue'),
     );
 
     const failureRecord = failureRecords[0];
@@ -131,10 +131,8 @@ describe('Faro error integration', () => {
         { key: 'error.source', value: { stringValue: 'browser.rejection' } },
       ]),
     );
-    expect(rejectionRecords[0]?.attributes.find(({ key }) => key === 'exception.message')?.value.stringValue).toContain(
-      'Non-Error promise rejection captured with value: [REDACTED]',
-    );
     expect(records.every(({ body }) => body.stringValue === 'runtime.error')).toBe(true);
+    expect(serialized).not.toContain('exception.message');
     expect(
       records
         .map(({ attributes }) => attributes)
@@ -147,9 +145,7 @@ describe('Faro error integration', () => {
         { key: 'error.source', value: { stringValue: 'vue' } },
       ]),
     );
-    expect(failureRecord?.attributes.find(({ key }) => key === 'exception.message')?.value.stringValue).toContain(
-      '[REDACTED]',
-    );
+    expect(serialized).not.toContain('Render failed');
     expect(serialized).not.toMatch(
       /alice@example\.com|fixture-secret|third-secret|user:password|example\.org|primitive-secret/,
     );

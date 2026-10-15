@@ -12,7 +12,7 @@ useSeoMeta({ title: 'Privacy · Can I Update?' });
   >
     <header>
       <h1 class="font-mono text-3xl font-semibold uppercase tracking-tight">Privacy</h1>
-      <p class="text-muted-foreground">Last updated: 8 October 2026</p>
+      <p class="text-muted-foreground">Last updated: 14 October 2026</p>
       <p>This page explains what data we use and how to contact us about it.</p>
     </header>
 
@@ -32,11 +32,10 @@ useSeoMeta({ title: 'Privacy · Can I Update?' });
     </p>
     <p>
       When you enable diagnostics in your browser session, failures are reported automatically: rendering errors, page
-      load failures and promise rejections are recorded with a scrubbed message and, where available, a code filename
-      and location. Reported messages are filtered for email addresses, authorization headers, tokens and other
-      credential-shaped values; URLs, query strings, function names and machine-local paths are not recorded. Server
-      render and handler failures are reported the same way. These records never include package file contents, provider
-      responses, or your IP address.
+      load failures and promise rejections are recorded with a reviewed error type and source and, where available, a
+      code filename and location. Error messages and raw rejection values are not recorded; neither are URLs, query
+      strings, function names or machine-local paths. Server render and handler failures use the same policy. These
+      records never include package file contents, provider responses, or your IP address.
     </p>
 
     <h2>Package data and AI</h2>

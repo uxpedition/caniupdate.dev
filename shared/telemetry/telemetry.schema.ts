@@ -214,7 +214,6 @@ export const TelemetryFailureNameSchema = Schema.Literals([
 
 const TelemetryAttributeKeySchema = Schema.Literals([
   'exception.type',
-  'exception.message',
   'exception.stacktrace',
   'error.source',
   'comparison.package.name',

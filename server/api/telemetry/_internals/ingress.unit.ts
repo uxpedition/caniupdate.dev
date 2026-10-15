@@ -131,7 +131,8 @@ const expectTraceExport = (forwarded: readonly ForwardedRequest[]): void => {
   const forwardedText = String(init.body);
   expect(forwardedText).not.toContain('browser-secret');
   expect(forwardedText).not.toContain('browser-secret.example');
-  expect(forwardedText).toContain('Cannot read properties of undefined for [REDACTED]');
+  expect(forwardedText).not.toContain('Cannot read properties of undefined');
+  expect(forwardedText).not.toContain('exception.message');
   expect(forwardedText).not.toContain('private status text');
   expect(forwardedText).not.toContain('private top-level data');
 

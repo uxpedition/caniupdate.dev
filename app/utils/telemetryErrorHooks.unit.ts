@@ -18,7 +18,6 @@ describe('telemetry error hooks', () => {
         attributes: {
           'error.source': 'vue',
           'exception.type': 'TypeError',
-          'exception.message': 'Render failed for [REDACTED] at [REDACTED]',
           'exception.stacktrace': 'component.abc.js:12:4',
         },
       },
@@ -54,7 +53,6 @@ describe('telemetry error hooks', () => {
         attributes: {
           'error.source': 'chunk',
           'exception.type': 'Error',
-          'exception.message': 'Chunk failed',
         },
       },
     ]);

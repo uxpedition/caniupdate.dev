@@ -111,8 +111,6 @@ const safeStackFrames = (frames: ReadonlyArray<ExceptionStackFrame> | undefined)
 const safeExceptionEvent = (event: ExceptionEventExtended): ExceptionEvent => {
   const type = sanitizeErrorAttribute('exception.type', isScalarString(event.type) ? event.type : 'Error') ?? 'Error';
 
-  const message = isScalarString(event.value) ? sanitizeErrorAttribute('exception.message', event.value) : undefined;
-
   const stackFrames = safeStackFrames(event.stacktrace?.frames);
 
   const stack =
@@ -140,10 +138,11 @@ const safeExceptionEvent = (event: ExceptionEventExtended): ExceptionEvent => {
           }),
         );
 
+  // Faro routes exception items by a string `value`; it stays empty so exception prose never leaves the browser.
   const safeEvent = {
     timestamp: isScalarString(event.timestamp) ? event.timestamp : '',
     type,
-    value: message ?? '',
+    value: '',
   };
 
   return retainedFrames.length === 0 ? safeEvent : { ...safeEvent, stacktrace: { frames: retainedFrames } };
@@ -152,7 +151,6 @@ const safeExceptionEvent = (event: ExceptionEventExtended): ExceptionEvent => {
 const toSafeLog = (event: ExceptionEvent, current: FaroState): SafeErrorLog => {
   const attributes: Record<string, string> = {};
   addErrorAttribute(attributes, 'exception.type', isScalarString(event.type) ? event.type : undefined);
-  addErrorAttribute(attributes, 'exception.message', isScalarString(event.value) ? event.value : undefined);
 
   if (event.stacktrace !== undefined) {
     const frames = safeStackFrames(event.stacktrace.frames);

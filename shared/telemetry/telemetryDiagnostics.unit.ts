@@ -8,7 +8,7 @@ import {
 } from './telemetryDiagnostics';
 
 describe('server diagnostics privacy and outcomes', () => {
-  it('exports reviewed error fields with scrubbed prose through one send per owned error', async () => {
+  it('exports reviewed error fields without exception prose through one send per owned error', async () => {
     const sends: Array<{ body: string; attributes: Record<string, string>; waitUntil?: unknown }> = [];
 
     const send = vi.fn(async (body: string, attributes: Record<string, string>) => {
@@ -33,11 +33,12 @@ describe('server diagnostics privacy and outcomes', () => {
     expect(sends[0]?.attributes).toEqual({
       'error.source': 'nuxt.ssr',
       'exception.type': 'TypeError',
-      'exception.message': 'SSR failed for [REDACTED] [REDACTED]',
       'exception.stacktrace': 'render.vue:14:3',
     });
-    // Object-identity dedupe only: a similar message from a fresh object is its own diagnostic.
-    expect(sends[1]?.attributes['exception.message']).toBe('Second local failure');
+    // Object-identity dedupe only: a second failure from a fresh object is its own diagnostic.
+    expect(sends[1]?.attributes).toMatchObject({ 'error.source': 'nuxt.ssr', 'exception.type': 'Error' });
+    expect(sends[1]?.attributes).not.toHaveProperty('exception.message');
+    expect(JSON.stringify(sends)).not.toMatch(/Second local failure|gina@example|fixture-secret/);
   });
 
   it('keeps expected outcomes and ingress recursion out of diagnostics', async () => {
