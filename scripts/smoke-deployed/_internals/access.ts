@@ -404,7 +404,10 @@ export const installScopedBrowserAccess = async (context: BrowserContext, config
         return;
       }
 
-      if (!config.local) Object.assign(headers, config.accessHeaders);
+      // route.fetch does not decode zstd before fulfillment; Firefox otherwise renders compressed document bytes.
+      Object.assign(headers, config.local ? undefined : config.accessHeaders, {
+        'accept-encoding': 'gzip, deflate, br',
+      });
 
       // Fetch each response without following redirects; a redirected browser request must pass this origin check anew.
       const response = await route.fetch({ headers, maxRedirects: 0, timeout: 30_000 });

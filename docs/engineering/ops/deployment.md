@@ -167,6 +167,8 @@ The deployment installs the pinned Playwright Chromium/Firefox runtimes, then ru
 
 The smoke checks unauthorized frontend/socket rejection, authenticated health and artifact identity, and authenticated socket-host admission using an upgrade for an unassigned sentinel job (expected application 404, not a successful subscription). Chromium and Firefox exercise package search, version selection, comparison APIs, rendered facts, and direct reload. A pending briefing must complete through its real read-only socket; an already-stored result is recorded as cached and does not prove fresh generation or that browser's socket lifecycle. Checks never force a new evidence identity or manually retry failed generation. Local mode accepts loopback origins only and grants Chromium local-network access only to the fixture frontend origin; staging browser permissions are unchanged.
 
+The browser smoke HTTP proxy requests only gzip, deflate, or Brotli responses because its Playwright fetch/fulfillment path does not decode Zstandard correctly for Firefox. Native WebSocket handshakes remain unproxied.
+
 Local builds, dry-runs, and CI Lint simulations do not establish hosted automation. Activation requires merging this pipeline through ordinary review and observing the first protected-main deployment and its verification artifacts. Production remains unconfigured and cannot deploy through this pipeline.
 
 ## How is the official preview restricted?
