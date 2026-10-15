@@ -9,6 +9,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 
 import { Schema } from 'effect';
 
+import type { BriefingBullet } from '../../../shared/comparison/briefing/briefing.defs';
+
 const isScalarString = Schema.is(Schema.String);
 
 type CapturedProviderRequest = { body: string; traceparent?: string; b3?: string };
@@ -26,7 +28,7 @@ export const SOURCE_ID = 'comparison.node';
 
 export const SOURCE_NUMBER = 1;
 
-export const validBullets = [
+export const validBullets: readonly BriefingBullet[] = [
   {
     kind: 'migration',
     basis: 'inference',
@@ -36,7 +38,10 @@ export const validBullets = [
 ];
 
 /** The same citation as the stored response reports it: the kept source renumbered to display position zero. */
-export const responseBullets = validBullets.map((bullet) => ({ ...bullet, evidenceNumbers: [0] }));
+export const responseBullets: readonly BriefingBullet[] = validBullets.map((bullet) => ({
+  ...bullet,
+  evidenceNumbers: [0],
+}));
 
 export type ProviderMode =
   | { readonly kind: 'valid' }

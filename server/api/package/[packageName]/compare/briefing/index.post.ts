@@ -1,4 +1,4 @@
-import { Effect, Predicate, Schema, Tracer } from 'effect';
+import { Effect, Schema, Tracer } from 'effect';
 import {
   createError,
   defineEventHandler,
@@ -8,8 +8,6 @@ import {
   type H3Event,
 } from 'h3';
 
-import type { BriefingServiceBinding } from '#shared/cloudflare';
-import type { BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
 import type { BriefingSubmission } from '#shared/comparison/briefing/briefingJob.defs';
 import {
   decodeBriefingServiceResult,
@@ -23,71 +21,12 @@ import { parseTraceparent, type TraceContext } from '#shared/telemetry/traceCont
 import { readServerTelemetryConfig } from '../../../../../telemetry/runtimeConfig';
 import { getBriefingEvidence, PackageEvidenceClientError } from '../_internals/evidenceClient';
 import { decodePackageComparisonQuery, decodePackageComparisonRouterParams } from '../_internals/request';
+import { receiveServiceRpcResult } from './_internals/serviceRpc';
 import { browserBriefingSocketUrl } from './_internals/socketUrl';
 
 type SubmissionFailureStatus = 'Evidence service unavailable' | 'Briefing service unavailable';
 
-type DisposableRpcResult = RpcResultData & { [Symbol.dispose](): void };
-
-// Cloudflare adds this documented lifecycle hook to every object returned over RPC. It is the sole runtime-owned
-// property permitted at this boundary; all application fields remain subject to the strict protocol decoder below.
-const isDisposableRpcResult = (value: unknown): value is DisposableRpcResult =>
-  Predicate.isObjectOrArray(value) &&
-  Predicate.isFunction(Object.getOwnPropertyDescriptor(value, Symbol.dispose)?.value);
-
-const RpcResultDataSchema = Schema.Record(Schema.String, Schema.Unknown);
-
-type RpcResultData = typeof RpcResultDataSchema.Type;
-
-// Only objects, arrays, and the function-backed proxies Miniflare can return in development carry own keys; primitives
-// are rejected before any key enumeration.
-const isRpcResultObject = (value: unknown): value is RpcResultData =>
-  Predicate.isObjectOrArray(value) || Predicate.isFunction(value);
-
 const isScalarString = Schema.is(Schema.String);
-
-// Copy every own string key, including non-enumerable ones, so strict decoding still rejects undeclared application
-// data. When present, the documented disposer is excluded because the caller invokes it unconditionally.
-const copyRpcServiceResultData = (submission: RpcResultData): RpcResultData => {
-  const data: RpcResultData = {};
-
-  for (const key of Reflect.ownKeys(submission)) {
-    if (key === Symbol.dispose) continue;
-
-    if (!isScalarString(key)) throw new TypeError('Briefing service returned an unexpected symbol');
-
-    const descriptor = Object.getOwnPropertyDescriptor(submission, key);
-
-    if (descriptor === undefined || !('value' in descriptor)) {
-      throw new TypeError('Briefing service returned an accessor property');
-    }
-
-    Object.defineProperty(data, key, { enumerable: true, value: descriptor.value });
-  }
-
-  return data;
-};
-
-// Node's Miniflare bridge omits descriptor values while keeping ordinary property reads live. This is reachable only
-// through Nuxt's compile-time development branch below; built Workers retain the descriptor-only path above.
-const copyNodeDevelopmentRpcServiceResultData = (submission: RpcResultData): RpcResultData => {
-  const data: RpcResultData = {};
-
-  for (const key of Reflect.ownKeys(submission)) {
-    if (!isScalarString(key)) throw new TypeError('Briefing service returned an unexpected symbol');
-
-    const descriptor = Object.getOwnPropertyDescriptor(submission, key);
-
-    if (descriptor === undefined || descriptor.writable === undefined) {
-      throw new TypeError('Briefing service returned an accessor property');
-    }
-
-    const value: unknown = submission[key];
-    Object.defineProperty(data, key, { enumerable: true, value });
-  }
-
-  return data;
-};
 
 const SUBMISSION_FAILURE_TAG = 'BriefingSubmissionError';
 
@@ -127,40 +66,6 @@ const submissionFailure = (cause: unknown): BriefingSubmissionFailure => {
   const reason = failureName === SUBMISSION_FAILURE_TAG ? sanitizedFailureReason(cause) : undefined;
 
   return new BriefingSubmissionFailure(failureName, reason);
-};
-
-const receiveBriefingServiceResult = async (
-  service: BriefingServiceBinding,
-  evidence: BriefingEvidence,
-): Promise<BriefingServiceResult> => {
-  try {
-    // The binding's type describes the native producer; the value is still widened to unknown here because the
-    // guards and strict decoder below are what establish its shape at this boundary.
-    const rpcResult: unknown = await service.submit(evidence);
-
-    if (isDisposableRpcResult(rpcResult)) {
-      const dispose = rpcResult[Symbol.dispose];
-
-      try {
-        return decodeBriefingServiceResult(copyRpcServiceResultData(rpcResult));
-      } finally {
-        dispose.call(rpcResult);
-      }
-    }
-
-    // Nuxt's Node development bridge intentionally hides every symbol on Miniflare RPC proxies. This branch keeps
-    // local development usable while retaining the same strict application-field decode; this compile-time Nuxt flag
-    // is false in the built Worker, which still requires and invokes Cloudflare's documented lifecycle hook.
-    if (import.meta.dev) {
-      if (!isRpcResultObject(rpcResult)) throw new TypeError('Briefing service did not return an object');
-
-      return decodeBriefingServiceResult(copyNodeDevelopmentRpcServiceResultData(rpcResult));
-    }
-
-    throw new TypeError('Briefing service did not return a disposable object');
-  } catch (error) {
-    throw submissionFailure(error);
-  }
 };
 
 /**
@@ -317,8 +222,8 @@ const createBriefingSubmissionProgram = (event: H3Event, parsed: TraceContext | 
     }
 
     const result = yield* Effect.tryPromise({
-      try: () => receiveBriefingServiceResult(service, resolved.evidence),
-      catch: (cause) => cause,
+      try: () => receiveServiceRpcResult(() => service.submit(resolved.evidence), decodeBriefingServiceResult),
+      catch: submissionFailure,
     });
 
     yield* logAcceptedSubmission(parsed, result, identityAttributes);

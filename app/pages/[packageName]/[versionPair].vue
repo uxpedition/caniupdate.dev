@@ -16,7 +16,7 @@ const telemetry = useNuxtApp().$telemetry;
 
 const pageTraceContext = ref<TraceContext>();
 
-// Route-only content can stream before declarations; the description streams with ComparisonDetails.
+// Route identity supplies metadata synchronously; the async comparison body resolves before buffered HTML is sent.
 const { packageName, fromVersion, toVersion } = useComparisonRoute();
 
 useSeoMeta({

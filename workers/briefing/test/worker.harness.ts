@@ -32,6 +32,8 @@ import {
   type BriefingSubmission,
 } from '#shared/comparison/briefing/briefingJob.defs';
 import { decodeBriefingServiceResult } from '#shared/comparison/briefing/briefingService.defs';
+import { decodeStoredBriefingResult } from '#shared/comparison/briefing/storedBriefing.defs';
+import type { StoredBriefingResult } from '#shared/comparison/briefing/storedBriefing.defs';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
@@ -177,6 +179,20 @@ export default {
       }
     }
 
+    if (url.pathname === '/read') {
+      const packet = await readBody(request);
+      try {
+        const result = await env.BRIEFING_SERVICE.read(packet);
+        try {
+          return json(result);
+        } finally {
+          disposeRpcResult(result);
+        }
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : 'read failed' }, 503);
+      }
+    }
+
     if (url.pathname === '/raw-submit') {
       const packet = await readBody(request);
       try {
@@ -226,6 +242,12 @@ export type SubmitResult = {
   readonly error: string | undefined;
 };
 
+export type StoredBriefingReadResult = {
+  readonly httpStatus: number;
+  readonly result: StoredBriefingResult | undefined;
+  readonly error: string | undefined;
+};
+
 /**
  * What the `BriefingSubmitter` entrypoint answered across the service binding, before the harness serializes only
  * application data: its `typeof`, any own symbol keys, and its text value if it regresses to the removed text
@@ -271,6 +293,8 @@ export type RuntimeFixture = {
   // The harness adapter reports response bodies unconverted: asserting the wire contract itself is the point, so the
   // fixture decoders validate only the response shapes they use.
   submit<T>(packet: T): Promise<SubmitResult>;
+  /** Read the service binding's durable D1 result without going through the job object. */
+  read<T>(packet: T): Promise<StoredBriefingReadResult>;
   /** The same real service-binding call, reported unconverted so a test can assert the wire contract itself. */
   rawSubmit<T>(packet: T): Promise<RawSubmission>;
   submitToJob<T>(hash: string, packet: T): Promise<SubmitResult>;
@@ -419,6 +443,12 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
         : { ...settled, generationContext: result.generationContext };
     };
 
+    const readStoredBriefingServiceResult = (status: number, body: Schema.Json): StoredBriefingReadResult => {
+      if (status !== 200) return { httpStatus: status, result: undefined, error: rejectionReason(body) };
+
+      return { httpStatus: status, result: decodeStoredBriefingResult(body), error: undefined };
+    };
+
     const readRawSubmission = (status: number, body: Schema.Json): RawSubmission => {
       if (status !== 200 || !isContainerObject(body)) {
         return {
@@ -453,6 +483,11 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
         const { status, body } = await callHarness('/submit', packet);
 
         return readSubmitResult(status, body);
+      },
+      async read<T>(packet: T): Promise<StoredBriefingReadResult> {
+        const { status, body } = await callHarness('/read', packet);
+
+        return readStoredBriefingServiceResult(status, body);
       },
       async rawSubmit<T>(packet: T): Promise<RawSubmission> {
         const { status, body } = await callHarness('/raw-submit', packet);

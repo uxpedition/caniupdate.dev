@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/vue-query';
-import type { QueryFunctionContext } from '@tanstack/vue-query';
+import type { QueryClient, QueryFunctionContext } from '@tanstack/vue-query';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
@@ -60,4 +60,22 @@ export const packageMeasurementsQueryOptions = (
   }
 
   return options;
+};
+
+/** Prefetch measurements during SSR and remove failures so the browser can start from a pending query state. */
+export const prefetchPackageMeasurements = async (
+  requestFetch: NuxtRequestFetch,
+  queryClient: QueryClient,
+  packageName: string,
+  fromVersion: string,
+  toVersion: string,
+): Promise<boolean> => {
+  const options = packageMeasurementsQueryOptions(requestFetch, packageName, fromVersion, toVersion);
+  await queryClient.query(options).catch(() => undefined);
+
+  if (queryClient.getQueryState(options.queryKey)?.status === 'success') return true;
+
+  queryClient.removeQueries({ queryKey: options.queryKey });
+
+  return false;
 };

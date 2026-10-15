@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
 import type { BriefingSubmission } from '#shared/comparison/briefing/briefingJob.defs';
 import type { BriefingServiceResult } from '#shared/comparison/briefing/briefingService.defs';
+import type { StoredBriefingResult } from '#shared/comparison/briefing/storedBriefing.defs';
 import type {
   PackageEvidenceNamespace,
   PackageEvidenceObject,
@@ -13,6 +14,7 @@ import type {
 } from '#shared/comparison/evidence/packageEvidence.defs';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
+import readHandler from './index.get';
 import handler from './index.post';
 
 const HASH = 'b637f83283a13491f7fee3cd9a108ab6ea20994d00a95a6646ba7a1bd48818b4';
@@ -31,12 +33,19 @@ const namespace: PackageEvidenceNamespace = { idFromName, get: getObject };
 
 type DisposableBriefingServiceResult = BriefingServiceResult & { [Symbol.dispose](): void };
 
-type BriefingService = { submit(packet: BriefingEvidence): Promise<DisposableBriefingServiceResult> };
+type DisposableStoredBriefingResult = StoredBriefingResult & { [Symbol.dispose](): void };
 
-// The private binding returns Cloudflare's native disposable object.
+type BriefingService = {
+  submit(packet: BriefingEvidence): Promise<DisposableBriefingServiceResult>;
+  read(packet: BriefingEvidence): Promise<DisposableStoredBriefingResult>;
+};
+
+// The private binding returns Cloudflare's native disposable objects.
 const submit = vi.fn<(packet: BriefingEvidence) => Promise<DisposableBriefingServiceResult>>();
 
-const service: BriefingService = { submit };
+const read = vi.fn<(packet: BriefingEvidence) => Promise<DisposableStoredBriefingResult>>();
+
+const service: BriefingService = { submit, read };
 
 const evidence = (): BriefingEvidence => ({
   packageName: 'minimist',
@@ -90,6 +99,11 @@ const nativeServiceResult = (
   Object.assign(generationContext === undefined ? { submission } : { submission, generationContext }, {
     [Symbol.dispose]: disposer,
   });
+
+const nativeStoredResult = (
+  result: StoredBriefingResult,
+  disposer: () => void = vi.fn(),
+): DisposableStoredBriefingResult => Object.assign(result, { [Symbol.dispose]: disposer });
 
 const nodeBridgeService = async (submission: BriefingSubmission) => {
   const serviceName = 'briefing-node-rpc-service';
@@ -203,6 +217,11 @@ describe('briefing submission endpoint', () => {
     getObject.mockClear();
     objectFetch.mockReset().mockResolvedValue(Response.json(evidence()));
     submit.mockReset().mockResolvedValue(nativeServiceResult(available()));
+    read
+      .mockReset()
+      .mockResolvedValue(
+        nativeStoredResult({ status: 'missing', packageName: 'minimist', from: '1.0.0', to: '2.0.0' }),
+      );
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -228,6 +247,64 @@ describe('briefing submission endpoint', () => {
     expect(request.url).toBe('https://package-evidence/briefing-evidence');
     expect(request.method).toBe('POST');
     await expect(request.json()).resolves.toEqual({ packageName: 'minimist', from: '1.0.0', to: '2.0.0' });
+  });
+
+  describe('read-only stored-result endpoint', () => {
+    it('returns an explicit miss and never submits a generation', async () => {
+      const response = await readHandler(eventFor());
+
+      expect(response).toEqual({
+        status: 'missing',
+        packageName: 'minimist',
+        from: '1.0.0',
+        to: '2.0.0',
+      });
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(read).toHaveBeenCalledWith(evidence());
+      expect(submit).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('returns a strictly decoded success and disposes the native RPC result', async () => {
+      const disposer = vi.fn();
+      const result = available();
+      read.mockResolvedValue(nativeStoredResult(result, disposer));
+
+      const response = await readHandler(eventFor());
+
+      expect(response).toEqual(available());
+      expect(disposer).toHaveBeenCalledTimes(1);
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it('keeps storage and evidence failures distinct from a miss', async () => {
+      read.mockRejectedValue(Object.assign(new Error('private database detail'), { name: 'BriefingSubmissionError' }));
+      await expect(readHandler(eventFor())).rejects.toMatchObject({
+        statusCode: 503,
+        statusMessage: 'Briefing service unavailable',
+      });
+      expect(submit).not.toHaveBeenCalled();
+
+      read.mockReset();
+      objectFetch.mockRejectedValue(new Error('private evidence detail'));
+      await expect(readHandler(eventFor())).rejects.toMatchObject({
+        statusCode: 503,
+        statusMessage: 'Evidence service unavailable',
+      });
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('refuses a result whose identity differs from the evidence packet', async () => {
+      read.mockResolvedValue(
+        nativeStoredResult({ status: 'missing', packageName: 'other', from: '1.0.0', to: '2.0.0' }),
+      );
+
+      await expect(readHandler(eventFor())).rejects.toMatchObject({
+        statusCode: 503,
+        statusMessage: 'Briefing service unavailable',
+      });
+      expect(submit).not.toHaveBeenCalled();
+    });
   });
 
   it('logs requested selectors separately from the resolved packet identity', async () => {

@@ -1,15 +1,18 @@
-// The briefing Worker's entrypoints: a private named entrypoint for submission, a read-only public default export,
-// and the Queue consumer that wakes one job object per delivery. The public surface never submits, enqueues, or reads
-// a packet.
+// The briefing Worker's entrypoints: a private named entrypoint for submission and D1-only result reads, a read-only
+// public default export, and the Queue consumer that wakes one job object per delivery. The public surface never
+// submits, enqueues, or reads a packet.
 
 import type * as Cloudflare from '@cloudflare/workers-types';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { Schema } from 'effect';
 
 import { briefingEvidenceHash } from '../../server/comparison/briefing/generation';
+import { readStoredBriefing } from '../../server/comparison/briefing/store';
 import { BriefingEvidenceSchema } from '../../shared/comparison/briefing/briefing.defs';
 import type { BriefingEvidence } from '../../shared/comparison/briefing/briefing.defs';
 import type { BriefingServiceResult } from '../../shared/comparison/briefing/briefingService.defs';
+import { decodeStoredBriefingResult } from '../../shared/comparison/briefing/storedBriefing.defs';
+import type { StoredBriefingResult } from '../../shared/comparison/briefing/storedBriefing.defs';
 import { briefingAllowedOrigins } from './allowedOrigins';
 import { BriefingSubmissionError, type BriefingEnv, type BriefingJobMessage } from './job';
 
@@ -78,6 +81,35 @@ export class BriefingSubmitter extends WorkerEntrypoint<BriefingEnv> {
     const jobs = this.env.BRIEFING_JOBS;
 
     return jobs.get(jobs.idFromName(briefingEvidenceHash(evidence))).submit(evidence);
+  }
+
+  /** Read only the D1 success row; a miss never looks up or mutates a Durable Object job. */
+  async read(packet: BriefingEvidence): Promise<StoredBriefingResult> {
+    let evidence: BriefingEvidence;
+
+    try {
+      evidence = decodeEvidence(packet);
+    } catch {
+      throw new BriefingSubmissionError('invalid-response');
+    }
+
+    let briefing;
+
+    try {
+      briefing = await readStoredBriefing(this.env.BRIEFINGS_DB, briefingEvidenceHash(evidence));
+    } catch {
+      throw new BriefingSubmissionError('cache-error');
+    }
+
+    try {
+      return decodeStoredBriefingResult(
+        briefing === undefined
+          ? { status: 'missing', packageName: evidence.packageName, from: evidence.from, to: evidence.to }
+          : { status: 'available', packageName: evidence.packageName, from: evidence.from, to: evidence.to, briefing },
+      );
+    } catch {
+      throw new BriefingSubmissionError('invalid-response');
+    }
   }
 }
 

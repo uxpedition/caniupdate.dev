@@ -23,6 +23,13 @@ type NuxtRequestFetch = H3Event$Fetch | $Fetch;
 
 type PackageBriefingQueryKey = readonly [...typeof PACKAGE_BRIEFING_QUERY_KEY_PREFIX, string, string, string];
 
+export const packageBriefingQueryKey = (packageName: string, from: string, to: string): PackageBriefingQueryKey => [
+  ...PACKAGE_BRIEFING_QUERY_KEY_PREFIX,
+  packageName.trim(),
+  from.trim(),
+  to.trim(),
+];
+
 type PackageBriefingQueryContext = QueryFunctionContext<PackageBriefingQueryKey>;
 
 export type PackageBriefingResponse = {
@@ -386,12 +393,9 @@ export const packageBriefingQueryOptions = (
   const normalizedToVersion = computed(() => toValue(toVersion).trim());
 
   const options = queryOptions({
-    queryKey: computed<PackageBriefingQueryKey>(() => [
-      ...PACKAGE_BRIEFING_QUERY_KEY_PREFIX,
-      normalizedPackageName.value,
-      normalizedFromVersion.value,
-      normalizedToVersion.value,
-    ]),
+    queryKey: computed<PackageBriefingQueryKey>(() =>
+      packageBriefingQueryKey(normalizedPackageName.value, normalizedFromVersion.value, normalizedToVersion.value),
+    ),
     queryFn: (context: PackageBriefingQueryContext) =>
       fetchBriefingResponse(context, requestFetch, onStatus, pageContext, telemetryRuntime),
     // Briefing is client-only: with declarations awaited during SSR, this query would otherwise enable server-side

@@ -10,14 +10,14 @@ This document describes current source-backed behavior, not the state of a deplo
 
 ## Runtime ownership
 
-| Owner                                                          | Responsibilities                                                                                    | Does not own                                               |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Browser                                                        | Reactive comparison queries, result rendering, briefing submission and read-only job subscription   | Trusted evidence, provider credentials, durable jobs       |
-| Nuxt Worker                                                    | SSR declarations, public comparison routes, request validation, private evidence and briefing calls | Archive inspection, AI generation, D1                      |
-| Evidence Worker / per-package `PackageEvidence` Durable Object | Provider collection, verified archive inspection, SQLite evidence cache, bounded briefing packet    | AI generation or stored briefing results                   |
-| Briefing Worker / per-hash `BriefingJob` Durable Object        | Private submission, durable job state, generation, public read-only sockets                         | Registry/provider evidence collection                      |
-| Cloudflare Queue                                               | Delivers a hash and generation ID to wake its job                                                   | Evidence packet, prompt, credentials, generation ownership |
-| D1                                                             | Permanent validated briefing results, first-writer-wins by evidence hash                            | Evidence cache, provider budget enforcement                |
+| Owner                                                          | Responsibilities                                                                                                                | Does not own                                               |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Browser                                                        | Reactive comparison queries, result rendering, briefing submission and read-only job subscription                               | Trusted evidence, provider credentials, durable jobs       |
+| Nuxt Worker                                                    | SSR declarations and stored-result hydration, public comparison routes, request validation, private evidence and briefing calls | Archive inspection, AI generation, D1                      |
+| Evidence Worker / per-package `PackageEvidence` Durable Object | Provider collection, verified archive inspection, SQLite evidence cache, bounded briefing packet                                | AI generation or stored briefing results                   |
+| Briefing Worker / per-hash `BriefingJob` Durable Object        | Private submission, durable job state, generation, public read-only sockets                                                     | Registry/provider evidence collection                      |
+| Cloudflare Queue                                               | Delivers a hash and generation ID to wake its job                                                                               | Evidence packet, prompt, credentials, generation ownership |
+| D1                                                             | Permanent validated briefing results, first-writer-wins by evidence hash                                                        | Evidence cache, provider budget enforcement                |
 
 ```mermaid
 flowchart TD
@@ -56,9 +56,10 @@ All three routes decode the package name and trim nonempty `from`/`to` inputs, e
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `GET /api/package/{encodedPackageName}/compare?from=…&to=…`              | Resolved manifests and declaration comparison: dependencies, peers, Node requirement, module/export/type declarations, licenses, install scripts. No evidence binding, GitHub request, archive inspection, or inference. |
 | `GET /api/package/{encodedPackageName}/compare/measurements?from=…&to=…` | Size/advisory comparison and per-version evidence, including compact tarball summaries. Uses the private evidence backend; no per-file inventory or changelog bodies reach this response.                                |
+| `GET /api/package/{encodedPackageName}/compare/briefing?from=…&to=…`     | Read-only stored-result lookup by the server-built evidence hash. Returns `missing` or validated `available`; it never reads or mutates a job, enqueues work, or generates. Errors are sanitized service failures.       |
 | `POST /api/package/{encodedPackageName}/compare/briefing?from=…&to=…`    | Builds evidence server-side and submits it privately. Returns `200` with a stored briefing, `202` with pending job identity/socket information, or a sanitized refusal. Can initiate paid generation; it is not a read.  |
 
-Sources: [collection and validation](../../server/comparison/collect.ts), [declaration comparator](../../server/comparison/declarations/compare.ts), [measurement comparator](../../server/comparison/measurements/compare.ts), [declarations route](../../server/api/package/[packageName]/compare/index.get.ts), [measurements route](../../server/api/package/[packageName]/compare/measurements/index.get.ts), [briefing route](../../server/api/package/[packageName]/compare/briefing/index.post.ts), and [evidence client boundary](../../server/api/package/[packageName]/compare/_internals/evidenceClient.ts).
+Sources: [collection and validation](../../server/comparison/collect.ts), [declaration comparator](../../server/comparison/declarations/compare.ts), [measurement comparator](../../server/comparison/measurements/compare.ts), [declarations route](../../server/api/package/[packageName]/compare/index.get.ts), [measurements route](../../server/api/package/[packageName]/compare/measurements/index.get.ts), [stored-briefing read route](../../server/api/package/[packageName]/compare/briefing/index.get.ts), [briefing submission route](../../server/api/package/[packageName]/compare/briefing/index.post.ts), and [evidence client boundary](../../server/api/package/[packageName]/compare/_internals/evidenceClient.ts).
 
 The browser supplies only package/version selectors, never trusted comparison facts. Measurements responses are decoded against the complete shared response schema, checked against the requested package/versions, and reject excess fields, including archive inventories. Briefing packets and service responses are likewise schema-decoded. Missing bindings, transport failures, upstream failures, or protocol violations become sanitized service failures rather than falling back to frontend collection or generation.
 
@@ -75,7 +76,7 @@ These rules explain the factual contract; [product limitations](../product/meani
 
 ## Loading sequence
 
-[Page orchestration](../../app/composables/useComparisonPage.ts) creates all reactive queries before awaiting the server declarations prefetch. The [route-only page shell](../../app/pages/[packageName]/[versionPair].vue) can stream before the deferred [comparison component](../../app/components/comparison/ComparisonDetails.vue). The package description arrives with declaration rows, not with measurements. [Nuxt configuration](../../nuxt.config.ts) enables SSR streaming; crawler user agents are excluded by Nuxt.
+[Page orchestration](../../app/composables/useComparisonPage.ts) creates all reactive queries before awaiting the server declarations prefetch. The [homepage](../../app/pages/index.vue) may stream, but [Nuxt configuration](../../nuxt.config.ts) disables streaming on non-root routes so comparison SSR can finish its optional stored-result and measurements reads before setting response headers. The package description arrives with declaration rows. Crawler user agents are excluded by Nuxt.
 
 ```mermaid
 sequenceDiagram
@@ -86,14 +87,21 @@ sequenceDiagram
   participant Briefing as Briefing service/job
   Nuxt->>Registry: Resolve both declaration manifests concurrently
   Registry-->>Nuxt: Resolved versions and declarations
-  Nuxt-->>Browser: Stream declarations and description, hydrate query data
-  Note over Browser: Client queries use resolved versions
-  par Measurements
-    Browser->>Nuxt: GET measurements
-    Nuxt->>Evidence: Collect or reuse measurement evidence
+  Nuxt->>Evidence: Build packet for a read-only stored-result lookup
+  Evidence-->>Nuxt: Server-built packet
+  Nuxt->>Briefing: Read D1 by evidence hash (no job lookup or mutation)
+  alt Validated stored success
+    Briefing-->>Nuxt: available
+    Nuxt->>Evidence: GET measurements
     Evidence-->>Nuxt: Measurement comparison and summaries
-    Nuxt-->>Browser: Fill measurement rows independently
-  and Briefing
+    Note over Nuxt: Seed existing briefing and measurements queries; mark complete HTML cacheable
+  else Missing result or read failure
+    Briefing-->>Nuxt: missing or sanitized service error
+    Note over Nuxt: Do not submit or generate during SSR; keep HTML uncacheable
+  end
+  Nuxt-->>Browser: Complete HTML and hydrated queries
+  Note over Browser: On a miss, resolved-version client queries continue independently
+  opt No hydrated briefing result
     Browser->>Nuxt: POST briefing
     Nuxt->>Evidence: Collect or reuse complete evidence and pack bounded packet
     Evidence-->>Nuxt: Server-built packet
@@ -110,9 +118,15 @@ sequenceDiagram
   end
 ```
 
-Measurements and briefing are **parallel client queries after declarations**, not a serial measurements-then-AI pipeline. Briefing independently gathers its own complete server-side evidence; it does not consume the browser's measurements response. Shared evidence cache misses may coalesce in the backend. Opening the notes panel does not trigger generation: the client briefing query is enabled automatically for a resolved comparison.
+On a stored-result miss, measurements and briefing remain **parallel client queries after declarations**, not a serial measurements-then-AI pipeline. A stored success instead seeds the existing briefing query during SSR and prefetches measurements; it never submits or generates. Briefing independently gathers its own complete server-side evidence; it does not consume the browser's measurements response. Shared evidence cache misses may coalesce in the backend. Opening the notes panel does not trigger generation: the client briefing query is enabled automatically for a resolved comparison.
 
-A successful SSR query is dehydrated by the [Vue Query plugin](../../app/plugins/vue-query.ts) and hydrated in the browser. Failed SSR prefetches are removed instead of dehydrating an error, allowing a new client fetch from pending state. Neither measurements nor briefing runs during SSR.
+SSR-prefetched query data is dehydrated by the [Vue Query plugin](../../app/plugins/vue-query.ts) and hydrated in the browser. Declarations always prefetch on SSR. The server checks for a stored briefing but only seeds the query on a validated D1 hit; it fetches measurements only for that hit. Missing results and evidence/storage failures leave the browser's existing POST flow intact, and failed SSR measurement state is removed rather than dehydrated.
+
+## Edge response caching
+
+The [response policy](../../server/plugins/responseCache.ts) caches only successful GET HTML: `/`, `/privacy`, and `/about` receive a one-year Cloudflare edge TTL, and a comparison page receives 12 hours only after SSR has hydrated a validated stored briefing and successful measurements. `Cache-Control: no-cache` makes browsers revalidate; Cloudflare's CDN-specific header carries the edge TTL with `must-revalidate` to prevent stale serving beyond expiry. Misses, pending/failed briefings, evidence/storage errors, other routes, APIs, and non-HTML responses use `no-store`. Comparison routes disable SSR streaming so the eligibility decision and headers are final before the response starts.
+
+The [frontend Wrangler config](../../wrangler.jsonc) enables native Workers Cache only for hosted `env.preview` (stage). Cross-version sharing stays disabled, so a deployment starts with a cold Worker-version cache; platform eviction can expire an entry sooner, so the one-year home, privacy, and about TTLs are not guarantees of retention until deploy. The homepage, privacy, about, and comparison HTML are public and identical for authorized visitors; stage remains behind Cloudflare Access. Local built preview and production do not enable this cache.
 
 ## Identity and freshness
 

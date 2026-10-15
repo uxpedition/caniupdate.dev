@@ -10,7 +10,7 @@ import { Schema } from 'effect';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { briefingEvidenceHash } from '../../../server/comparison/briefing/generation';
-import { readStoredBriefing } from '../../../server/comparison/briefing/store';
+import { readStoredBriefing, saveBriefing } from '../../../server/comparison/briefing/store';
 import { decodeTraceContext } from '../../../shared/telemetry/traceContext.defs';
 import type { TraceContext } from '../../../shared/telemetry/traceContext.defs';
 import { installBriefingSchema } from '../../../test/helpers/briefingDatabase.harness';
@@ -228,6 +228,67 @@ describe('briefing job Worker', () => {
     expect(await waitForStoredBriefing(main.database, hash)).toMatchObject({ status: 'available', model: MODEL });
     expect(provider.requestsFor(packet.packageName)).toBe(1);
   }, 120_000);
+
+  it('reads stored briefings without creating jobs, dispatching work, or requiring provider settings', async () => {
+    const runtime = await startRuntime({ stateDir: await openStateDir(), aiConfig: false });
+    const packet = packetFor('read-only-fixture', '1.0.0', '1.1.0');
+    const hash = briefingEvidenceHash(packet);
+    const queueDeliveries = runtime.queueDeliveries();
+
+    try {
+      const missing = await runtime.read(packet);
+      expect(missing).toMatchObject({
+        httpStatus: 200,
+        result: { status: 'missing', packageName: packet.packageName, from: packet.from, to: packet.to },
+      });
+      expect(await runtime.jobEvent(hash)).toBeUndefined();
+      expect(queueDeliveries).toBe(0);
+      expect(runtime.queueDeliveries()).toBe(queueDeliveries);
+      expect(provider.requestsFor(packet.packageName)).toBe(0);
+
+      const stored = await saveBriefing(runtime.database, hash, {
+        status: 'available',
+        model: MODEL,
+        bullets: responseBullets,
+        sources: packet.sources.map((source) => ({ ...source, number: 0 })),
+      });
+
+      const available = await runtime.read(packet);
+      expect(available).toMatchObject({
+        httpStatus: 200,
+        result: {
+          status: 'available',
+          packageName: packet.packageName,
+          from: packet.from,
+          to: packet.to,
+          briefing: stored,
+        },
+      });
+      expect(await runtime.jobEvent(hash)).toBeUndefined();
+      expect(runtime.queueDeliveries()).toBe(queueDeliveries);
+      expect(provider.requestsFor(packet.packageName)).toBe(0);
+
+      await runtime.database.prepare('DROP TABLE package_briefings').run();
+      expect(await runtime.read(packet)).toMatchObject({ httpStatus: 503, result: undefined, error: 'cache-error' });
+      await installBriefingSchema(runtime.database);
+
+      const corruptPacket = packetFor('read-corrupt-fixture', '1.0.0', '1.1.0');
+      const corruptHash = briefingEvidenceHash(corruptPacket);
+      await runtime.database
+        .prepare('INSERT INTO package_briefings (evidence_hash, response_json) VALUES (?, ?)')
+        .bind(corruptHash, '{')
+        .run();
+      expect(await runtime.read(corruptPacket)).toMatchObject({
+        httpStatus: 503,
+        result: undefined,
+        error: 'cache-error',
+      });
+      expect(runtime.queueDeliveries()).toBe(queueDeliveries);
+      expect(provider.requestsFor(corruptPacket.packageName)).toBe(0);
+    } finally {
+      await runtime.dispose();
+    }
+  }, 60_000);
 
   it('collapses two simultaneous same-hash submissions into one paid call', async () => {
     const packet = packetFor('race-fixture', '2.0.0', '2.1.0');
