@@ -1,8 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { request as httpRequest } from 'node:http';
+import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 
+import { Schema } from 'effect';
 import type { BrowserContext } from 'playwright';
+
+const isRayId = Schema.is(Schema.String.check(Schema.isPattern(/^[0-9a-f]{16}(?:-[A-Z]{3})?$/i)));
 
 const FRONTEND_PREVIEW_ORIGIN = 'https://stage.caniupdate.dev';
 
@@ -17,7 +20,11 @@ const LOOPBACK_HOSTNAMES = { localhost: true, '127.0.0.1': true, '[::1]': true, 
   true
 >;
 
-type AccessHandshakeResult = { readonly status: number; readonly location: string | null };
+type AccessHandshakeResult = {
+  readonly status: number;
+  readonly location: string | null;
+  readonly rayId: string | null;
+};
 
 export class SmokeFailure extends Error {
   readonly stage: string;
@@ -165,6 +172,16 @@ export const checkUnauthenticatedFrontend = async (config: SmokeConfig): Promise
   }
 };
 
+function handshakeResult(response: IncomingMessage): AccessHandshakeResult {
+  const ray = response.headers['cf-ray'];
+
+  return {
+    status: response.statusCode ?? 0,
+    location: response.headers.location ?? null,
+    rayId: isRayId(ray) ? ray : null,
+  };
+}
+
 const requestSocketHandshake = async (
   url: URL,
   origin: string,
@@ -187,7 +204,8 @@ const requestSocketHandshake = async (
       },
     },
     (response) => {
-      const result = { status: response.statusCode ?? 0, location: response.headers.location ?? null };
+      const result = handshakeResult(response);
+
       response.resume();
       resolve(result);
     },
@@ -195,7 +213,8 @@ const requestSocketHandshake = async (
 
   request.setTimeout(REQUEST_TIMEOUT_MS, () => request.destroy());
   request.once('upgrade', (response, socket) => {
-    const result = { status: response.statusCode ?? 0, location: response.headers.location ?? null };
+    const result = handshakeResult(response);
+
     socket.destroy();
     resolve(result);
   });
@@ -242,7 +261,17 @@ export async function checkAuthorizedSocketAdmission(config: SmokeConfig): Promi
 
   // No job owns this sentinel hash: an authenticated upgrade reaches the application and returns its 404.
   // This proves host admission, not a completed subscription; only a pending comparison supplies a real job URL.
-  if (response.status !== 404) throw new SmokeFailure('authorized-socket-admission');
+  if (response.status !== 404) {
+    process.stderr.write(
+      JSON.stringify({
+        stage: 'authorized-socket-admission',
+        status: response.status,
+        accessRedirect: isAccessLoginLocation(response.location, url),
+        rayId: response.rayId,
+      }) + '\n',
+    );
+    throw new SmokeFailure('authorized-socket-admission');
+  }
 
   return response.status;
 }
