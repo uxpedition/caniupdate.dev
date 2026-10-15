@@ -6,11 +6,11 @@ See [development](development.md) for local checks and [deployment](deployment.m
 
 ## Who releases, and what is released?
 
-Maintainers select a reviewed revision for release. Contributor PRs and contributor-owned demos do not grant production deployment authority. The official integration preview is one persistent, restricted environment; its deployed revision must be recorded so reviewers know what they are testing.
+Maintainers select a reviewed revision for release. Contributor PRs and contributor-owned demos do not grant production deployment authority. The official integration stage is one persistent, restricted environment; its Cloudflare Workers continue using Wrangler environment `preview`, and its deployed revision must be recorded so reviewers know what they are testing.
 
 A release identifies the source revision, frontend build, three Worker deployments, target configuration, and migration state. Deployment order is evidence Worker, briefing Worker, then frontend, after required provisioning and reviewed D1 migrations. This is an order for dependencies, not an atomic transaction across Workers and databases.
 
-Do not assume a failed step undoes earlier successful steps. Record partial deployments and assess compatibility before continuing or restoring code. Preview and production retain separate state and credentials.
+Do not assume a failed step undoes earlier successful steps. Record partial deployments and assess compatibility before continuing or restoring code. Stage and production retain separate state and credentials.
 
 ## Release identity
 
@@ -22,7 +22,9 @@ The agreed footer behavior is:
 
 The conventional display uses a short hash prefix. The exact abbreviation length is a presentation detail, not a database or deployment identity; records retain the full hash.
 
-**Not implemented:** `package.json` currently has no `version`, and [`SiteFooter.vue`](../../../app/components/SiteFooter.vue) has no build metadata. A release-version update procedure and build-time metadata wiring must exist before claiming the footer identifies releases. These documents do not add them or introduce a release branch convention.
+Preview identity is implemented in [`SiteFooter.vue`](../../../app/components/SiteFooter.vue). Browser smoke checks compare its rendered commit link directly with the expected CI SHA. `NUXT_BUILD_COMMIT_SHA` and `NUXT_BUILD_REPOSITORY_URL` must be supplied together at build time; malformed SHA/URL values fail configuration. The validated pair is compiled into Nuxt app config, not runtime configuration, so later Worker environment changes cannot relabel the artifact. The footer links its seven-character abbreviation to the full GitLab commit. Builds without metadata omit the link. No build-metadata endpoint is exposed.
+
+**Production versioning is not implemented:** `package.json` has no release `version`; the production footer and version-update/release procedure remain separate work. Preview metadata does not establish production release readiness or introduce a release branch convention.
 
 ## Verification and release evidence
 
@@ -53,7 +55,7 @@ Exercise the actual public surface, not only bundle compilation:
 
 For frontend/build configuration changes, exercise both Firefox and Chromium. The [entry-import-map decision](../adrs/firefox-entry-import-map.md) records the historical Firefox failure, retained startup workaround, and limits of the observation.
 
-Routine contribution checks and default official preview configuration perform no real inference. The [local smoke](development.md#exercise-the-asynchronous-briefing-without-paid-inference) uses a fixture. A real-provider check is explicit, separately approved, and uses the intended environment's dedicated key. It can incur charges, including when the response or persistence fails.
+Routine contribution checks and the [local smoke](development.md#exercise-the-asynchronous-briefing-without-paid-inference) use a fixture. The official preview is staging: real AI generation there is authorized, including deployed browser checks using that environment's dedicated key. These checks can incur charges, including when the response or persistence fails. This authorization does not extend to production or reuse production keys.
 
 Label these outcomes separately:
 
@@ -105,6 +107,8 @@ Rehearse adoption, persisted reopen, rollback and subsequent migrations in dispo
 
 ### One-time Drizzle adoption cutover
 
+This separately approved, destructive data cutover is **not part of the stage hostname or GitLab runtime-settings change**. No database, Queue, or Durable Object is recreated or reset by a stage redeployment; existing data and history remain intact. Do not execute the cutover below as part of routine staging, a custom-domain attachment, or this task.
+
 The [accepted Drizzle ADR](../adrs/drizzle-database-layer.md) authorizes replacing the old initial D1 schema/history **once, for local and the existing maintainer preview only**. On 2026-10-05 the user explicitly amended retention: **discard old briefing rows, without restoration**. Retained jobs can reference discarded results; those old references are not preserved. Production is excluded. Do not delete/recreate databases or reset Durable Object/Queue state. Subsequent migrations remain append-only.
 
 Use the verified source checkout and installed `nub exec wrangler`. `LOCAL_PERSIST_TO` must be the **actual original checkout's absolute persistence path**, not the worktree's empty state. Set `CUTOVER_DIR` to a new ignored `.data` backup directory with mode `700` and `umask 077`, without overwriting an earlier backup.
@@ -127,7 +131,7 @@ nub exec wrangler d1 migrations apply can-i-update-local-briefings --local \
   --config workers/briefing/wrangler.jsonc --persist-to "$LOCAL_PERSIST_TO"
 ```
 
-For preview, only after maintenance/quiescence, use the external maintainer-credential subshell in [deployment](deployment.md#redeploying-the-existing-maintainer-preview), with `CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false` and `CLOUDFLARE_INCLUDE_PROCESS_ENV=false`. Never print credentials. Execute each separately and stop on failure:
+The remote reset commands below are retained for the separately approved one-time cutover, but this hostname/runtime-settings change does not authorize them. No protected operator path for this destructive cutover is established here; do not run these commands until a separate authorization and secure execution path are in place. Never load a local dotenv file or copy GitLab credentials to a workstation. Ordinary stage deployments use the protected GitLab procedure only.
 
 ```bash
 nub exec wrangler d1 info can-i-update-preview-briefings \
@@ -137,11 +141,9 @@ nub exec wrangler d1 export can-i-update-preview-briefings --remote \
 nub exec wrangler d1 execute can-i-update-preview-briefings --remote \
   --config workers/briefing/wrangler.jsonc --env preview \
   --command 'DROP TABLE IF EXISTS package_briefings; DELETE FROM d1_migrations;'
-nub exec wrangler d1 migrations apply can-i-update-preview-briefings --remote \
-  --config workers/briefing/wrangler.jsonc --env preview
 ```
 
-Check zero stored rows, table nullability/defaults/indexes, exact applied migration filenames, and no pending migrations. Restart local with the verified checkout and `--persist-to "$LOCAL_PERSIST_TO"`; never restart an old checkout on the reset history. Deploy preview only after database verification, in evidence/briefing/frontend order, with its exact build origin and `--env preview`. Verify deployed health and migration state without generating a new paid result; a new paid call requires separate approval.
+Check zero stored rows, table nullability/defaults/indexes, exact applied migration filenames, and no pending migrations. Restart local with the verified checkout and `--persist-to "$LOCAL_PERSIST_TO"`; never restart an old checkout on the reset history. For an independently authorized preview cutover, do not manually run `wrangler d1 migrations apply` or `wrangler deploy`: after database verification, use the protected GitLab procedure in [deployment](deployment.md#deploying-the-existing-maintainer-stage), which builds for `https://stage.caniupdate.dev`, deploys with `--env preview`, and applies the checked-in migration history. Verify deployed health and migration state without generating a new paid result; a new paid call requires separate approval.
 
 If any step fails, keep the launcher stopped or preview in maintenance. Restore the verified D1 backup with reviewed compatible code; do not reset DOs/Queues, replay jobs, regenerate SQL to conceal failure, or restore migration records without matching schema/data. Record source revision, operator/time, target IDs, filenames, backup access/location, checks and unexercised paths. Only then restore access. Approval and execution evidence are distinct; see the ADR rollout status.
 
@@ -170,7 +172,7 @@ Removing provider configuration can refuse new cold submissions and pending-job 
 
 - Identify deployed versions and the point of failure, including partially completed deploys.
 - Restore a known-compatible reviewed revision only after checking schema, stored JSON, job-state, and queued-message compatibility.
-- If rebuilding, use the target origin and configuration, not the old preview build.
+- If rebuilding, use the target origin and configuration, not the old stage build.
 - Re-exercise API/browser and storage behavior, then record the recovered versions and remaining limitations.
 - Prefer a forward fix where previous code is incompatible with the new state. Do not claim every release can be safely rolled back.
 
@@ -180,7 +182,7 @@ Do not delete databases, object namespaces, or briefing rows as routine troubles
 
 ## Preview lifetime and teardown
 
-Keep one persistent official integration preview initially. Maintain a record of the revision currently deployed. Separate official per-PR environments are not promised by this document.
+Keep one persistent official integration stage initially. Maintain a record of the revision currently deployed. Separate official per-PR environments are not promised by this document.
 
 Contributor demos remain contributor-owned. Before teardown, identify the exact account, Worker names, Queue, D1 database, and associated Durable Object state. Decide whether any stored results must be retained and remove only resources belonging exclusively to that demo. Removing a public URL alone is not proof that all persistent resources or credentials were removed.
 

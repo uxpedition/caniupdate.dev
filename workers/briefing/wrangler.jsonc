@@ -37,8 +37,9 @@
     "preview": {
       "name": "can-i-update-preview-briefing",
       "account_id": "8a0be24aad326a55ba610b94b106be81",
-      "workers_dev": true,
+      "workers_dev": false,
       "preview_urls": false,
+      "routes": [{ "pattern": "stage-briefing.caniupdate.dev", "custom_domain": true }],
       "durable_objects": { "bindings": [{ "name": "BRIEFING_JOBS", "class_name": "BriefingJob" }] },
       "queues": {
         "producers": [{ "binding": "BRIEFING_QUEUE", "queue": "can-i-update-preview-briefings" }],
@@ -60,11 +61,6 @@
           "remote": false,
         },
       ],
-      "vars": {
-        "BRIEFING_PUBLIC_URL": "wss://can-i-update-preview-briefing.caniupdate-dev.workers.dev",
-        "BRIEFING_ALLOWED_ORIGIN": "https://can-i-update-preview.caniupdate-dev.workers.dev",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "https://otlp-gateway-prod-eu-central-0.grafana.net/otlp",
-      },
       // Uncaught exceptions and console error records stay queryable; per-request invocation records are
       // disabled because their request metadata includes client IPs. Request URLs lose query strings too.
       "observability": {

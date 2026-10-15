@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import { defineNuxtConfig } from 'nuxt/config';
 
+import { parseBuildIdentity } from './shared/site/buildIdentity';
 import { parseSiteOrigin } from './shared/site/siteUrl';
 
 // The origin every absolute URL is built from. A configured value is validated here so a typo fails the run instead of
@@ -16,8 +17,14 @@ if (!parsedSiteUrl.ok && rawSiteUrl.trim() !== '') {
   throw new Error(`NUXT_PUBLIC_SITE_URL ${parsedSiteUrl.reason}.`);
 }
 
+const buildIdentity = parseBuildIdentity(
+  process.env['NUXT_BUILD_COMMIT_SHA'],
+  process.env['NUXT_BUILD_REPOSITORY_URL'],
+);
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-09-16',
+  appConfig: { buildIdentity },
   runtimeConfig: {
     otelEndpoint: '',
     otelHeaders: {},
@@ -92,6 +99,7 @@ export default defineNuxtConfig({
       nodeTsConfig.include.push(
         fileURLToPath(new URL('./scripts/**/*.ts', import.meta.url)),
         fileURLToPath(new URL('./test/**/*.ts', import.meta.url)),
+        fileURLToPath(new URL('./shared/site/*.d.ts', import.meta.url)),
       );
     },
   },

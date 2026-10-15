@@ -57,7 +57,7 @@ const ParsedPackageSchema = Schema.Struct({
   license: Schema.optionalKey(Schema.String),
 });
 
-const ParsedPackagesSearchResponseSchema = Schema.Struct({
+export const ParsedPackagesSearchResponseSchema = Schema.Struct({
   data: Schema.Array(ParsedPackageSchema),
   total: Schema.Number,
   time: Schema.String,

@@ -1,6 +1,6 @@
-# Phase 1 CI: static gates, unit tests, and a built-runtime smoke.
-# Pins: Node image digest, Node and Nub versions (checked against .node-version and package.json), Nub archive SHA-256.
-# No deployment credentials, caches, artifacts, deployments, or allow_failure. Each job bootstraps its own workspace.
+# Required validation precedes an isolated stage build and serialized deployment on protected main.
+# Pins: Node image digest, Node/Nub versions, Nub archive SHA-256, and the locked browser tooling.
+# Stage credentials MUST be protected and environment-scoped to stage; no shared writable caches.
 
 workflow:
   rules:
@@ -10,6 +10,8 @@ workflow:
 
 stages:
   - verify
+  - package
+  - deploy
 
 variables:
   WRANGLER_SEND_METRICS: 'false'
@@ -24,6 +26,7 @@ default:
     - debian-home-server
   image: node:26.8.1@sha256:f5d1cc40abc10c2843339a2134d07817cf33c405cb16bfd052b0ed790254c3a3
   before_script:
+    - node scripts/deploy-preview/ci-environment.ts
     - test "$(tr -d '[:space:]' < .node-version)" = "$PIN_NODE_VERSION"
     - test "$(node -p 'process.versions.node')" = "$PIN_NODE_VERSION"
     - test "$(node -p "require('./package.json').packageManager")" = "nub@$PIN_NUB_VERSION"
@@ -34,7 +37,6 @@ default:
     - export PATH="$HOME/.local/nub/bin:$PATH"
     - nub --version | grep -qxF "v$PIN_NUB_VERSION"
     - nub ci
-    - printf '%s\n' 'AI_BRIEFING_ENDPOINT="http://127.0.0.1:8787/v1/chat/completions"' 'AI_BRIEFING_API_KEY="local-fixture-key"' 'AI_BRIEFING_MODEL="local-fixture-model"' > workers/briefing/.dev.vars
 
 quality:
   stage: verify
@@ -58,5 +60,69 @@ build-smoke:
   variables:
     NUXT_PUBLIC_SITE_URL: 'http://localhost:5273'
   script:
+    - printf '%s\n' 'AI_BRIEFING_ENDPOINT="http://127.0.0.1:8787/v1/chat/completions"' 'AI_BRIEFING_API_KEY="local-fixture-key"' 'AI_BRIEFING_MODEL="local-fixture-model"' > workers/briefing/.dev.vars
     - nub run build
     - nub run smoke:preview
+
+.stage-main:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true"
+    - when: never
+
+build:stage:
+  extends: .stage-main
+  stage: package
+  timeout: 10m
+  environment:
+    name: stage-build
+    action: prepare
+    deployment_tier: staging
+  variables:
+    NUXT_BUILD_COMMIT_SHA: '$CI_COMMIT_SHA'
+    NUXT_BUILD_REPOSITORY_URL: '$CI_PROJECT_URL'
+  script:
+    # before_script checks public origin and excludes every private setting before dependency installation.
+    - nub run build
+    - node -e 'require("node:fs").writeFileSync(".output/preview-build.json", JSON.stringify({ commitSha:process.env.CI_COMMIT_SHA, origin:process.env.NUXT_PUBLIC_SITE_URL, pipelineId:process.env.CI_PIPELINE_ID }))'
+  artifacts:
+    access: maintainer
+    expire_in: 7 days
+    paths:
+      - .output/
+
+deploy:stage:
+  extends: .stage-main
+  stage: deploy
+  timeout: 15m
+  dependencies:
+    - build:stage
+  resource_group: stage
+  interruptible: false
+  environment:
+    name: stage
+    url: https://stage.caniupdate.dev
+    deployment_tier: staging
+  variables:
+    CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false'
+    CLOUDFLARE_INCLUDE_PROCESS_ENV: 'false'
+    PREVIEW_ORIGIN: 'https://stage.caniupdate.dev'
+    PREVIEW_SOCKET_ORIGIN: 'wss://stage-briefing.caniupdate.dev'
+    PREVIEW_EXPECTED_SHA: '$CI_COMMIT_SHA'
+  script:
+    - |
+      node --input-type=module <<'NODE'
+      import { spawnSync } from 'node:child_process';
+      import { PRIVATE_CI_KEYS } from './scripts/deploy-preview/configurationKeys.ts';
+      const environment = { ...process.env };
+      for (const key of PRIVATE_CI_KEYS) delete environment[key];
+      const result = spawnSync('nub', ['exec', 'playwright', 'install', '--with-deps', 'chromium', 'firefox'], { env: environment, stdio: 'inherit' });
+      if (result.error || result.status !== 0) process.exit(1);
+      NODE
+    - nub run deploy:stage
+  artifacts:
+    when: always
+    access: maintainer
+    expire_in: 30 days
+    paths:
+      - .data/preview-deployment/report.json
+      - .data/preview-verification/

@@ -27,16 +27,9 @@
     "preview": {
       "name": "can-i-update-preview",
       "account_id": "8a0be24aad326a55ba610b94b106be81",
-      "workers_dev": true,
+      "workers_dev": false,
       "preview_urls": false,
-      // The origin this deployment publishes. The value baked into the prerendered homepage at build time must match;
-      // production will carry its own environment with https://caniupdate.dev. Local sessions set neither, so the
-      // built Worker keeps the value the build was given.
-      "vars": {
-        "NUXT_PUBLIC_SITE_URL": "https://can-i-update-preview.caniupdate-dev.workers.dev",
-        "NUXT_PUBLIC_TELEMETRY_ENABLED": "true",
-        "NUXT_OTEL_ENDPOINT": "https://otlp-gateway-prod-eu-central-0.grafana.net/otlp",
-      },
+      "routes": [{ "pattern": "stage.caniupdate.dev", "custom_domain": true }],
       // Uncaught exceptions and console error records stay queryable; per-request invocation records are
       // disabled because their request metadata includes client IPs. Request URLs lose query strings too.
       "observability": {

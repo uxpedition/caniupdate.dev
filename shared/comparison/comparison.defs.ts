@@ -76,6 +76,67 @@ export type PackageDeclarationsResponse = {
 
 export type PackageMeasurementsResponse = typeof PackageMeasurementsResponseSchema.Type;
 
+const DependencyRequirementSchema = Schema.Struct({
+  category: Schema.Literals(['runtime', 'optional']),
+  range: Schema.String,
+});
+
+const PeerRequirementSchema = Schema.Struct({ range: Schema.String, optional: Schema.Boolean });
+
+const DeclarationChangeSchema = <Value>(value: Schema.Codec<Value>) =>
+  Schema.Struct({
+    name: Schema.String,
+    kind: Schema.Literals(['added', 'removed', 'changed']),
+    from: Schema.NullOr(value),
+    to: Schema.NullOr(value),
+  });
+
+const ModuleDeclarationSchema = Schema.Struct({
+  type: Schema.optionalKey(Schema.String),
+  main: Schema.optionalKey(Schema.String),
+  module: Schema.optionalKey(Schema.String),
+});
+
+const TypeDeclarationSchema = Schema.Struct({
+  types: Schema.optionalKey(Schema.String),
+  typings: Schema.optionalKey(Schema.String),
+  typesVersions: Schema.optionalKey(Schema.Json),
+  exports: Schema.NullOr(Schema.Json),
+});
+
+const ValueComparisonSchema = <Value>(value: Schema.Codec<Value>) =>
+  Schema.Struct({
+    changed: Schema.Boolean,
+    from: Schema.NullOr(value),
+    to: Schema.NullOr(value),
+    fromDeclared: Schema.Boolean,
+    toDeclared: Schema.Boolean,
+  });
+
+const DeclarationComparisonSchema = Schema.Struct({
+  dependencies: Schema.Array(DeclarationChangeSchema(DependencyRequirementSchema)),
+  peers: Schema.Array(DeclarationChangeSchema(PeerRequirementSchema)),
+  node: ValueComparisonSchema(Schema.String),
+  moduleFormat: ValueComparisonSchema(ModuleDeclarationSchema),
+  exports: ValueComparisonSchema(Schema.Json),
+  types: ValueComparisonSchema(TypeDeclarationSchema),
+  licenses: Schema.Struct({
+    changed: Schema.Boolean,
+    from: Schema.Array(Schema.String),
+    to: Schema.Array(Schema.String),
+    added: Schema.Array(Schema.String),
+    removed: Schema.Array(Schema.String),
+  }),
+  installScripts: Schema.Array(DeclarationChangeSchema(Schema.String)),
+});
+
+export const PackageDeclarationsResponseSchema = Schema.Struct({
+  packageName: Schema.String,
+  from: ParsedPackageVersionSchema,
+  to: ParsedPackageVersionSchema,
+  comparison: DeclarationComparisonSchema,
+});
+
 // Boundary schemas for the measurements route. Each decoded value satisfies the public types above. Arrays are
 // `Schema.mutable` because the comparison producer appends to and sorts them while assembling the response.
 const AvailabilitySchema = Schema.Literals(['available', 'partial', 'unavailable']);
