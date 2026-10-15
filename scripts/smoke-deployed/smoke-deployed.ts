@@ -52,6 +52,13 @@ async function verifyAccess(config: SmokeConfig): Promise<void> {
 }
 
 async function run(): Promise<void> {
+  const browser = process.env['PREVIEW_BROWSER'];
+
+  if (browser !== undefined && browser !== 'chromium' && browser !== 'firefox') {
+    throw new SmokeFailure('browser-selection');
+  }
+
+  const browsers = browser === undefined ? (['chromium', 'firefox'] as const) : ([browser] as const);
   const config = readSmokeConfig();
 
   report.mode = config.local ? 'local' : 'preview';
@@ -61,7 +68,7 @@ async function run(): Promise<void> {
 
   await verifySurface(config);
 
-  for (const name of ['chromium', 'firefox'] as const) {
+  for (const name of browsers) {
     const outcome = await runBrowser(name, config, OUTPUT_DIRECTORY);
 
     report.browsers.push(outcome);

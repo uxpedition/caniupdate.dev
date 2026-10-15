@@ -156,20 +156,17 @@ try {
   const build = Schema.decodeUnknownSync(BuildSchema)(JSON.parse(await readFile('.output/preview-build.json', 'utf8')));
 
   if (
-    process.env['CI_PIPELINE_SOURCE'] !== 'push' ||
+    process.env['CI_PIPELINE_SOURCE'] !== 'parent_pipeline' ||
     process.env['CI_COMMIT_BRANCH'] !== 'main' ||
     process.env['CI_COMMIT_REF_PROTECTED'] !== 'true' ||
     process.env['CI_ENVIRONMENT_NAME'] !== 'stage' ||
     build.commitSha !== process.env['CI_COMMIT_SHA'] ||
-    build.pipelineId !== process.env['CI_PIPELINE_ID']
+    build.pipelineId !== process.env['PARENT_PIPELINE_ID']
   ) {
     throw new PreviewFailure('Stage requires its own protected main pipeline artifact');
   }
 
-  if (
-    !dryRun &&
-    ['CLOUDFLARE_API_TOKEN', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET'].some((key) => !process.env[key])
-  ) {
+  if (!dryRun && !process.env['CLOUDFLARE_API_TOKEN']) {
     throw new PreviewFailure('Stage credentials are missing');
   }
 
@@ -181,12 +178,8 @@ try {
     CLOUDFLARE_INCLUDE_PROCESS_ENV: 'false',
   };
 
-  const smokeEnvironment: NodeJS.ProcessEnv = { ...workerEnvironment };
-
   for (const key of PRIVATE_CI_KEYS) {
     if (key !== 'CLOUDFLARE_API_TOKEN') delete workerEnvironment[key];
-
-    if (key !== 'CF_ACCESS_CLIENT_ID' && key !== 'CF_ACCESS_CLIENT_SECRET') delete smokeEnvironment[key];
   }
 
   artifactDigest = await digestDirectory('.output');
@@ -230,13 +223,6 @@ try {
     workerEnvironment,
   );
   await deployWorker('can-i-update-preview', '.output/server/wrangler.json', settings.frontend, workerEnvironment);
-
-  if (!dryRun) {
-    currentStep = { name: 'deployed-verification', status: 'started' };
-    steps.push(currentStep);
-    run('nub', ['run', 'smoke:deployed'], smokeEnvironment);
-    currentStep.status = 'passed';
-  }
 } catch (cause) {
   failureReason =
     cause instanceof PreviewFailure || cause instanceof RuntimeSettingsFailure
@@ -258,6 +244,7 @@ try {
       {
         commitSha: process.env['CI_COMMIT_SHA'],
         pipelineId: process.env['CI_PIPELINE_ID'],
+        parentPipelineId: process.env['PARENT_PIPELINE_ID'],
         origin: STAGE_ORIGIN,
         dryRun,
         artifactDigest,

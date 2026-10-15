@@ -13,30 +13,8 @@ stages:
   - package
   - deploy
 
-variables:
-  WRANGLER_SEND_METRICS: 'false'
-  NUXT_TELEMETRY_DISABLED: '1'
-  PIN_NODE_VERSION: '26.8.1'
-  PIN_NUB_VERSION: '0.9.6'
-  NUB_ARCHIVE: 'nub-linux-x64.tar.gz'
-  NUB_ARCHIVE_SHA256: '77220dc6deb6ebbdb0a282c61b80a157e32016e088f3632d8fb4bf74a931e4ce'
-
-default:
-  tags:
-    - debian-home-server
-  image: node:26.8.1@sha256:f5d1cc40abc10c2843339a2134d07817cf33c405cb16bfd052b0ed790254c3a3
-  before_script:
-    - node scripts/deploy-preview/ci-environment.ts
-    - test "$(tr -d '[:space:]' < .node-version)" = "$PIN_NODE_VERSION"
-    - test "$(node -p 'process.versions.node')" = "$PIN_NODE_VERSION"
-    - test "$(node -p "require('./package.json').packageManager")" = "nub@$PIN_NUB_VERSION"
-    - curl -fsSL -o "$NUB_ARCHIVE" "https://github.com/nubjs/nub/releases/download/v$PIN_NUB_VERSION/$NUB_ARCHIVE"
-    - printf '%s  %s\n' "$NUB_ARCHIVE_SHA256" "$NUB_ARCHIVE" | sha256sum -c -
-    - mkdir -p "$HOME/.local/nub"
-    - tar -xzf "$NUB_ARCHIVE" -C "$HOME/.local/nub"
-    - export PATH="$HOME/.local/nub/bin:$PATH"
-    - nub --version | grep -qxF "v$PIN_NUB_VERSION"
-    - nub ci
+include:
+  - local: scripts/deploy-preview/ci-bootstrap.yml
 
 quality:
   stage: verify
@@ -90,39 +68,21 @@ build:stage:
     paths:
       - .output/
 
-deploy:stage:
+stage:delivery:
   extends: .stage-main
+  inherit:
+    default: false
+    variables: false
   stage: deploy
-  timeout: 15m
-  dependencies:
-    - build:stage
+  # The child jobs must not acquire this lock themselves: it spans deployment AND both browser checks.
   resource_group: stage
   interruptible: false
-  environment:
-    name: stage
-    url: https://stage.caniupdate.dev
-    deployment_tier: staging
   variables:
-    CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false'
-    CLOUDFLARE_INCLUDE_PROCESS_ENV: 'false'
-    PREVIEW_ORIGIN: 'https://stage.caniupdate.dev'
-    PREVIEW_SOCKET_ORIGIN: 'wss://stage-briefing.caniupdate.dev'
-    PREVIEW_EXPECTED_SHA: '$CI_COMMIT_SHA'
-  script:
-    - |
-      node --input-type=module <<'NODE'
-      import { spawnSync } from 'node:child_process';
-      import { PRIVATE_CI_KEYS } from './scripts/deploy-preview/configurationKeys.ts';
-      const environment = { ...process.env };
-      for (const key of PRIVATE_CI_KEYS) delete environment[key];
-      const result = spawnSync('nub', ['exec', 'playwright', 'install', '--with-deps', 'chromium', 'firefox'], { env: environment, stdio: 'inherit' });
-      if (result.error || result.status !== 0) process.exit(1);
-      NODE
-    - nub run deploy:stage
-  artifacts:
-    when: always
-    access: maintainer
-    expire_in: 30 days
-    paths:
-      - .data/preview-deployment/report.json
-      - .data/preview-verification/
+    PARENT_PIPELINE_ID: '$CI_PIPELINE_ID'
+  trigger:
+    include:
+      - local: scripts/deploy-preview/ci-stage.yml
+    strategy: mirror
+    forward:
+      yaml_variables: true
+      pipeline_variables: false
