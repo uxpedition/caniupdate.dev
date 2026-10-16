@@ -4,6 +4,9 @@ import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
 import type { ParsedPackagesSearchResult } from '#shared/comparison/package/search.defs';
+import type { TelemetryRuntime } from '#shared/telemetry/telemetry';
+
+import { PACKAGE_SEARCH_FLOW, reportPackageRequest } from './flowTelemetry';
 
 export const PACKAGE_SEARCH_QUERY_KEY_PREFIX = ['npm', 'packages', 'search'] as const;
 
@@ -19,7 +22,11 @@ type PackageSearchQueryKey = readonly [...typeof PACKAGE_SEARCH_QUERY_KEY_PREFIX
 
 type PackageSearchQueryContext = QueryFunctionContext<PackageSearchQueryKey>;
 
-export const packageSearchQueryOptions = (requestFetch: NuxtRequestFetch, searchTerm: MaybeRefOrGetter<string>) => {
+export const packageSearchQueryOptions = (
+  requestFetch: NuxtRequestFetch,
+  searchTerm: MaybeRefOrGetter<string>,
+  telemetryRuntime?: TelemetryRuntime,
+) => {
   const normalizedSearchTerm = computed(() => toValue(searchTerm).trim());
 
   const options = queryOptions({
@@ -27,11 +34,18 @@ export const packageSearchQueryOptions = (requestFetch: NuxtRequestFetch, search
     queryFn: async ({ queryKey, signal }: PackageSearchQueryContext): Promise<ParsedPackagesSearchResult> => {
       const text = queryKey[3];
 
-      return requestFetch<ParsedPackagesSearchResult>('/api/search', {
-        query: { text, size: PACKAGE_SEARCH_SIZE },
-        retry: false,
+      return reportPackageRequest(
+        telemetryRuntime,
+        PACKAGE_SEARCH_FLOW,
         signal,
-      });
+        () =>
+          requestFetch<ParsedPackagesSearchResult>('/api/search', {
+            query: { text, size: PACKAGE_SEARCH_SIZE },
+            retry: false,
+            signal,
+          }),
+        (result) => result.data.length,
+      );
     },
     enabled: computed(() => normalizedSearchTerm.value.length >= 2),
     staleTime: PACKAGE_SEARCH_STALE_TIME,

@@ -4,6 +4,9 @@ import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
 import type { ParsedPackageMetadata } from '#shared/comparison/package/package.defs';
+import type { TelemetryRuntime } from '#shared/telemetry/telemetry';
+
+import { PACKAGE_METADATA_FLOW, reportPackageRequest } from './flowTelemetry';
 
 export const PACKAGE_METADATA_QUERY_KEY_PREFIX = ['npm', 'packages', 'metadata'] as const;
 
@@ -18,6 +21,7 @@ type PackageMetadataQueryContext = QueryFunctionContext<PackageMetadataQueryKey>
 export const packageMetadataQueryOptions = (
   requestFetch: NuxtRequestFetch,
   packageName: MaybeRefOrGetter<string | null>,
+  telemetryRuntime?: TelemetryRuntime,
 ) => {
   const normalizedPackageName = computed(() => toValue(packageName)?.trim() ?? '');
 
@@ -29,10 +33,17 @@ export const packageMetadataQueryOptions = (
     queryFn: async ({ queryKey, signal }: PackageMetadataQueryContext): Promise<ParsedPackageMetadata> => {
       const packageName = queryKey[3];
 
-      return requestFetch<ParsedPackageMetadata>(`/api/package/${encodeURIComponent(packageName)}`, {
-        retry: false,
+      return reportPackageRequest(
+        telemetryRuntime,
+        PACKAGE_METADATA_FLOW,
         signal,
-      });
+        () =>
+          requestFetch<ParsedPackageMetadata>(`/api/package/${encodeURIComponent(packageName)}`, {
+            retry: false,
+            signal,
+          }),
+        (metadata) => metadata.versions.length,
+      );
     },
     enabled: computed(() => normalizedPackageName.value.length > 0),
     staleTime: PACKAGE_METADATA_STALE_TIME,

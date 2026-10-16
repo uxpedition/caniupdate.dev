@@ -1,9 +1,19 @@
 <script setup lang="ts">
 import { Schema } from 'effect';
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import type { RouteLocationNormalized } from 'vue-router';
+import {
+  isNavigationFailure,
+  NavigationFailureType,
+  type NavigationFailure,
+  type RouteLocationNormalized,
+  type RouteLocationRaw,
+} from 'vue-router';
 
-import { navigateTo, useRouter } from '#imports';
+import { navigateTo, useNuxtApp, useRouter } from '#imports';
+import {
+  comparisonTelemetryAttributes,
+  type ComparisonTelemetryAttributes,
+} from '#shared/telemetry/telemetryComparison';
 import Button from '~/components/element/Button.vue';
 import Combobox from '~/components/form/Combobox.vue';
 import Select from '~/components/form/Select.vue';
@@ -13,6 +23,7 @@ import {
   type ComparisonFormRelocation,
   type FormBounds,
 } from '~/composables/comparisonFormState';
+import { reportComparisonNavigation, type ComparisonNavigationOutcome } from '~/composables/flowTelemetry';
 import { useComparisonForm } from '~/composables/useComparisonForm';
 
 const props = defineProps<{ variant: 'home' | 'header' }>();
@@ -22,6 +33,7 @@ const {
   error,
   isError,
   isFetching,
+  packageMetadata,
   packageOptions,
   toVersionOptions,
   versionOptions,
@@ -37,6 +49,8 @@ const {
 } = useComparisonForm();
 
 const router = useRouter();
+
+const telemetry = import.meta.client ? useNuxtApp().$telemetry : undefined;
 
 const formElement = ref<HTMLFormElement | null>(null);
 
@@ -81,6 +95,7 @@ interface ComparisonSubmission {
   id: number;
   targetPath: string;
   source: FormBounds | null;
+  identity: ComparisonTelemetryAttributes;
 }
 
 const getFormBounds = (): FormBounds | null => {
@@ -106,6 +121,10 @@ const createSubmission = (): ComparisonSubmission | null => {
     id: ++relocationSequence.value,
     targetPath: comparisonPath({ packageName, fromVersion, toVersion }),
     source: props.variant === 'home' ? getFormBounds() : null,
+    identity:
+      packageMetadata.value?.name === packageName
+        ? comparisonTelemetryAttributes({ packageName, from: fromVersion, to: toVersion })
+        : {},
   };
 };
 
@@ -131,10 +150,45 @@ const completeSubmission = ({ id, targetPath }: ComparisonSubmission) => {
   resetComparisonFormDraft(draft.value);
 };
 
+/** `navigateTo` resolves with the router's result: undefined on success, a NavigationFailure otherwise. */
+const navigationOutcome = (
+  navigation: void | false | NavigationFailure | RouteLocationRaw,
+): ComparisonNavigationOutcome => {
+  if (isNavigationFailure(navigation, NavigationFailureType.cancelled)) {
+    return { outcome: 'cancelled', reason: 'cancelled' };
+  }
+
+  if (navigation === undefined || isNavigationFailure(navigation, NavigationFailureType.duplicated)) {
+    return { outcome: 'success' };
+  }
+
+  return { outcome: 'failure', reason: 'navigation' };
+};
+
+const navigateSubmission = async (submission: ComparisonSubmission) => {
+  try {
+    const navigation = await navigateTo(submission.targetPath);
+    completeSubmission(submission);
+    reportComparisonNavigation(telemetry, navigationOutcome(navigation), submission.identity);
+  } catch (cause) {
+    clearRelocation(submission.id);
+    reportComparisonNavigation(telemetry, { outcome: 'failure', reason: 'navigation' }, submission.identity);
+    throw cause;
+  }
+};
+
 const submit = async () => {
+  if (isSubmitting.value) {
+    reportComparisonNavigation(telemetry, { outcome: 'ignored' });
+
+    return;
+  }
+
   const submission = createSubmission();
 
   if (submission === null) {
+    reportComparisonNavigation(telemetry, { outcome: 'failure', reason: 'invalid-input' });
+
     return;
   }
 
@@ -142,11 +196,7 @@ const submit = async () => {
   storeRelocation(submission);
 
   try {
-    await navigateTo(submission.targetPath);
-    completeSubmission(submission);
-  } catch (error) {
-    clearRelocation(submission.id);
-    throw error;
+    await navigateSubmission(submission);
   } finally {
     isSubmitting.value = false;
   }
