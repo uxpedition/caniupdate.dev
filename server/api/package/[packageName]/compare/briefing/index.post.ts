@@ -19,6 +19,7 @@ import { telemetryWaitUntil } from '#shared/telemetry/telemetryContext';
 import { telemetryDecimal } from '#shared/telemetry/telemetryFields';
 import { parseTraceparent, type TraceContext } from '#shared/telemetry/traceContext.defs';
 
+import { admitPublicRequest, rateLimitError } from '../../../../../request/rateLimit';
 import { readServerTelemetryConfig } from '../../../../../telemetry/runtimeConfig';
 import { getBriefingEvidence, PackageEvidenceClientError } from '../_internals/evidenceClient';
 import { decodePackageComparisonQuery, decodePackageComparisonRouterParams } from '../_internals/request';
@@ -159,6 +160,7 @@ const failBriefingSubmission = (
   cause: BriefingSubmissionFailure,
   parsed: TraceContext | undefined,
   identityAttributes: Record<string, string>,
+  event: H3Event,
 ) =>
   Effect.gen(function* () {
     const span = yield* Effect.currentSpan;
@@ -176,6 +178,10 @@ const failBriefingSubmission = (
     Object.assign(annotations, identityAttributes);
 
     yield* Effect.logError('Briefing submission failed').pipe(Effect.annotateLogs(annotations));
+
+    if (cause.reason === 'generation-rate-limited') {
+      return yield* Effect.fail(rateLimitError(event, 'generation-rate-limited'));
+    }
 
     return yield* Effect.fail(createError({ statusCode: 503, statusMessage: cause.statusMessage }));
   });
@@ -227,6 +233,11 @@ const createBriefingSubmissionProgram = (event: H3Event, parsed: TraceContext | 
     parent === undefined ? { kind: 'server' as const, root: true } : { kind: 'server' as const, parent };
 
   return Effect.gen(function* () {
+    const caller = yield* Effect.tryPromise({
+      try: async () => event.context.rateLimitCaller ?? (await admitPublicRequest(event)),
+      catch: (cause) => cause,
+    });
+
     const request = yield* Effect.tryPromise({
       try: () => readBriefingSubmissionRequest(event),
       catch: (cause) => cause,
@@ -242,7 +253,7 @@ const createBriefingSubmissionProgram = (event: H3Event, parsed: TraceContext | 
     }
 
     const result = yield* Effect.tryPromise({
-      try: () => receiveServiceRpcResult(() => service.submit(resolved.evidence), decodeBriefingServiceResult),
+      try: () => receiveServiceRpcResult(() => service.submit(resolved.evidence, caller), decodeBriefingServiceResult),
       catch: submissionFailure,
     });
 
@@ -252,7 +263,7 @@ const createBriefingSubmissionProgram = (event: H3Event, parsed: TraceContext | 
   }).pipe(
     Effect.catchIf(
       (cause): cause is BriefingSubmissionFailure => cause instanceof BriefingSubmissionFailure,
-      (cause) => failBriefingSubmission(cause, parsed, identityAttributes),
+      (cause) => failBriefingSubmission(cause, parsed, identityAttributes, event),
     ),
     Effect.withSpan('briefing.submit', spanOptions),
   );

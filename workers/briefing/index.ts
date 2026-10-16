@@ -13,6 +13,7 @@ import type { BriefingEvidence } from '../../shared/comparison/briefing/briefing
 import type { BriefingServiceResult } from '../../shared/comparison/briefing/briefingService.defs';
 import { decodeStoredBriefingResult } from '../../shared/comparison/briefing/storedBriefing.defs';
 import type { StoredBriefingResult } from '../../shared/comparison/briefing/storedBriefing.defs';
+import { decodeRateLimitCaller, type RateLimitCaller } from '../../shared/request/rateLimit.defs';
 import type { TelemetryRuntimeOptions, TelemetryWaitUntil } from '../../shared/telemetry/telemetry';
 import { briefingAllowedOrigins } from './allowedOrigins';
 import { BriefingSubmissionError, decodeQueueJob, type BriefingEnv, type BriefingJobMessage } from './jobState';
@@ -101,18 +102,19 @@ const settleQueueDelivery = async (
  * application fields.
  */
 export class BriefingSubmitter extends WorkerEntrypoint<BriefingEnv> {
-  async submit(packet: BriefingEvidence): Promise<BriefingServiceResult> {
+  async submit(packet: BriefingEvidence, caller: RateLimitCaller): Promise<BriefingServiceResult> {
     let evidence: BriefingEvidence;
 
     try {
       evidence = decodeEvidence(packet);
+      caller = decodeRateLimitCaller(caller);
     } catch {
       throw new BriefingSubmissionError('invalid-response');
     }
 
     const jobs = this.env.BRIEFING_JOBS;
 
-    return jobs.get(jobs.idFromName(briefingEvidenceHash(evidence))).submit(evidence);
+    return jobs.get(jobs.idFromName(briefingEvidenceHash(evidence))).submit(evidence, caller);
   }
 
   /** Read only the D1 success row; a miss never looks up or mutates a Durable Object job. */

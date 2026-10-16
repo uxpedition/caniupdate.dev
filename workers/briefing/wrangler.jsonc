@@ -6,6 +6,9 @@
   "compatibility_flags": ["nodejs_compat", "no_nodejs_compat_v2"],
   "workers_dev": false,
   "preview_urls": false,
+  "ratelimits": [
+    { "name": "BRIEFING_GENERATION_LIMITER", "namespace_id": "1002", "simple": { "limit": 3, "period": 60 } },
+  ],
   "durable_objects": { "bindings": [{ "name": "BRIEFING_JOBS", "class_name": "BriefingJob" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BriefingJob"] }],
   "queues": {
@@ -39,6 +42,9 @@
       "account_id": "8a0be24aad326a55ba610b94b106be81",
       "workers_dev": false,
       "preview_urls": false,
+      "ratelimits": [
+        { "name": "BRIEFING_GENERATION_LIMITER", "namespace_id": "2002", "simple": { "limit": 3, "period": 60 } },
+      ],
       "routes": [{ "pattern": "stage-briefing.caniupdate.dev", "custom_domain": true }],
       "durable_objects": { "bindings": [{ "name": "BRIEFING_JOBS", "class_name": "BriefingJob" }] },
       "queues": {

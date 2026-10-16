@@ -12,7 +12,7 @@ type DisposableStoredBriefingResult = StoredBriefingResult & { [Symbol.dispose](
 
 /** Native submission object with Cloudflare's documented lifecycle hook. */
 export type BriefingServiceBinding = {
-  submit(packet: BriefingEvidence): Promise<DisposableBriefingServiceResult>;
+  submit(packet: BriefingEvidence, caller: RateLimitCaller): Promise<DisposableBriefingServiceResult>;
   read(packet: BriefingEvidence): Promise<DisposableStoredBriefingResult>;
 };
 

@@ -165,11 +165,12 @@ export default {
 
     if (url.pathname === '/submit' || url.pathname === '/job-submit') {
       const packet = await readBody(request);
+      const caller = { key: url.searchParams.get('caller') ?? 'a'.repeat(64) };
       try {
         const submission =
           url.pathname === '/submit'
-            ? await env.BRIEFING_SERVICE.submit(packet)
-            : await jobStub(env, url.searchParams.get('hash') ?? '').submit(packet);
+            ? await env.BRIEFING_SERVICE.submit(packet, caller)
+            : await jobStub(env, url.searchParams.get('hash') ?? '').submit(packet, caller);
         try {
           return json(submission);
         } finally {
@@ -197,7 +198,7 @@ export default {
     if (url.pathname === '/raw-submit') {
       const packet = await readBody(request);
       try {
-        const raw = await env.BRIEFING_SERVICE.submit(packet);
+        const raw = await env.BRIEFING_SERVICE.submit(packet, { key: 'a'.repeat(64) });
         try {
           return json({
             kind: typeof raw,
@@ -293,7 +294,7 @@ export type RuntimeFixture = {
   publicFetch: DispatchFetch;
   // The harness adapter reports response bodies unconverted: asserting the wire contract itself is the point, so the
   // fixture decoders validate only the response shapes they use.
-  submit<T>(packet: T): Promise<SubmitResult>;
+  submit<T>(packet: T, caller?: string): Promise<SubmitResult>;
   /** Read the service binding's durable D1 result without going through the job object. */
   read<T>(packet: T): Promise<StoredBriefingReadResult>;
   /** The same real service-binding call, reported unconverted so a test can assert the wire contract itself. */
@@ -314,6 +315,7 @@ export type RuntimeFixture = {
 
 export type RuntimeOptions = {
   readonly stateDir: string;
+  readonly generationLimit?: number;
   /** Loopback capture only when a local smoke needs actual Worker OTLP output. */
   readonly telemetryEndpoint?: string;
   /** A runtime started without the three AI settings, to prove D1 reuse needs no provider configuration. */
@@ -382,6 +384,11 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
   // Miniflare 5 declares every environment entry as a binding, so plain variables use the `text` variant.
   const briefingEnv: NonNullable<MiniflareWorkerConfig['env']> = {
     BRIEFINGS_DB: { type: 'd1', id: D1_ID },
+    BRIEFING_GENERATION_LIMITER: {
+      type: 'rate-limit',
+      namespace: '1002',
+      simple: { limit: options.generationLimit ?? 1000, period: 60 },
+    },
     BRIEFING_PUBLIC_URL: { type: 'text', value: environment.publicUrl },
     BRIEFING_ALLOWED_ORIGIN: { type: 'text', value: allowedOrigin },
   };
@@ -518,8 +525,8 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
         log.lines.reduce((total, line) => total + Number(QUEUE_DELIVERY.exec(line)?.[1] ?? 0), 0),
       structuredLogs: (): readonly string[] => structuredLogs,
       publicFetch: (input, init) => runtime.dispatchFetch(input, init),
-      async submit<T>(packet: T): Promise<SubmitResult> {
-        const { status, body } = await callHarness('/submit', packet);
+      async submit<T>(packet: T, caller = 'a'.repeat(64)): Promise<SubmitResult> {
+        const { status, body } = await callHarness(`/submit?caller=${encodeURIComponent(caller)}`, packet);
 
         return readSubmitResult(status, body);
       },

@@ -27,6 +27,7 @@ For a decision's rationale, constraints, and verification evidence, read its ADR
 - [Briefing identity](engineering/adrs/briefing-evidence-identity.md).
 - [Durable generation ownership](engineering/adrs/durable-briefing-ownership.md).
 - [Native RPC lifecycle](engineering/adrs/native-rpc-lifecycle.md).
+- [Managed rate limiting](engineering/adrs/cloudflare-rate-limiting.md).
 - [Firefox startup](engineering/adrs/firefox-entry-import-map.md).
 - [Drizzle database layer](engineering/adrs/drizzle-database-layer.md).
 

@@ -40,9 +40,10 @@ useSeoMeta({ title: 'Privacy · Can I Update?' });
 
     <p>
       To limit abuse, we derive a temporary hashed key from the IP address Cloudflare supplies and use it with
-      Cloudflare-managed public request rate limits. Hashing is not anonymization. People sharing a network address
-      share these approximate allowances. We do not create visitor accounts or persistent visitor profiles for rate
-      limiting.
+      Cloudflare-managed rate limits. The private briefing service receives this key only to check new-generation
+      allowances. It is not added to saved jobs, package evidence, AI requests or diagnostic logs. Hashing is not
+      anonymization. People sharing a network address share these approximate allowances. We do not create visitor
+      accounts or persistent visitor profiles for rate limiting.
     </p>
 
     <h2>Package data and AI</h2>

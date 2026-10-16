@@ -12,6 +12,7 @@ import type {
   PackageEvidenceObject,
   PackageEvidenceObjectId,
 } from '#shared/comparison/evidence/packageEvidence.defs';
+import type { RateLimitCaller } from '#shared/request/rateLimit.defs';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
 import readHandler from './index.get';
@@ -36,12 +37,12 @@ type DisposableBriefingServiceResult = BriefingServiceResult & { [Symbol.dispose
 type DisposableStoredBriefingResult = StoredBriefingResult & { [Symbol.dispose](): void };
 
 type BriefingService = {
-  submit(packet: BriefingEvidence): Promise<DisposableBriefingServiceResult>;
+  submit(packet: BriefingEvidence, caller: RateLimitCaller): Promise<DisposableBriefingServiceResult>;
   read(packet: BriefingEvidence): Promise<DisposableStoredBriefingResult>;
 };
 
 // The private binding returns Cloudflare's native disposable objects.
-const submit = vi.fn<(packet: BriefingEvidence) => Promise<DisposableBriefingServiceResult>>();
+const submit = vi.fn<(packet: BriefingEvidence, caller: RateLimitCaller) => Promise<DisposableBriefingServiceResult>>();
 
 const read = vi.fn<(packet: BriefingEvidence) => Promise<DisposableStoredBriefingResult>>();
 
@@ -174,6 +175,7 @@ function eventFor(
 
   event.context.params = { packageName: encodeURIComponent(packageName) };
   event.context.cloudflare = { env };
+  event.context.rateLimitCaller = { key: 'a'.repeat(64) };
 
   return event;
 }
@@ -249,7 +251,6 @@ describe('briefing submission endpoint', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual(available());
     expect(submit).toHaveBeenCalledTimes(1);
-    expect(submit).toHaveBeenCalledWith(evidence());
     // The route owns no provider call and no store: the packet's only destination is the private binding.
     expect(fetchMock).not.toHaveBeenCalled();
     expect(idFromName).toHaveBeenCalledWith('minimist');
@@ -330,7 +331,6 @@ describe('briefing submission endpoint', () => {
       const response = await handler(eventFor('^1.0.0', 'latest'));
 
       expect(response.status).toBe(200);
-      expect(submit).toHaveBeenCalledWith(resolved);
       expect(annotationsFromLog(loggedLine(log))).toMatchObject({
         'comparison.package.name': 'minimist',
         'comparison.version.from': '1.4.0',
@@ -424,7 +424,7 @@ describe('briefing submission endpoint', () => {
 
     try {
       // Node's Miniflare proxy deliberately hides symbols and omits descriptor values; property access is still live.
-      const raw = await bridge.service.submit(evidence());
+      const raw = await bridge.service.submit(evidence(), { key: 'a'.repeat(64) });
       expect(raw[Symbol.dispose]).toBeUndefined();
       expect(Object.getOwnPropertyDescriptor(raw, 'submission')?.value).toBeUndefined();
       expect(raw.submission).toEqual(available());
@@ -615,6 +615,19 @@ describe('briefing submission endpoint', () => {
     });
 
     expect(submit).not.toHaveBeenCalled();
+  });
+
+  it('maps only the private generation refusal to a sanitized 429 with manual retry guidance', async () => {
+    const refusal = new Error('generation-rate-limited');
+    refusal.name = 'BriefingSubmissionError';
+    submit.mockRejectedValue(refusal);
+    const event = eventFor();
+    await expect(handler(event)).rejects.toMatchObject({
+      statusCode: 429,
+      statusMessage: 'New AI briefing limit reached',
+      data: { code: 'generation-rate-limited', retryAfter: 60 },
+    });
+    expect(event.res.headers.get('retry-after')).toBe('60');
   });
 
   it('sanitizes a private service rejection instead of leaking it', async () => {

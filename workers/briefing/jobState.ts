@@ -37,6 +37,7 @@ export type BriefingEnv = {
   readonly BRIEFING_JOBS: Cloudflare.DurableObjectNamespace<BriefingJob>;
   readonly BRIEFING_QUEUE: Cloudflare.Queue<BriefingJobMessage>;
   readonly BRIEFINGS_DB: Cloudflare.D1Database;
+  readonly BRIEFING_GENERATION_LIMITER: Cloudflare.RateLimit;
   readonly BRIEFING_PUBLIC_URL: string;
   readonly BRIEFING_ALLOWED_ORIGIN: string;
   readonly OTEL_EXPORTER_OTLP_ENDPOINT?: string;
@@ -49,9 +50,9 @@ export type BriefingEnv = {
 /** RPC transports only name/message: every message here is a fixed domain reason, never provider prose. */
 export class BriefingSubmissionError extends Error {
   readonly _tag = 'BriefingSubmissionError';
-  readonly reason: BriefingUnavailableReason;
+  readonly reason: BriefingUnavailableReason | 'generation-rate-limited';
 
-  constructor(reason: BriefingUnavailableReason) {
+  constructor(reason: BriefingUnavailableReason | 'generation-rate-limited') {
     super(reason);
     this.name = 'BriefingSubmissionError';
     this.reason = reason;

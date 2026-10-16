@@ -23,9 +23,11 @@ import type {
 } from '../../shared/comparison/briefing/briefing.defs';
 import type { BriefingJobEvent } from '../../shared/comparison/briefing/briefingJob.defs';
 import type { BriefingServiceResult } from '../../shared/comparison/briefing/briefingService.defs';
+import type { RateLimitCaller } from '../../shared/request/rateLimit.defs';
 import { runWithTelemetry } from '../../shared/telemetry/telemetry';
 import { telemetryDecimal } from '../../shared/telemetry/telemetryFields';
 import type { TraceContext } from '../../shared/telemetry/traceContext.defs';
+import { checkGenerationAllowance, decodeSubmissionCaller } from './jobAdmission';
 import { dispatchBriefingJob } from './jobDispatch';
 import {
   availableSubmission,
@@ -260,8 +262,9 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   }
 
   /** The private submission path. Returns the cached result, or the queued/running job's current envelope. */
-  async submit(packet: BriefingEvidence): Promise<BriefingServiceResult> {
+  async submit(packet: BriefingEvidence, caller: RateLimitCaller): Promise<BriefingServiceResult> {
     const { evidence, hash } = this.#verifiedPacket(packet);
+    caller = decodeSubmissionCaller(caller);
 
     // D1 is the authority for available results: a hit is returned even when the provider settings have gone away.
     const stored = await this.#lookupStored(hash);
@@ -274,7 +277,9 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
 
     if (config.status !== 'configured') throw new BriefingSubmissionError(config.status);
 
-    const accepted = await this.#accept(hash, evidence);
+    const accepted = await this.#accept(hash, evidence, caller);
+
+    if ('briefing' in accepted) return { submission: availableSubmission(evidence, accepted.briefing) };
 
     // Only the submit that created the generation dispatches it, so a simultaneous second submit adds no message.
     if (accepted.created) await this.#dispatch('submission');
@@ -312,7 +317,10 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   async #accept(
     hash: string,
     evidence: BriefingEvidence,
-  ): Promise<{ record: JobRecord; created: boolean; generationContext?: TraceContext }> {
+    caller: RateLimitCaller,
+  ): Promise<
+    { record: JobRecord; created: boolean; generationContext?: TraceContext } | { briefing: AvailablePackageBriefing }
+  > {
     return await this.#synchronized(async () => {
       const current = await this.#readRecord();
 
@@ -321,6 +329,17 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
 
         return { ...attached, created: false };
       }
+
+      // A generation may have settled between the outer D1 read and acquiring this lock.
+      const stored = await this.#lookupStored(hash);
+
+      if (stored.outcome === 'failed') throw new BriefingSubmissionError('cache-error');
+
+      if (stored.outcome === 'found') return { briefing: stored.briefing };
+
+      // Keep this await inside the acceptance lock, after pending reuse: concurrent same-hash callers spend
+      // one allowance, and a denied explicit retry leaves generation/revision/dispatch state untouched.
+      await checkGenerationAllowance(this.env.BRIEFING_GENERATION_LIMITER, caller);
 
       // Only a submission creates or advances a generation: a failed generation stays terminal until this runs.
       const created: JobRecord = {

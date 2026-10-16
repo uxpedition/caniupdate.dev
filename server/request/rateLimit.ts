@@ -5,14 +5,17 @@ import type { RateLimitCaller, RateLimitResponse } from '#shared/request/rateLim
 // One incoming platform request can trigger multiple SSR-local fetches. This memoizes admission, not counters.
 const admissions = new WeakMap<Request, Promise<RateLimitCaller>>();
 
-export const rateLimitError = (event: H3Event) => {
+export const rateLimitError = (event: H3Event, code: RateLimitResponse['code']) => {
   setResponseHeader(event, 'Retry-After', '60');
   setResponseHeader(event, 'Cache-Control', 'no-store');
 
   return createError({
     statusCode: 429,
-    statusMessage: 'Request limit reached. Wait about a minute, then retry.',
-    data: { code: 'request-rate-limited', retryAfter: 60 } satisfies RateLimitResponse,
+    statusMessage:
+      code === 'generation-rate-limited'
+        ? 'New AI briefing limit reached'
+        : 'Request limit reached. Wait about a minute, then retry.',
+    data: { code, retryAfter: 60 } satisfies RateLimitResponse,
   });
 };
 
@@ -36,7 +39,7 @@ const admit = async (event: H3Event): Promise<RateLimitCaller> => {
     throw createError({ statusCode: 503, statusMessage: 'Request protection unavailable' });
   }
 
-  if (!success) throw rateLimitError(event);
+  if (!success) throw rateLimitError(event, 'request-rate-limited');
 
   return caller;
 };
