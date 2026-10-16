@@ -81,6 +81,8 @@ export const packageMeasurementsQueryOptions = (
     ),
     staleTime: PACKAGE_COMPARISON_STALE_TIME,
     retry: false,
+    retryOnMount: false,
+    refetchOnReconnect: false,
     refetchOnWindowFocus: false,
   });
 

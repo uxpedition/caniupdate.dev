@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 
 import type { BriefingUnavailableReason, PackageBriefing } from '#shared/comparison/briefing/briefing.defs';
+import { rateLimitMessage } from '#shared/request/rateLimit.defs';
 import type { BriefingStatus } from '~/composables/briefingSubscription';
 import { citationAnchorId } from '~/pages/[packageName]/comparisonCitations';
 
@@ -11,6 +12,10 @@ const props = defineProps<{
   status?: BriefingStatus | undefined;
   error: unknown;
 }>();
+
+const emit = defineEmits<{ retry: [] }>();
+
+const limitedMessage = computed(() => rateLimitMessage(props.error));
 
 const pendingMessages: Record<BriefingStatus, string> = {
   queued: 'Queued for generation. Package facts are available independently.',
@@ -49,7 +54,7 @@ const citationFor = (number: number) => {
       {{ pendingMessage }}
     </p>
     <p v-else-if="props.error" class="py-4 text-xs leading-[1.7] text-muted-foreground" role="status">
-      The AI briefing could not be loaded. Package facts remain available.
+      {{ limitedMessage ?? 'The AI briefing could not be loaded. Package facts remain available.' }}
     </p>
     <p
       v-else-if="props.briefing?.status === 'unavailable'"
@@ -79,5 +84,13 @@ const citationFor = (number: number) => {
       </li>
     </ol>
     <p v-else class="py-4 text-xs leading-[1.7] text-muted-foreground" role="status">Waiting for comparison data.</p>
+    <button
+      v-if="!props.pending && (props.error || props.briefing?.status === 'unavailable')"
+      type="button"
+      class="text-xs text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+      @click="emit('retry')"
+    >
+      Retry AI briefing
+    </button>
   </section>
 </template>

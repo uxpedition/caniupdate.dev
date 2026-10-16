@@ -51,6 +51,7 @@ export const useComparisonBriefing = (
     isBriefingPending: computed(() => briefing.value === undefined && briefingQuery.isPending.value),
     briefingStatus,
     briefingError: computed(() => briefingQuery.error.value),
+    retryBriefing: () => briefingQuery.refetch(),
     sources: computed(() => (briefing.value?.status === 'available' ? briefing.value.sources : [])),
   };
 };

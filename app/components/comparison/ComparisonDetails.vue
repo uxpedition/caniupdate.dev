@@ -20,12 +20,17 @@ const {
   declarations,
   measurements,
   isDeclarationsError,
+  declarationsRateLimitMessage,
+  retryDeclarations,
   isMeasurementsPending,
   isMeasurementsUnavailable,
+  measurementsRateLimitMessage,
+  retryMeasurements,
   briefing,
   isBriefingPending,
   briefingStatus,
   briefingError,
+  retryBriefing,
   sources,
 } = await useComparisonPage(props.pageTraceContext);
 
@@ -122,7 +127,13 @@ const revealCitation = async (event: MouseEvent) => {
       role="alert"
     >
       <h2 class="text-base font-semibold tracking-[-0.02em]">This comparison couldn’t be loaded.</h2>
-      <p>
+      <p v-if="declarationsRateLimitMessage" role="status">
+        {{ declarationsRateLimitMessage }}
+        <button type="button" class="underline underline-offset-4" @click="retryDeclarations()">
+          Retry comparison
+        </button>
+      </p>
+      <p v-else>
         Check the package and versions, then
         <NuxtLink
           to="/"
@@ -236,6 +247,7 @@ const revealCitation = async (event: MouseEvent) => {
           :briefing="briefing"
           :pending="isBriefingPending"
           :status="briefingStatus"
+          @retry="retryBriefing()"
           :error="briefingError"
         />
       </details>
@@ -257,6 +269,12 @@ const revealCitation = async (event: MouseEvent) => {
             }}
           </p>
         </div>
+        <p v-if="measurementsRateLimitMessage" class="py-4 text-xs text-muted-foreground" role="status">
+          {{ measurementsRateLimitMessage }}
+          <button type="button" class="text-primary underline underline-offset-4" @click="retryMeasurements()">
+            Retry measurements
+          </button>
+        </p>
         <div
           class="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring"
           tabindex="0"

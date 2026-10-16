@@ -50,6 +50,8 @@ export const packageSearchQueryOptions = (
     enabled: computed(() => normalizedSearchTerm.value.length >= 2),
     staleTime: PACKAGE_SEARCH_STALE_TIME,
     retry: false,
+    retryOnMount: false,
+    refetchOnReconnect: false,
     refetchOnWindowFocus: false,
   });
 

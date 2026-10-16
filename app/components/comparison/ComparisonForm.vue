@@ -10,6 +10,7 @@ import {
 } from 'vue-router';
 
 import { navigateTo, useNuxtApp, useRouter } from '#imports';
+import { rateLimitMessage } from '#shared/request/rateLimit.defs';
 import {
   comparisonTelemetryAttributes,
   type ComparisonTelemetryAttributes,
@@ -31,6 +32,9 @@ const props = defineProps<{ variant: 'home' | 'header' }>();
 const {
   draft,
   error,
+  retrySearch,
+  metadataRateLimitMessage,
+  retryMetadata,
   isError,
   isFetching,
   packageMetadata,
@@ -348,7 +352,22 @@ onBeforeUnmount(() => {
           />
         </div>
         <p v-if="isError" class="mt-2 text-sm text-destructive" aria-live="polite">
-          {{ error?.message ?? 'Unable to search npm packages.' }}
+          {{ rateLimitMessage(error) ?? 'Unable to search npm packages. Try again from package search.' }}
+          <button
+            v-if="rateLimitMessage(error)"
+            type="button"
+            class="underline underline-offset-4"
+            :disabled="isFetching"
+            @click="retrySearch()"
+          >
+            Retry package search
+          </button>
+        </p>
+        <p v-if="metadataRateLimitMessage" class="mt-2 text-sm text-destructive" aria-live="polite">
+          {{ metadataRateLimitMessage }}
+          <button type="button" class="underline underline-offset-4" @click="retryMetadata()">
+            Retry package versions
+          </button>
         </p>
       </div>
 

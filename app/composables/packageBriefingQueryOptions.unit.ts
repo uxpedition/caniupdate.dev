@@ -237,6 +237,26 @@ describe('packageBriefingQueryOptions', () => {
     expect(statuses).toEqual([]);
   });
 
+  it.each(['request-rate-limited', 'generation-rate-limited'])(
+    'stops on %s without opening a socket and recovers only on a later explicit attempt',
+    async (code) => {
+      vi.useFakeTimers();
+
+      const error = Object.assign(new Error('sanitized refusal'), {
+        statusCode: 429,
+        data: { statusCode: 429, data: { code, retryAfter: 60 } },
+      });
+
+      requestFetch.mockRejectedValueOnce(error).mockResolvedValueOnce(available());
+      await expect(runQuery([], new AbortController().signal)).rejects.toBe(error);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(requestFetch).toHaveBeenCalledTimes(1);
+      expect(FakeSocket.instances).toEqual([]);
+      await expect(runQuery([], new AbortController().signal)).resolves.toEqual(available());
+      expect(requestFetch).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it('sends a client traceparent directly beneath the route context', async () => {
     requestFetch.mockResolvedValue(available());
 

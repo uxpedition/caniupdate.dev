@@ -48,6 +48,8 @@ export const packageMetadataQueryOptions = (
     enabled: computed(() => normalizedPackageName.value.length > 0),
     staleTime: PACKAGE_METADATA_STALE_TIME,
     retry: false,
+    retryOnMount: false,
+    refetchOnReconnect: false,
     refetchOnWindowFocus: false,
   });
 

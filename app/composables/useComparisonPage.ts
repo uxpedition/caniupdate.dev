@@ -6,6 +6,7 @@ import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue';
 
 import { useNuxtApp, useRequestEvent, useRequestFetch } from '#imports';
 import type { PackageMeasurementsResponse } from '#shared/comparison/comparison.defs';
+import { rateLimitMessage } from '#shared/request/rateLimit.defs';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import type { ComparisonTierTelemetry } from '~/composables/comparisonPageTelemetry';
 import { prefetchStoredComparison, readStoredComparisonBriefing } from '~/composables/comparisonSsrPrefetch';
@@ -59,7 +60,14 @@ const useComparisonMeasurementsQuery = (
     serverPrefetched.value = import.meta.server;
   };
 
-  return { measurements, isPending, isUnavailable, markServerPrefetched };
+  return {
+    measurements,
+    isPending,
+    isUnavailable,
+    markServerPrefetched,
+    rateLimitMessage: computed(() => rateLimitMessage(query.error.value)),
+    retry: () => query.refetch(),
+  };
 };
 
 /** Create every reactive query synchronously before the page composable awaits server work. */
@@ -114,6 +122,8 @@ const useComparisonPageQueries = (
     measurements: measurements.measurements,
     isMeasurementsPending: measurements.isPending,
     isMeasurementsUnavailable: measurements.isUnavailable,
+    measurementsRateLimitMessage: measurements.rateLimitMessage,
+    retryMeasurements: measurements.retry,
     markServerMeasurementsPrefetched: measurements.markServerPrefetched,
     briefing,
   };
@@ -187,12 +197,17 @@ export const useComparisonPage = async (pageTraceContext?: TraceContext) => {
     measurements: queries.measurements,
     isDeclarationsPending: queries.isDeclarationsPending,
     isDeclarationsError: computed(() => queries.declarationsQuery.isError.value),
+    declarationsRateLimitMessage: computed(() => rateLimitMessage(queries.declarationsQuery.error.value)),
+    retryDeclarations: () => queries.declarationsQuery.refetch(),
     isMeasurementsPending: queries.isMeasurementsPending,
     isMeasurementsUnavailable: queries.isMeasurementsUnavailable,
+    measurementsRateLimitMessage: queries.measurementsRateLimitMessage,
+    retryMeasurements: queries.retryMeasurements,
     briefing: queries.briefing.briefing,
     isBriefingPending: queries.briefing.isBriefingPending,
     briefingStatus: queries.briefing.briefingStatus,
     briefingError: queries.briefing.briefingError,
+    retryBriefing: queries.briefing.retryBriefing,
     sources: queries.briefing.sources,
   };
 };

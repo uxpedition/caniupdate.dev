@@ -3,6 +3,7 @@ import { computed, watch, type ComputedRef, type Ref } from 'vue';
 import { useRouter, useState } from '#imports';
 import { createSemverAtLeastPredicate } from '#shared/comparison/package/compareSemver';
 import type { ParsedPackageMetadata } from '#shared/comparison/package/package.defs';
+import { rateLimitMessage } from '#shared/request/rateLimit.defs';
 import type { ComboboxOption } from '~/components/form/Combobox.vue';
 import type { SelectOption, SelectSearch } from '~/components/form/select.defs';
 import { usePackageMetadataQuery } from '~/composables/usePackageMetadataQuery';
@@ -109,7 +110,13 @@ const useComparisonDraft = () => {
 };
 
 const usePackageSearchOptions = (draft: Ref<ComparisonFormDraft>) => {
-  const { data: searchResult, error, isError, isFetching } = usePackageSearchQuery(() => draft.value.searchTerm);
+  const {
+    data: searchResult,
+    error,
+    isError,
+    isFetching,
+    refetch: retrySearch,
+  } = usePackageSearchQuery(() => draft.value.searchTerm);
 
   const packageOptions = computed<readonly ComboboxOption[]>(
     () =>
@@ -120,7 +127,7 @@ const usePackageSearchOptions = (draft: Ref<ComparisonFormDraft>) => {
       }) ?? [],
   );
 
-  return { searchResult, error, isError, isFetching, packageOptions };
+  return { searchResult, error, isError, isFetching, packageOptions, retrySearch };
 };
 
 const usePackageVersionMetadata = (draft: Ref<ComparisonFormDraft>) => {
@@ -128,6 +135,8 @@ const usePackageVersionMetadata = (draft: Ref<ComparisonFormDraft>) => {
     data: packageMetadata,
     isError: isMetadataError,
     isFetching: isMetadataFetching,
+    error: metadataError,
+    refetch: retryMetadata,
   } = usePackageMetadataQuery(() => draft.value.selectedPackage);
 
   const versionCatalog = computed(() =>
@@ -153,6 +162,8 @@ const usePackageVersionMetadata = (draft: Ref<ComparisonFormDraft>) => {
     versionCatalog,
     versionSelectDisabled,
     versionPlaceholder,
+    metadataRateLimitMessage: computed(() => rateLimitMessage(metadataError.value)),
+    retryMetadata,
   };
 };
 
