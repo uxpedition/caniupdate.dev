@@ -11,9 +11,9 @@ useSeoMeta({ title: 'Can I update? · Review npm package changes before updating
 </script>
 
 <template>
-  <div class="bg-background text-foreground">
-    <main class="min-h-svh px-4 py-6 sm:px-6">
-      <div class="mx-auto flex min-h-[calc(100svh-3rem)] w-full max-w-6xl flex-col justify-center pb-16">
+  <div class="flex min-h-svh flex-col bg-background text-foreground">
+    <main class="flex flex-1 flex-col px-4 py-6 sm:px-6">
+      <div class="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center pb-16">
         <Transition appear name="homepage-hero">
           <header :key="homepageHeroEntry" class="mx-auto max-w-2xl space-y-4 text-center">
             <p class="font-mono font-semibold tracking-[-0.04em]">
