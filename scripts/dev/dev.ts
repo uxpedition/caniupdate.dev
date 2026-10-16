@@ -101,6 +101,7 @@ const evidenceWorkerCommand = (launch: Options) =>
       String(launch.evidencePort),
       '--inspector-port',
       String(launch.inspectorBase),
+      ...(launch.otelEndpoint === undefined ? [] : ['--var', `OTEL_EXPORTER_OTLP_ENDPOINT:${launch.otelEndpoint}`]),
     ],
     {
       cwd: root,

@@ -16,11 +16,13 @@ import {
 import { runWithTelemetry } from '#shared/telemetry/telemetry';
 import { comparisonTelemetryAttributes } from '#shared/telemetry/telemetryComparison';
 import { telemetryWaitUntil } from '#shared/telemetry/telemetryContext';
+import { telemetryDecimal } from '#shared/telemetry/telemetryFields';
 import { parseTraceparent, type TraceContext } from '#shared/telemetry/traceContext.defs';
 
 import { readServerTelemetryConfig } from '../../../../../telemetry/runtimeConfig';
 import { getBriefingEvidence, PackageEvidenceClientError } from '../_internals/evidenceClient';
 import { decodePackageComparisonQuery, decodePackageComparisonRouterParams } from '../_internals/request';
+import { tracedEvidenceRequest } from '../_internals/telemetry';
 import { receiveServiceRpcResult } from './_internals/serviceRpc';
 import { browserBriefingSocketUrl } from './_internals/socketUrl';
 
@@ -103,6 +105,7 @@ type AcceptedSubmissionAnnotations = {
   parentSpanId?: string;
   linkedTraceId?: string;
   linkedSpanId?: string;
+  outcome: BriefingSubmission['status'];
 };
 
 type FailedSubmissionAnnotations = {
@@ -134,7 +137,11 @@ const logAcceptedSubmission = (
     }
 
     // Optional keys are set only when present so absent fields stay absent in exported logs (not set to undefined).
-    const annotations: AcceptedSubmissionAnnotations = { traceId: span.traceId, spanId: span.spanId };
+    const annotations: AcceptedSubmissionAnnotations = {
+      traceId: span.traceId,
+      spanId: span.spanId,
+      outcome: result.submission.status,
+    };
 
     if (parsed !== undefined) annotations.parentSpanId = parsed.spanId;
 
@@ -175,18 +182,15 @@ const failBriefingSubmission = (
 
 const readResolvedBriefingEvidence = (event: H3Event, request: BriefingSubmissionRequest) =>
   Effect.gen(function* () {
-    const evidence = yield* Effect.tryPromise({
-      try: () =>
-        getBriefingEvidence(event.context.cloudflare?.env?.PACKAGE_EVIDENCE, {
-          packageName: request.packageName,
-          from: request.from,
-          to: request.to,
-        }),
-      catch: (cause) =>
+    const evidence = yield* tracedEvidenceRequest('briefing', (context) =>
+      getBriefingEvidence(event.context.cloudflare?.env?.PACKAGE_EVIDENCE, request, context),
+    ).pipe(
+      Effect.mapError((cause) =>
         cause instanceof PackageEvidenceClientError
           ? new BriefingSubmissionFailure(cause.name, cause.reason, 'Evidence service unavailable')
           : cause,
-    });
+      ),
+    );
 
     const identityAttributes = comparisonTelemetryAttributes(evidence);
     yield* Effect.annotateCurrentSpan(identityAttributes);
@@ -194,7 +198,24 @@ const readResolvedBriefingEvidence = (event: H3Event, request: BriefingSubmissio
     return { evidence, identityAttributes };
   });
 
+const logBriefingRequestRejection = (started: number) =>
+  Effect.gen(function* () {
+    const span = yield* Effect.currentSpan;
+    yield* Effect.logWarning('comparison.request.rejected').pipe(
+      Effect.annotateLogs({
+        traceId: span.traceId,
+        spanId: span.spanId,
+        operation: 'briefing',
+        outcome: 'failure',
+        reason: 'invalid-input',
+        statusClass: '4xx',
+        durationMs: telemetryDecimal(Date.now() - started),
+      }),
+    );
+  });
+
 const createBriefingSubmissionProgram = (event: H3Event, parsed: TraceContext | undefined) => {
+  const started = Date.now();
   let identityAttributes: Record<string, string> = {};
 
   const parent =
@@ -209,7 +230,7 @@ const createBriefingSubmissionProgram = (event: H3Event, parsed: TraceContext | 
     const request = yield* Effect.tryPromise({
       try: () => readBriefingSubmissionRequest(event),
       catch: (cause) => cause,
-    });
+    }).pipe(Effect.tapError(() => logBriefingRequestRejection(started)));
 
     const resolved = yield* readResolvedBriefingEvidence(event, request);
     identityAttributes = resolved.identityAttributes;

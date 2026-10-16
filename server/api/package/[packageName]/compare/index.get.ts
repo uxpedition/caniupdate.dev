@@ -1,15 +1,15 @@
 import { Effect } from 'effect';
-import { FetchHttpClient } from 'effect/http';
-import { defineEventHandler, getValidatedQuery, getValidatedRouterParams } from 'h3';
+import { FetchHttpClient, HttpClient } from 'effect/http';
+import { defineEventHandler } from 'h3';
 
 import { getComparisonDeclarations } from '../../../../comparison/collect';
-import { decodePackageComparisonQuery, decodePackageComparisonRouterParams } from './_internals/request';
+import { runComparisonRequest } from './_internals/telemetry';
 
-export default defineEventHandler(async (event) => {
-  const { packageName } = await getValidatedRouterParams(event, decodePackageComparisonRouterParams);
-  const { from, to } = await getValidatedQuery(event, decodePackageComparisonQuery);
-
-  return Effect.runPromise(
-    getComparisonDeclarations(packageName, from, to).pipe(Effect.provide(FetchHttpClient.layer)),
-  );
-});
+export default defineEventHandler((event) =>
+  runComparisonRequest(event, 'declarations', ({ packageName, from, to }) =>
+    getComparisonDeclarations(packageName, from, to).pipe(
+      Effect.provideService(HttpClient.TracerPropagationEnabled, false),
+      Effect.provide(FetchHttpClient.layer),
+    ),
+  ),
+);

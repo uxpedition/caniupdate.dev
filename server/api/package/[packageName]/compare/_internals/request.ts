@@ -1,6 +1,9 @@
 import { Schema } from 'effect';
+import { getValidatedQuery, getValidatedRouterParams, type H3Event } from 'h3';
 
 import { PackageNameSchema } from '#shared/comparison/package/package.defs';
+
+import type { PackageEvidenceRequest } from './evidenceClient';
 
 const VERSION_MAX_LENGTH = 256;
 
@@ -20,3 +23,10 @@ export const decodePackageComparisonRouterParams = Schema.decodeUnknownSync(Pack
 });
 
 export const decodePackageComparisonQuery = Schema.decodeUnknownSync(PackageComparisonQuerySchema, { errors: 'all' });
+
+export const readComparisonRequest = async (event: H3Event): Promise<PackageEvidenceRequest> => {
+  const { packageName } = await getValidatedRouterParams(event, decodePackageComparisonRouterParams);
+  const { from, to } = await getValidatedQuery(event, decodePackageComparisonQuery);
+
+  return { packageName, from, to };
+};

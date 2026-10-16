@@ -178,7 +178,10 @@ function eventFor(
   return event;
 }
 
-const ConsoleLogRecordSchema = Schema.Struct({ annotations: Schema.Record(Schema.String, Schema.Unknown) });
+const ConsoleLogRecordSchema = Schema.Struct({
+  message: Schema.String,
+  annotations: Schema.Record(Schema.String, Schema.Unknown),
+});
 
 type ConsoleLogRecord = typeof ConsoleLogRecordSchema.Type;
 
@@ -188,7 +191,17 @@ const decodeConsoleLogRecord = Schema.decodeUnknownSync(ConsoleLogRecordSchema, 
 
 // Console spies record each argument as unknown; the first argument of a call is narrowed to a string here, at capture.
 const loggedLine = (log: MockInstance, call = 0): string => {
-  const value: unknown = log.mock.calls[call]?.[0];
+  const submissionCalls = log.mock.calls.filter((args) => {
+    const value: unknown = args[0];
+
+    if (!isScalarString(value)) return false;
+
+    const record = decodeConsoleLogRecord(JSON.parse(value));
+
+    return record.message === 'briefing.submission.accepted' || record.message === 'Briefing submission failed';
+  });
+
+  const value: unknown = submissionCalls[call]?.[0];
 
   if (!isScalarString(value)) throw new Error('Expected a JSON console record');
 
@@ -323,7 +336,7 @@ describe('briefing submission endpoint', () => {
         'comparison.version.from': '1.4.0',
         'comparison.version.to': '3.0.0',
       });
-      expect(loggedLine(log)).not.toMatch(/\^1\.0\.0|latest/);
+      expect(JSON.stringify(log.mock.calls)).not.toMatch(/\^1\.0\.0|latest/);
     } finally {
       log.mockRestore();
     }
@@ -357,7 +370,6 @@ describe('briefing submission endpoint', () => {
       expect(second.status).toBe(202);
       await expect(first.json()).resolves.toEqual(pending());
       await expect(second.json()).resolves.toEqual(pending());
-      expect(log).toHaveBeenCalledTimes(2);
       const firstAnnotations = annotationsFromLog(loggedLine(log));
       const secondAnnotations = annotationsFromLog(loggedLine(log, 1));
       expect(firstAnnotations).toMatchObject({
@@ -385,7 +397,6 @@ describe('briefing submission endpoint', () => {
       const response = await handler(eventFor('1.0.0', '2.0.0', 'minimist', undefined, { traceparent: '00-invalid' }));
 
       expect(response.status).toBe(200);
-      expect(log).toHaveBeenCalledTimes(1);
       const annotations = annotationsFromLog(loggedLine(log));
       expect(annotations.traceId).toMatch(/^[0-9a-f]{32}$/);
       expect(annotations.spanId).toMatch(/^[0-9a-f]{16}$/);

@@ -18,6 +18,8 @@ import type {
 } from '#shared/comparison/evidence/packageEvidence.defs';
 import { isExactSemver } from '#shared/comparison/package/compareSemver';
 import { PackageNameSchema } from '#shared/comparison/package/package.defs';
+import { formatTraceparent } from '#shared/telemetry/traceContext.defs';
+import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
 const VERSION_MAX_LENGTH = 256;
 
@@ -168,10 +170,13 @@ const readText = async (response: PackageEvidenceResponse, maxBytes?: number): P
   return new TextDecoder().decode(await readResponseBody(body, maxBytes));
 };
 
+type EvidenceRequestHeaders = { 'content-type': 'application/json'; accept: 'application/json'; traceparent?: string };
+
 const requestEvidence = async (
   namespace: PackageEvidenceNamespace | undefined,
   path: PackageEvidencePath,
   rawRequest: PackageEvidenceRequest,
+  traceContext?: TraceContext,
 ): Promise<{ readonly request: PackageEvidenceRequest; readonly text: string }> => {
   const request = decodePackageEvidenceRequest(rawRequest);
 
@@ -181,9 +186,13 @@ const requestEvidence = async (
     const objectId = namespace.idFromName(request.packageName);
     const object = namespace.get(objectId);
 
+    const headers: EvidenceRequestHeaders = { 'content-type': 'application/json', accept: 'application/json' };
+
+    if (traceContext !== undefined) headers.traceparent = formatTraceparent(traceContext);
+
     const response = await object.fetch(`https://package-evidence/${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      headers,
       body: JSON.stringify(request),
     });
 
@@ -204,8 +213,9 @@ const requestEvidence = async (
 export async function getPackageMeasurements(
   namespace: PackageEvidenceNamespace | undefined,
   request: PackageEvidenceRequest,
+  traceContext?: TraceContext,
 ): Promise<PackageMeasurementsResponse> {
-  const { request: decodedRequest, text } = await requestEvidence(namespace, 'measurements', request);
+  const { request: decodedRequest, text } = await requestEvidence(namespace, 'measurements', request, traceContext);
   const measurements = decodeMeasurements(text);
 
   if (measurements.packageName !== decodedRequest.packageName) throw new PackageEvidenceClientError('protocol');
@@ -224,8 +234,9 @@ export async function getPackageMeasurements(
 export async function getBriefingEvidence(
   namespace: PackageEvidenceNamespace | undefined,
   request: PackageEvidenceRequest,
+  traceContext?: TraceContext,
 ): Promise<BriefingEvidence> {
-  const { text } = await requestEvidence(namespace, 'briefing-evidence', request);
+  const { text } = await requestEvidence(namespace, 'briefing-evidence', request, traceContext);
   const evidence = decodeBriefingEvidence(text);
 
   if (evidence.packageName !== request.packageName) throw new PackageEvidenceClientError('protocol');

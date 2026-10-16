@@ -173,6 +173,7 @@ Open a comparison page and query these service identities in Grafana:
 
 - `can-i-update-browser`: `comparison.page` and client `briefing.submit` spans; page-open and submission-start logs, plus captured browser errors when present.
 - `can-i-update-nuxt`: server `briefing.submit` and submission-accepted/refused diagnostics, plus unhandled server render and handler failures with `error.source` `nuxt`, `nuxt.vue` or `nuxt.ssr`.
+- `can-i-update-evidence`: `evidence.request.completed` under the forwarded request `traceparent`, independent `evidence.collection` roots with `linkedTraceId` / `linkedSpanId` for joiners, and the evidence Worker's `OTEL_EXPORTER_OTLP_ENDPOINT` export configured in `workers/evidence/.dev.vars` (via `--otel-endpoint`).
 - Evidence-owner records (admission refusal with `operation`, component-cache `hit`/`miss`/`coalesced` decisions, provider degradation summaries, and storage failure reasons) are emitted by the evidence Worker's cache and admission owners; they carry fixed fields, not SQL, keys, rows or provider payloads. Their export wiring is documented with the request flow.
 - `can-i-update-briefing`: independent acceptance root and later generation child, with their logs. A stored-result hit does not start another generation.
 

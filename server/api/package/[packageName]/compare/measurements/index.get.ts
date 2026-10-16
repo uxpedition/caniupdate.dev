@@ -1,21 +1,20 @@
-import { createError, defineEventHandler, getValidatedQuery, getValidatedRouterParams } from 'h3';
+import { Effect } from 'effect';
+import { createError, defineEventHandler } from 'h3';
 
 import { getPackageMeasurements, PackageEvidenceClientError } from '../_internals/evidenceClient';
-import { decodePackageComparisonQuery, decodePackageComparisonRouterParams } from '../_internals/request';
+import { runComparisonRequest, tracedEvidenceRequest } from '../_internals/telemetry';
 
-// Sizes, advisories, and inspected-archive summaries are collected by the private package object so a public request
-// never performs archive/provider work in the Nuxt Worker.
-export default defineEventHandler(async (event) => {
-  const { packageName } = await getValidatedRouterParams(event, decodePackageComparisonRouterParams);
-  const { from, to } = await getValidatedQuery(event, decodePackageComparisonQuery);
-
-  try {
-    return await getPackageMeasurements(event.context.cloudflare?.env?.PACKAGE_EVIDENCE, { packageName, from, to });
-  } catch (error) {
-    if (error instanceof PackageEvidenceClientError) {
-      throw createError({ statusCode: 503, statusMessage: 'Evidence service unavailable' });
-    }
-
-    throw error;
-  }
-});
+// Provider/archive work remains owned by the evidence object; diagnostics never add a Nuxt fallback.
+export default defineEventHandler((event) =>
+  runComparisonRequest(event, 'measurements', (request) =>
+    tracedEvidenceRequest('measurements', (context) =>
+      getPackageMeasurements(event.context.cloudflare?.env?.PACKAGE_EVIDENCE, request, context),
+    ).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof PackageEvidenceClientError
+          ? createError({ statusCode: 503, statusMessage: 'Evidence service unavailable' })
+          : cause,
+      ),
+    ),
+  ),
+);
