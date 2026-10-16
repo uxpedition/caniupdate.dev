@@ -101,7 +101,8 @@ type AcceptedSubmissionAnnotations = {
   traceId: string;
   spanId: string;
   parentSpanId?: string;
-  linkedGeneration?: TraceContext;
+  linkedTraceId?: string;
+  linkedSpanId?: string;
 };
 
 type FailedSubmissionAnnotations = {
@@ -137,7 +138,11 @@ const logAcceptedSubmission = (
 
     if (parsed !== undefined) annotations.parentSpanId = parsed.spanId;
 
-    if (generationContext !== undefined) annotations.linkedGeneration = generationContext;
+    if (generationContext !== undefined) {
+      annotations.linkedTraceId = generationContext.traceId;
+      annotations.linkedSpanId = generationContext.spanId;
+    }
+
     Object.assign(annotations, identityAttributes);
 
     yield* Effect.logInfo('briefing.submission.accepted').pipe(Effect.annotateLogs(annotations));

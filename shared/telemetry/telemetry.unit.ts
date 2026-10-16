@@ -48,6 +48,104 @@ const decodeTraceExport = (body: string) => {
 };
 
 describe('runWithTelemetry', () => {
+  it.each([undefined, 200, 503])('protects console and export with sink status %s', async (status) => {
+    const requests = status === undefined ? [] : installCollector(status);
+    const consoleLines: string[] = [];
+
+    const methods = ['log', 'info', 'warn', 'error', 'debug'] satisfies Array<
+      'log' | 'info' | 'warn' | 'error' | 'debug'
+    >;
+
+    const spies = methods.map((method) =>
+      vi.spyOn(console, method).mockImplementation((value: string) => {
+        consoleLines.push(value);
+      }),
+    );
+
+    const attributes = {
+      'comparison.package.name': '@sindresorhus/is',
+      'comparison.version.from': '1.0.0',
+      'comparison.version.to': '2.0.0',
+      'comparison.requested.to': 'REJECTED_SELECTOR_MARKER',
+      'exception.message': 'RAW_PROSE_MARKER',
+      headers: { authorization: 'NESTED_SECRET_MARKER' },
+      payload: { evidence: 'PRIVATE_EVIDENCE_MARKER' },
+      reason: 'timeout',
+    };
+
+    try {
+      const result = await runWithTelemetry(
+        Effect.gen(function* () {
+          yield* Effect.logWarning('runtime.warning').pipe(Effect.annotateLogs(attributes));
+          yield* Effect.logWarning('runtime.warning', new Error('RAW_CAUSE_MARKER')).pipe(
+            Effect.annotateLogs(attributes),
+          );
+          yield* Effect.logInfo('UNAPPROVED_MESSAGE_MARKER');
+
+          return 'unchanged';
+        }),
+        status === undefined ? { serviceName: 'can-i-update-briefing' } : TELEMETRY_OPTIONS,
+      );
+
+      expect(result).toBe('unchanged');
+      const output = [...consoleLines, ...requests.map(({ body }) => body)].join('\n');
+      expect(consoleLines.join('\n')).toContain('@sindresorhus/is');
+      expect(output).not.toMatch(
+        /REJECTED_SELECTOR_MARKER|RAW_PROSE_MARKER|NESTED_SECRET_MARKER|PRIVATE_EVIDENCE_MARKER|RAW_CAUSE_MARKER|UNAPPROVED_MESSAGE_MARKER/,
+      );
+      expect(attributes.headers.authorization).toBe('NESTED_SECRET_MARKER');
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
+  });
+  it('does not inspect raw failure prose while ending native spans', async () => {
+    installCollector();
+    let reads = 0;
+    const failure = new Error('PRIVATE_FAILURE_MARKER');
+    Object.defineProperty(failure, 'message', {
+      get() {
+        reads += 1;
+
+        return 'PRIVATE_FAILURE_MARKER';
+      },
+    });
+    await expect(
+      runWithTelemetry(Effect.fail(failure).pipe(Effect.withSpan('briefing.generation')), TELEMETRY_OPTIONS),
+    ).rejects.toBe(failure);
+    expect(reads).toBe(0);
+  });
+
+  it('does not inspect unknown link payload prose before native conversion', async () => {
+    const requests = installCollector();
+    let reads = 0;
+
+    const privateDetail = {
+      get privateMessage() {
+        reads += 1;
+
+        return 'PRIVATE_LINK_MARKER';
+      },
+    };
+
+    const result = await runWithTelemetry(
+      Effect.gen(function* () {
+        const root = yield* Effect.currentSpan;
+
+        return yield* Effect.succeed('unchanged').pipe(
+          Effect.withSpan('evidence.collection', {
+            root: true,
+            links: [{ span: root, attributes: { relationship: 'shared-collection', privateDetail } }],
+          }),
+        );
+      }).pipe(Effect.withSpan('comparison.measurements')),
+      TELEMETRY_OPTIONS,
+    );
+
+    expect(result).toBe('unchanged');
+    expect(reads).toBe(0);
+    expect(requests.map(({ body }) => body).join('\n')).not.toContain('PRIVATE_LINK_MARKER');
+  });
+
   it('exports the ended root span and acceptance log with matching hex IDs', async () => {
     const requests = installCollector();
     const lifetime: Array<Promise<unknown>> = [];
@@ -117,18 +215,16 @@ describe('runWithTelemetry', () => {
       { key: 'comparison.package.name', value: { stringValue: '@scope/package' } },
       { key: 'comparison.version.from', value: { stringValue: '1.0.0-beta.1' } },
       { key: 'comparison.version.to', value: { stringValue: '2.0.0+build.7' } },
-      { key: 'comparison.requested.from', value: { stringValue: '^1.0.0-beta.1' } },
-      { key: 'comparison.requested.to', value: { stringValue: 'latest' } },
       { key: 'name', value: { stringValue: 'PackageEvidenceClientError' } },
       { key: 'reason', value: { stringValue: 'upstream' } },
     ];
 
-    expect(logs.resourceLogs[0]?.scopeLogs[0]?.logRecords[0]?.attributes).toEqual(expected);
-    expect(traces.resourceSpans[0]?.scopeSpans[0]?.spans[0]).toMatchObject({
-      attributes: expected,
-      status: { code: 2 },
-    });
-    expect(requests.map(({ body }) => body).join('\n')).not.toContain('private-provider-detail');
+    expect(logs.resourceLogs[0]?.scopeLogs[0]?.logRecords[0]?.attributes).toEqual(expect.arrayContaining(expected));
+    expect(traces.resourceSpans[0]?.scopeSpans[0]?.spans[0]?.attributes).toEqual(expect.arrayContaining(expected));
+    expect(traces.resourceSpans[0]?.scopeSpans[0]?.spans[0]).toMatchObject({ status: { code: 2 } });
+    const exported = requests.map(({ body }) => body).join('\n');
+    expect(exported).not.toContain('private-provider-detail');
+    expect(exported).not.toContain('comparison.requested.');
   });
 
   it('keeps the application result when the Collector rejects telemetry', async () => {

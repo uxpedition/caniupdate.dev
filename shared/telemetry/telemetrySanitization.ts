@@ -10,18 +10,12 @@ import {
   MAX_RECORDS,
   MAX_RESOURCE_GROUPS,
   MAX_SCOPE_GROUPS,
-  TelemetryComparisonPackageSchema,
-  TelemetryComparisonSelectorSchema,
-  TelemetryComparisonVersionSchema,
   TelemetryEnvironmentSchema,
-  TelemetryFailureNameSchema,
-  TelemetryFailureReasonSchema,
   TelemetryLogMessageSchema,
   TelemetryServiceNameSchema,
   TelemetrySpanNameSchema,
 } from './telemetry.schema';
-import { isErrorAttributeKey, sanitizeErrorAttribute } from './telemetryError';
-import type { ErrorAttributeKey } from './telemetryError';
+import { sanitizeApplicationField } from './telemetryFields';
 
 // Native Effect records may carry private or over-budget fields; project them before shared strict decoding.
 type NativeResource = OtlpTracer.TraceData['resourceSpans'][number]['resource'];
@@ -53,17 +47,11 @@ const isHexTraceId = Schema.is(HexTraceIdSchema);
 
 const isTelemetryEnvironment = Schema.is(TelemetryEnvironmentSchema);
 
-const isTelemetryFailureName = Schema.is(TelemetryFailureNameSchema);
-
-const isTelemetryFailureReason = Schema.is(TelemetryFailureReasonSchema);
-
 const isTelemetryLogMessage = Schema.is(TelemetryLogMessageSchema);
 
 const isTelemetryServiceName = Schema.is(TelemetryServiceNameSchema);
 
 const isTelemetrySpanName = Schema.is(TelemetrySpanNameSchema);
-
-const isTelemetryRelationship = Schema.is(Schema.Literal('shared-generation'));
 
 const isTelemetryServiceVersion = Schema.is(
   Schema.String.check(
@@ -77,24 +65,6 @@ const isNativeSeverityNumber = Schema.is(
 );
 
 const isNativeSeverityText = Schema.is(Schema.Literals(['Trace', 'Debug', 'Info', 'Warn', 'Error', 'Fatal']));
-
-const ATTRIBUTE_VALUE_VALIDATORS = {
-  'comparison.package.name': Schema.is(TelemetryComparisonPackageSchema),
-  'comparison.version.from': Schema.is(TelemetryComparisonVersionSchema),
-  'comparison.version.to': Schema.is(TelemetryComparisonVersionSchema),
-  'comparison.requested.from': Schema.is(TelemetryComparisonSelectorSchema),
-  'comparison.requested.to': Schema.is(TelemetryComparisonSelectorSchema),
-  traceId: isHexTraceId,
-  spanId: isHexSpanId,
-  parentSpanId: isHexSpanId,
-  reason: isTelemetryFailureReason,
-  name: isTelemetryFailureName,
-  relationship: isTelemetryRelationship,
-} satisfies Readonly<Record<string, (value: string) => boolean>>;
-
-type AttributeValueKey = keyof typeof ATTRIBUTE_VALUE_VALIDATORS;
-
-const isAttributeValueKey = (key: string): key is AttributeValueKey => Object.hasOwn(ATTRIBUTE_VALUE_VALIDATORS, key);
 
 const RESOURCE_VALUE_VALIDATORS = {
   'service.name': isTelemetryServiceName,
@@ -124,47 +94,17 @@ const readStringValue = (value: OtlpAttribute['value']): string | undefined => {
   return envelope === undefined ? undefined : envelope.stringValue;
 };
 
-const validatedProjectFieldValue = (
-  validate: ((value: string) => boolean) | undefined,
-  seen: Set<string>,
-  key: string,
-  value: string | undefined,
-): ProjectedAttribute | undefined => {
-  if (validate === undefined || seen.has(key) || value === undefined || !validate(value)) return undefined;
-  seen.add(key);
-
-  return { key, value: { stringValue: value } };
-};
-
-const validatedErrorAttributeValue = (
-  key: ErrorAttributeKey,
-  raw: string | undefined,
-  seen: Set<string>,
-): ProjectedAttribute | undefined => {
-  if (raw === undefined || seen.has(key)) return undefined;
-  const value = sanitizeErrorAttribute(key, raw);
-
-  if (value === undefined) return undefined;
-  seen.add(key);
-
-  return { key, value: { stringValue: value } };
-};
-
 const projectAttributes = (attributes: ReadonlyArray<{ readonly key: string; readonly value: unknown }>) => {
   const projected: Array<ProjectedAttribute> = [];
   const seen = new Set<string>();
 
   for (const attribute of attributes) {
-    const projectedAttribute = isErrorAttributeKey(attribute.key)
-      ? validatedErrorAttributeValue(attribute.key, readStringValue(attribute.value), seen)
-      : validatedProjectFieldValue(
-          isAttributeValueKey(attribute.key) ? ATTRIBUTE_VALUE_VALIDATORS[attribute.key] : undefined,
-          seen,
-          attribute.key,
-          readStringValue(attribute.value),
-        );
+    if (seen.has(attribute.key)) continue;
+    const value = sanitizeApplicationField(attribute.key, readStringValue(attribute.value));
 
-    if (projectedAttribute !== undefined) projected.push(projectedAttribute);
+    if (value === undefined) continue;
+    seen.add(attribute.key);
+    projected.push({ key: attribute.key, value: { stringValue: value } });
   }
 
   return projected;

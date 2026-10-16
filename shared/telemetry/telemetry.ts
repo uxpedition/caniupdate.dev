@@ -1,10 +1,23 @@
-import { Duration, Effect, Layer, Logger, ManagedRuntime, Schema, Tracer } from 'effect';
+import {
+  Cause,
+  Context,
+  Duration,
+  Effect,
+  Exit,
+  Layer,
+  Logger,
+  ManagedRuntime,
+  References,
+  Schema,
+  Tracer,
+} from 'effect';
 import { FetchHttpClient, HttpBody } from 'effect/http';
 import { OtlpExporter, OtlpLogger, OtlpSerialization, OtlpTracer } from 'effect/observability';
 
-import { JsonConsoleLoggerLayer } from './logging';
+import { JsonConsoleLoggerLayer, telemetryLogAnnotations } from './logging';
 import { decodeTelemetryPayload } from './telemetry.defs';
 import { TelemetryLogMessageSchema, TelemetryServiceNameSchema, TelemetrySpanNameSchema } from './telemetry.schema';
+import { sanitizeApplicationAnnotations, sanitizeApplicationField } from './telemetryFields';
 import { sanitizeTelemetryLogs, sanitizeTelemetryTraces } from './telemetrySanitization';
 
 export type TelemetryRuntimeOptions = {
@@ -79,49 +92,71 @@ const filterNativeLogger = (logger: Logger.Logger<unknown, void>): Logger.Logger
       return;
     }
 
-    logger.log(options);
+    const original = options.fiber.context;
+
+    try {
+      const fields = telemetryLogAnnotations(options.fiber);
+      // The native logger is synchronous. Restore the same fiber context before any application work resumes.
+      options.fiber.setContext(Context.add(original, References.CurrentLogAnnotations, fields));
+      logger.log({ ...options, cause: Cause.empty });
+    } catch {
+      // Native formatting and sink failures are diagnostic-only.
+    } finally {
+      options.fiber.setContext(original);
+    }
   });
+
+const sanitizeSpanLink = (link: Tracer.SpanLink): Tracer.SpanLink => ({
+  ...link,
+  attributes: sanitizeApplicationAnnotations(link.attributes),
+});
+
+const protectNativeSpan = (span: Tracer.Span, sampled: boolean): Tracer.Span => ({
+  _tag: span._tag,
+  name: span.name,
+  spanId: span.spanId,
+  traceId: span.traceId,
+  parent: span.parent,
+  annotations: span.annotations,
+  get status() {
+    return span.status;
+  },
+  get attributes() {
+    return span.attributes;
+  },
+  get links() {
+    return span.links;
+  },
+  sampled,
+  kind: span.kind,
+  end: (endTime, exit) =>
+    span.end(
+      endTime,
+      Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause) ? Exit.fail('operation-failed') : exit,
+    ),
+  attribute: (key, value) => {
+    const safe = sanitizeApplicationField(key, value);
+
+    if (safe !== undefined) span.attribute(key, safe);
+  },
+  event: () => undefined,
+  addLinks: (links) => {
+    if (links.length > 0) span.addLinks(links.map(sanitizeSpanLink));
+  },
+});
 
 const filterNativeTracer = (tracer: Tracer.Tracer): Tracer.Tracer =>
   Tracer.make({
     context: tracer.context,
     span(options) {
       const approved = isApprovedSpanName(options.name);
-      const span = tracer.span(approved ? options : { ...options, sampled: false });
+      const links = options.links.length === 0 ? options.links : options.links.map(sanitizeSpanLink);
 
-      if (approved || !options.sampled) return span;
+      const span = tracer.span(
+        approved && links === options.links ? options : { ...options, links, sampled: approved && options.sampled },
+      );
 
-      return {
-        _tag: span._tag,
-        name: span.name,
-        get spanId() {
-          return span.spanId;
-        },
-        get traceId() {
-          return span.traceId;
-        },
-        get parent() {
-          return span.parent;
-        },
-        get annotations() {
-          return span.annotations;
-        },
-        get status() {
-          return span.status;
-        },
-        get attributes() {
-          return span.attributes;
-        },
-        get links() {
-          return span.links;
-        },
-        sampled: options.sampled,
-        kind: span.kind,
-        end: (endTime, exit) => span.end(endTime, exit),
-        attribute: (key, value) => span.attribute(key, value),
-        event: (name, startTime, attributes) => span.event(name, startTime, attributes),
-        addLinks: (links) => span.addLinks(links),
-      };
+      return protectNativeSpan(span, options.sampled);
     },
   });
 

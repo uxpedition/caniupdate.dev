@@ -34,7 +34,7 @@ const firstRecord = <T>(records: readonly T[]): T => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('openComparisonPage', () => {
-  it('records the package and original selectors on its root span and opened log', async () => {
+  it('exports correlated page records without requested selectors', async () => {
     const { requests, telemetry } = installCollector();
     await telemetry.context();
     const traceContext = openComparisonPage(telemetry, '@scope/package', { from: '^1.2.0', to: 'latest' });
@@ -50,11 +50,8 @@ describe('openComparisonPage', () => {
     const log = firstRecord(firstRecord(firstRecord(logs.resourceLogs).scopeLogs).logRecords);
     const span = firstRecord(firstRecord(firstRecord(traces.resourceSpans).scopeSpans).spans);
 
-    const expectedAttributes = [
-      { key: 'comparison.package.name', value: { stringValue: '@scope/package' } },
-      { key: 'comparison.requested.from', value: { stringValue: '^1.2.0' } },
-      { key: 'comparison.requested.to', value: { stringValue: 'latest' } },
-    ];
+    expect(JSON.stringify({ logs, traces })).not.toMatch(/comparison\.requested\.|\^1\.2\.0|latest/);
+    const expectedAttributes = [{ key: 'comparison.package.name', value: { stringValue: '@scope/package' } }];
 
     expect(log).toMatchObject({
       body: { stringValue: 'comparison.page.opened' },

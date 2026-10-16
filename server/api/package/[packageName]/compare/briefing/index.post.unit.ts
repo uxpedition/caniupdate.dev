@@ -322,9 +322,8 @@ describe('briefing submission endpoint', () => {
         'comparison.package.name': 'minimist',
         'comparison.version.from': '1.4.0',
         'comparison.version.to': '3.0.0',
-        'comparison.requested.from': '^1.0.0',
-        'comparison.requested.to': 'latest',
       });
+      expect(loggedLine(log)).not.toMatch(/comparison\.requested|\^1\.0\.0|latest/);
     } finally {
       log.mockRestore();
     }
@@ -364,12 +363,14 @@ describe('briefing submission endpoint', () => {
       expect(firstAnnotations).toMatchObject({
         traceId: '4bf92f3577b34da6a3ce929d0e0e4736',
         parentSpanId: '00f067aa0ba902b7',
-        linkedGeneration: generationContext,
+        linkedTraceId: generationContext.traceId,
+        linkedSpanId: generationContext.spanId,
       });
       expect(secondAnnotations).toMatchObject({
         traceId: '0af7651916cd43dd8448eb211c80319c',
         parentSpanId: 'b7ad6b7169203331',
-        linkedGeneration: generationContext,
+        linkedTraceId: generationContext.traceId,
+        linkedSpanId: generationContext.spanId,
       });
       expect(firstAnnotations.spanId).not.toBe(secondAnnotations.spanId);
     } finally {
@@ -389,7 +390,8 @@ describe('briefing submission endpoint', () => {
       expect(annotations.traceId).toMatch(/^[0-9a-f]{32}$/);
       expect(annotations.spanId).toMatch(/^[0-9a-f]{16}$/);
       expect(annotations.parentSpanId).toBeUndefined();
-      expect(annotations.linkedGeneration).toBeUndefined();
+      expect(annotations.linkedTraceId).toBeUndefined();
+      expect(annotations.linkedSpanId).toBeUndefined();
     } finally {
       log.mockRestore();
     }
@@ -546,7 +548,7 @@ describe('briefing submission endpoint', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('logs only safe requested identity when evidence fails before a packet exists', async () => {
+  it('does not log requested selectors when evidence fails before a packet exists', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     objectFetch.mockResolvedValue(new Response('private evidence details', { status: 503 }));
 
@@ -558,11 +560,8 @@ describe('briefing submission endpoint', () => {
 
       expect(log).toHaveBeenCalledTimes(1);
       const line = loggedLine(log);
-      expect(annotationsFromLog(line)).toMatchObject({
-        'comparison.package.name': 'minimist',
-        'comparison.requested.to': 'latest',
-      });
-      expect(annotationsFromLog(line)).not.toHaveProperty('comparison.requested.from');
+      expect(annotationsFromLog(line)).toMatchObject({ name: 'PackageEvidenceClientError', reason: 'upstream' });
+      expect(line).not.toMatch(/comparison\.requested|latest/);
       expect(line).not.toContain('private.example');
       expect(line).not.toContain('token=secret');
       expect(submit).not.toHaveBeenCalled();

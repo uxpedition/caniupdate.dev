@@ -1,19 +1,13 @@
 import { flow, Result, Schema } from 'effect';
 
 import {
-  HexSpanIdSchema,
-  HexTraceIdSchema,
   MAX_DROPPED_COUNT,
   OtlpLogsDataSchema,
   OtlpTracesDataSchema,
   SanitizedLogsDataSchema,
   SanitizedTraceDataSchema,
-  TelemetryComparisonPackageSchema,
-  TelemetryComparisonSelectorSchema,
-  TelemetryComparisonVersionSchema,
+  TelemetryAttributeKeySchema,
   TelemetryEnvironmentSchema,
-  TelemetryFailureReasonSchema,
-  TelemetryFailureNameSchema,
   TelemetryLogMessageSchema,
   TelemetryResourceSchema,
   TelemetryServiceNameSchema,
@@ -32,8 +26,7 @@ import type {
   TelemetryResourceAttribute,
 } from './telemetry.schema';
 import { decodeBoundedTelemetryValue } from './telemetryBounds';
-import { isErrorAttributeKey, sanitizeErrorAttribute } from './telemetryError';
-import type { ErrorAttributeKey } from './telemetryError';
+import { sanitizeApplicationField } from './telemetryFields';
 
 export type TelemetrySignal = 'logs' | 'traces';
 
@@ -98,51 +91,9 @@ const decodeErrorAttributeString = Schema.decodeUnknownResult(Schema.Struct({ st
   onExcessProperty: 'error',
 });
 
-const decodeTraceIdAttribute = Schema.decodeUnknownResult(Schema.Struct({ stringValue: HexTraceIdSchema }), {
-  errors: 'all',
-  onExcessProperty: 'error',
-});
-
-const decodeSpanIdAttribute = Schema.decodeUnknownResult(Schema.Struct({ stringValue: HexSpanIdSchema }), {
-  errors: 'all',
-  onExcessProperty: 'error',
-});
-
-const decodeFailureReason = Schema.decodeUnknownResult(Schema.Struct({ stringValue: TelemetryFailureReasonSchema }), {
-  errors: 'all',
-  onExcessProperty: 'error',
-});
-
-const decodeFailureName = Schema.decodeUnknownResult(Schema.Struct({ stringValue: TelemetryFailureNameSchema }), {
-  errors: 'all',
-  onExcessProperty: 'error',
-});
-
-const decodeRelationship = Schema.decodeUnknownResult(
-  Schema.Struct({ stringValue: Schema.Literal('shared-generation') }),
-  { errors: 'all', onExcessProperty: 'error' },
-);
-
-const decodeComparisonPackage = Schema.decodeUnknownResult(
-  Schema.Struct({ stringValue: TelemetryComparisonPackageSchema }),
-  { errors: 'all', onExcessProperty: 'error' },
-);
-
-const decodeComparisonVersion = Schema.decodeUnknownResult(
-  Schema.Struct({ stringValue: TelemetryComparisonVersionSchema }),
-  { errors: 'all', onExcessProperty: 'error' },
-);
-
-const decodeComparisonSelector = Schema.decodeUnknownResult(
-  Schema.Struct({ stringValue: TelemetryComparisonSelectorSchema }),
-  { errors: 'all', onExcessProperty: 'error' },
-);
-
 const isTelemetryServiceName = Schema.is(TelemetryServiceNameSchema);
 
 const isTelemetrySpanName = Schema.is(TelemetrySpanNameSchema);
-
-type SafeStringValue = TelemetryAttribute['value'];
 
 type SanitizedLogRecord = SanitizedLogsData['resourceLogs'][number]['scopeLogs'][number]['logRecords'][number];
 
@@ -152,62 +103,14 @@ type SanitizedSpan = SanitizedTraceData['resourceSpans'][number]['scopeSpans'][n
 
 type MutableSanitizedSpan = { -readonly [Key in keyof SanitizedSpan]: SanitizedSpan[Key] };
 
-/** Decodes one raw OTLP attribute value into a sanitized value; library decoders match this shape. */
-type DecodeAttributeValue = (value: OtlpAttribute['value']) => Result.Result<SafeStringValue, Schema.SchemaError>;
-
-const sanitizeKnownAttribute = (
-  attribute: OtlpAttribute,
-  key: TelemetryAttribute['key'],
-  decode: DecodeAttributeValue,
-): TelemetryAttribute | undefined => {
-  const value = Result.getOrUndefined(decode(attribute.value));
-
-  return value === undefined ? undefined : { key, value };
-};
-
-const sanitizeComparisonAttribute = (attribute: OtlpAttribute): TelemetryAttribute | undefined => {
-  switch (attribute.key) {
-    case 'comparison.package.name':
-      return sanitizeKnownAttribute(attribute, attribute.key, decodeComparisonPackage);
-    case 'comparison.version.from':
-    case 'comparison.version.to':
-      return sanitizeKnownAttribute(attribute, attribute.key, decodeComparisonVersion);
-    case 'comparison.requested.from':
-    case 'comparison.requested.to':
-      return sanitizeKnownAttribute(attribute, attribute.key, decodeComparisonSelector);
-    default:
-      return undefined;
-  }
-};
-
-const sanitizeErrorAttributeEntry = (
-  attribute: OtlpAttribute,
-  key: ErrorAttributeKey,
-): TelemetryAttribute | undefined => {
-  const raw = Result.getOrUndefined(decodeErrorAttributeString(attribute.value))?.stringValue;
-  const value = raw === undefined ? undefined : sanitizeErrorAttribute(key, raw);
-
-  return value === undefined ? undefined : { key, value: { stringValue: value } };
-};
+const isApplicationAttributeKey = Schema.is(TelemetryAttributeKeySchema);
 
 const sanitizeAttribute = (attribute: OtlpAttribute): TelemetryAttribute | undefined => {
-  if (isErrorAttributeKey(attribute.key)) return sanitizeErrorAttributeEntry(attribute, attribute.key);
+  if (!isApplicationAttributeKey(attribute.key)) return undefined;
+  const raw = Result.getOrUndefined(decodeErrorAttributeString(attribute.value))?.stringValue;
+  const value = sanitizeApplicationField(attribute.key, raw);
 
-  switch (attribute.key) {
-    case 'traceId':
-      return sanitizeKnownAttribute(attribute, 'traceId', decodeTraceIdAttribute);
-    case 'spanId':
-    case 'parentSpanId':
-      return sanitizeKnownAttribute(attribute, attribute.key, decodeSpanIdAttribute);
-    case 'reason':
-      return sanitizeKnownAttribute(attribute, 'reason', decodeFailureReason);
-    case 'name':
-      return sanitizeKnownAttribute(attribute, 'name', decodeFailureName);
-    case 'relationship':
-      return sanitizeKnownAttribute(attribute, 'relationship', decodeRelationship);
-    default:
-      return sanitizeComparisonAttribute(attribute);
-  }
+  return value === undefined ? undefined : { key: attribute.key, value: { stringValue: value } };
 };
 
 const sanitizeAttributes = (attributes: ReadonlyArray<OtlpAttribute>): ReadonlyArray<TelemetryAttribute> => {
