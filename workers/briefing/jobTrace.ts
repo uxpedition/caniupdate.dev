@@ -8,8 +8,15 @@ import {
   type TelemetryRuntimeOptions,
   type TelemetryWaitUntil,
 } from '../../shared/telemetry/telemetry';
+import type { TelemetryFailureReasonSchema } from '../../shared/telemetry/telemetry.schema';
 import { comparisonTelemetryAttributes } from '../../shared/telemetry/telemetryComparison';
 import { decodeTelemetryHeaders } from '../../shared/telemetry/telemetryConfig.defs';
+import type {
+  TelemetryOperationSchema,
+  TelemetryOutcomeSchema,
+  TelemetrySettlementSchema,
+  TelemetryTriggerSchema,
+} from '../../shared/telemetry/telemetryFields';
 import { decodeTraceContext } from '../../shared/telemetry/traceContext.defs';
 import type { TraceContext } from '../../shared/telemetry/traceContext.defs';
 
@@ -18,6 +25,73 @@ export interface GenerationTraceStorage {
 }
 
 type TraceableRecord = { traceContext?: TraceContext; packet?: BriefingEvidence };
+
+export type BriefingFlowEvent =
+  | 'briefing.job.settled'
+  | 'briefing.job.recovery'
+  | 'briefing.dispatch.decision'
+  | 'briefing.queue.decision';
+
+export type BriefingSettlement = typeof TelemetrySettlementSchema.Type;
+
+export type BriefingTrigger = typeof TelemetryTriggerSchema.Type;
+
+export type BriefingOutcome = typeof TelemetryOutcomeSchema.Type;
+
+/** Resolved comparison identity plus the generation root, linked rather than parented: flow records run off-span. */
+export type BriefingFlowCorrelation = Partial<
+  Record<
+    'comparison.package.name' | 'comparison.version.from' | 'comparison.version.to' | 'linkedTraceId' | 'linkedSpanId',
+    string
+  >
+>;
+
+/** Every field is a fixed enum or a bounded decimal; anything else is discarded by the shared allowlist. */
+export type BriefingFlowFields = BriefingFlowCorrelation & {
+  readonly outcome?: BriefingOutcome;
+  readonly operation?: typeof TelemetryOperationSchema.Type;
+  readonly reason?: typeof TelemetryFailureReasonSchema.Type;
+  readonly trigger?: BriefingTrigger;
+  readonly settlement?: BriefingSettlement;
+  readonly attempt?: string;
+  readonly revision?: string;
+};
+
+/** Identity from the packet and the generation root from the trace context; each is absent when not resolvable. */
+export const flowCorrelation = (record: TraceableRecord | undefined): BriefingFlowCorrelation => {
+  if (record === undefined) return {};
+
+  const identity = record.packet === undefined ? {} : comparisonTelemetryAttributes(record.packet);
+  const generation = decodeTraceContext(record.traceContext);
+
+  return generation === undefined
+    ? identity
+    : { ...identity, linkedTraceId: generation.traceId, linkedSpanId: generation.spanId };
+};
+
+/**
+ * Best-effort diagnostic record. It is never awaited, so the job lock and the Queue ack do not wait on the exporter,
+ * and a sink or runtime failure is swallowed. `waitUntil` keeps the flush alive past the response when available.
+ */
+export const emitBriefingFlowEvent = (
+  event: BriefingFlowEvent,
+  fields: BriefingFlowFields,
+  options: TelemetryRuntimeOptions,
+  waitUntil?: TelemetryWaitUntil,
+): void => {
+  // Every synchronous failure here (effect construction, runtime setup, or the lifecycle hook) stays inside this
+  // function: the caller's ack, lock, and terminal ordering must not depend on a diagnostic.
+  try {
+    const emission = runWithTelemetry(Effect.logInfo(event).pipe(Effect.annotateLogs(fields)), options, waitUntil).then(
+      () => undefined,
+      () => undefined,
+    );
+
+    waitUntil?.(emission);
+  } catch {
+    // Dropped: a failed diagnostic is not a failed job.
+  }
+};
 
 type WritableTelemetryOptions = { -readonly [K in keyof TelemetryRuntimeOptions]: TelemetryRuntimeOptions[K] };
 

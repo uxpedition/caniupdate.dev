@@ -16,7 +16,7 @@ declare module 'vitest' {
   }
 }
 
-type WorkerBundle = Record<string, { type: 'esm'; contents: string }>;
+export type WorkerBundle = Record<string, { type: 'esm'; contents: string }>;
 
 let preparedBundle: { dir: string; modules: Promise<WorkerBundle> } | undefined;
 

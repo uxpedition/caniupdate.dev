@@ -42,7 +42,8 @@ import { installBriefingSchema } from '../../../test/helpers/briefingDatabase.ha
 import type { BriefingJobMessage } from '../jobState';
 import { CLOCK_MODULE, CLOCK_SCRIPT } from './clock.harness';
 import { FIXTURE_API_KEY, MODEL, SOURCE_ID, providerFixture } from './provider.stub';
-import { loadWorkerBundle } from './workerBundle';
+import { TERMINAL_PUT_FAULT_MODULE, TERMINAL_PUT_FAULT_SCRIPT } from './terminalPutFault.harness';
+import { loadWorkerBundle, type WorkerBundle } from './workerBundle';
 
 /** Any non-null, non-function container: the gate before probing unconverted wire bodies. */
 const isContainerObject = Schema.is(
@@ -313,12 +314,16 @@ export type RuntimeFixture = {
 
 export type RuntimeOptions = {
   readonly stateDir: string;
+  /** Loopback capture only when a local smoke needs actual Worker OTLP output. */
+  readonly telemetryEndpoint?: string;
   /** A runtime started without the three AI settings, to prove D1 reuse needs no provider configuration. */
   readonly aiConfig?: boolean;
   readonly producer?: boolean;
   readonly consumer?: boolean;
   /** Opt in to test-only clock control; native real-time guards leave this unset. */
   readonly controlledTime?: boolean;
+  /** Refuse one terminal put in a test-only job subclass; used without clock control. */
+  readonly terminalPutFailure?: boolean;
   /** Off when a case deliberately removed the table and the restart must observe that state. */
   readonly installSchema?: boolean;
   /** Which shipped configuration's vars to run with. Defaults to the local default environment. */
@@ -329,6 +334,43 @@ export type RuntimeOptions = {
    */
   readonly allowedOrigin?: string;
 };
+
+const configureFixtureTelemetry = (
+  env: NonNullable<MiniflareWorkerConfig['env']>,
+  endpoint: string | undefined,
+): void => {
+  if (endpoint === undefined) return;
+  const url = new URL(endpoint);
+
+  if (
+    url.protocol !== 'http:' ||
+    url.hostname !== '127.0.0.1' ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  )
+    throw new Error('Smoke telemetry requires a loopback HTTP collector without credentials');
+  env.OTEL_EXPORTER_OTLP_ENDPOINT = { type: 'text', value: url.href.replace(/\/$/, '') };
+};
+
+function fixtureManifest(modules: WorkerBundle, options: RuntimeOptions): MiniflareWorkerConfig['manifest'] {
+  if (options.terminalPutFailure) {
+    return {
+      mainModule: TERMINAL_PUT_FAULT_MODULE,
+      modules: { ...modules, [TERMINAL_PUT_FAULT_MODULE]: { type: 'esm', contents: TERMINAL_PUT_FAULT_SCRIPT } },
+    };
+  }
+
+  if (options.controlledTime) {
+    return {
+      mainModule: CLOCK_MODULE,
+      modules: { ...modules, [CLOCK_MODULE]: { type: 'esm', contents: CLOCK_SCRIPT } },
+    };
+  }
+
+  return { mainModule: 'index.js', modules };
+}
 
 export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixture> {
   const modules = await loadWorkerBundle();
@@ -346,6 +388,8 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
 
   if (options.producer !== false) briefingEnv.BRIEFING_QUEUE = { type: 'queue', name: QUEUE_NAME };
 
+  configureFixtureTelemetry(briefingEnv, options.telemetryEndpoint);
+
   if (options.aiConfig !== false) {
     briefingEnv.AI_BRIEFING_ENDPOINT = { type: 'text', value: providerFixture().endpoint };
     briefingEnv.AI_BRIEFING_API_KEY = { type: 'text', value: FIXTURE_API_KEY };
@@ -361,12 +405,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<RuntimeFixt
       BRIEFING_JOBS: { type: 'durable-object', worker: WORKER_NAME, exportName: 'BriefingJob' },
     },
     exports: { BriefingJob: { type: 'durable-object', storage: 'sqlite' } },
-    manifest: options.controlledTime
-      ? {
-          mainModule: CLOCK_MODULE,
-          modules: { ...modules, [CLOCK_MODULE]: { type: 'esm', contents: CLOCK_SCRIPT } },
-        }
-      : { mainModule: 'index.js', modules },
+    manifest: fixtureManifest(modules, options),
   };
 
   // Only a consumer runtime declares the queue trigger; a producer-only runtime leaves `triggers` absent.

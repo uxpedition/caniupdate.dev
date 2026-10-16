@@ -10,7 +10,7 @@
 
 import type * as Cloudflare from '@cloudflare/workers-types';
 import { DurableObject } from 'cloudflare:workers';
-import { Schema } from 'effect';
+import { Schema, type Types } from 'effect';
 
 import { briefingEvidenceHash, readBriefingConfig } from '../../server/comparison/briefing/generation';
 import { isBriefingStoreFailure, readStoredBriefing, saveBriefing } from '../../server/comparison/briefing/store';
@@ -24,6 +24,7 @@ import type {
 import type { BriefingJobEvent } from '../../shared/comparison/briefing/briefingJob.defs';
 import type { BriefingServiceResult } from '../../shared/comparison/briefing/briefingService.defs';
 import { runWithTelemetry } from '../../shared/telemetry/telemetry';
+import { telemetryDecimal } from '../../shared/telemetry/telemetryFields';
 import type { TraceContext } from '../../shared/telemetry/traceContext.defs';
 import { dispatchBriefingJob } from './jobDispatch';
 import {
@@ -33,20 +34,33 @@ import {
   pendingSubmission,
   terminalJobRecord,
   unavailableEvent,
-  type BriefingEnv,
-  type BriefingJobMessage,
-  type JobRecord,
-  type TerminalOutcome,
+} from './jobState';
+import type {
+  BriefingEnv,
+  BriefingJobMessage,
+  BriefingQueueDelivery,
+  JobRecord,
+  StoredLookup,
+  TerminalOutcome,
 } from './jobState';
 import {
   briefingTelemetryOptions,
+  emitBriefingFlowEvent,
   ensureGenerationTraceContext,
+  flowCorrelation,
   runTracedGeneration,
+  type BriefingFlowCorrelation,
+  type BriefingFlowEvent,
+  type BriefingFlowFields,
+  type BriefingOutcome,
+  type BriefingSettlement,
+  type BriefingTrigger,
   type GenerationTraceEvent,
   type RunningLease,
 } from './jobTrace';
 
 // These globals belong to workerd; keep their types local instead of replacing Node's globals.
+
 type Request = Cloudflare.Request;
 
 type Response = Cloudflare.Response;
@@ -76,16 +90,6 @@ const SOCKET_FAILURE_REASON = 'briefing unavailable';
 
 const TEXT_HEADERS = { 'content-type': 'text/plain; charset=utf-8' };
 
-/**
- * One D1 read, three policies: `run` continues only on a miss, `submit` rejects on failure, and `reconciledSnapshot`
- * refuses to destroy state on a transient failure. Keeping the outcomes apart here stops those policies from
- * collapsing into one.
- */
-type StoredLookup =
-  | { readonly outcome: 'found'; readonly briefing: AvailablePackageBriefing }
-  | { readonly outcome: 'missing' }
-  | { readonly outcome: 'failed' };
-
 export class BriefingJob extends DurableObject<BriefingEnv> {
   /**
    * Serialises only the decision sections — accepting a submission, claiming the lease, committing a terminal state.
@@ -109,6 +113,29 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
 
   #waitUntil = this.ctx.waitUntil.bind(this.ctx);
 
+  /** Best-effort and never awaited: a diagnostic write must not extend the job lock or change the result. */
+  #emit(event: BriefingFlowEvent, fields: BriefingFlowFields): void {
+    emitBriefingFlowEvent(
+      event,
+      fields,
+      briefingTelemetryOptions(this.env.OTEL_EXPORTER_OTLP_ENDPOINT, this.env.OTEL_EXPORTER_OTLP_HEADERS),
+      this.#waitUntil,
+    );
+  }
+
+  /** A lease or reconcile decision; `record` is the state the decision was made against, when one existed. */
+  #recovery(record: JobRecord | undefined, trigger: BriefingTrigger, outcome: BriefingOutcome): void {
+    const fields: Types.Mutable<BriefingFlowFields> = {
+      ...flowCorrelation(record),
+      operation: 'reconcile',
+      trigger,
+      outcome,
+    };
+
+    if (record !== undefined) fields.revision = telemetryDecimal(record.revision);
+    this.#emit('briefing.job.recovery', fields);
+  }
+
   #ensureTraceContext(record: JobRecord, event: GenerationTraceEvent) {
     return ensureGenerationTraceContext(
       this.ctx.storage,
@@ -120,38 +147,42 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     );
   }
 
-  #isCurrentQueuedDelivery(record: JobRecord | undefined, message: BriefingJobMessage): record is JobRecord {
-    return (
-      record !== undefined &&
-      record.hash === message.hash &&
-      record.generationId === message.generationId &&
-      record.state === 'queued'
-    );
-  }
-
   /** The Queue consumer's entry point: one delivery, one generation. */
-  async run(message: BriefingJobMessage): Promise<BriefingJobEvent> {
+  async run(message: BriefingJobMessage): Promise<BriefingQueueDelivery> {
     const record = await this.#readRecord();
+    const flow = flowCorrelation(record);
 
-    if (!this.#isCurrentQueuedDelivery(record, message)) {
+    if (
+      record === undefined ||
+      record.hash !== message.hash ||
+      record.generationId !== message.generationId ||
+      record.state !== 'queued'
+    ) {
       // A duplicate delivery, a stale generation, or an already-settled job: the owner commits, not this message.
-      return await this.reconciledSnapshot();
+      const sameGeneration =
+        record !== undefined && record.hash === message.hash && record.generationId === message.generationId;
+
+      return { delivery: sameGeneration ? 'duplicate' : 'stale', flow, event: await this.reconciledSnapshot() };
     }
 
+    return { delivery: 'current', flow, event: await this.#generate(record, message) };
+  }
+
+  async #generate(record: JobRecord, message: BriefingJobMessage): Promise<BriefingJobEvent> {
     // D1 first. A hit is the authority and costs nothing; a read failure must never reach the provider.
     const stored = await this.#lookupStored(message.hash);
 
-    if (stored.outcome === 'failed') return await this.#commitUnavailable('cache-error');
+    if (stored.outcome === 'failed') return await this.#commitUnavailable('cache-error', 'storage-failure');
 
-    if (stored.outcome === 'found') return await this.#commitAvailable(stored.briefing);
+    if (stored.outcome === 'found') return await this.#commitAvailable(stored.briefing, 'persisted-result');
 
     const packet = record.packet;
 
-    if (packet === undefined) return await this.#commitUnavailable('cache-error');
+    if (packet === undefined) return await this.#commitUnavailable('cache-error', 'storage-failure');
 
     const config = readBriefingConfig(this.env);
 
-    if (config.status !== 'configured') return await this.#commitUnavailable(config.status);
+    if (config.status !== 'configured') return await this.#commitUnavailable(config.status, config.status);
 
     const lease = await this.#claimRunning(message.generationId, Date.now() + LEASE_MS);
 
@@ -246,7 +277,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     const accepted = await this.#accept(hash, evidence);
 
     // Only the submit that created the generation dispatches it, so a simultaneous second submit adds no message.
-    if (accepted.created) await this.#dispatch();
+    if (accepted.created) await this.#dispatch('submission');
     const submission = pendingSubmission(accepted.record, evidence, this.env.BRIEFING_PUBLIC_URL);
 
     return accepted.generationContext === undefined
@@ -334,7 +365,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
 
     if (stored.outcome === 'missing') {
       // Under the lock already, so the terminal path is entered directly rather than through `#commitTerminal`.
-      return await this.#commitTerminalLocked({ state: 'unavailable', reason: 'cache-error' });
+      return await this.#commitTerminalLocked({ state: 'unavailable', reason: 'cache-error' }, 'storage-failure');
     }
 
     return { status: 'available', revision: record.revision, briefing: stored.briefing };
@@ -347,7 +378,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     if (record === undefined || record.state === 'available' || record.state === 'unavailable') return;
 
     if (record.state === 'queued') {
-      await this.#dispatch();
+      await this.#dispatch('alarm');
 
       return;
     }
@@ -367,6 +398,7 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     if (Date.now() < expiresAt) {
       // Another owner may still be generating; the lease, not this alarm, decides when it is dead.
       await this.ctx.storage.setAlarm(expiresAt);
+      this.#recovery(record, 'alarm', 'running');
 
       return;
     }
@@ -375,26 +407,32 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
 
     switch (stored.outcome) {
       case 'found':
-        await this.#commitAvailable(stored.briefing);
+        await this.#commitAvailable(stored.briefing, 'persisted-result');
+        this.#recovery(record, 'alarm', 'hit');
 
         return;
       case 'missing':
-        await this.#commitUnavailable('timeout');
+        await this.#commitUnavailable('timeout', 'lease-expired');
+        this.#recovery(record, 'alarm', 'miss');
 
         return;
       case 'failed':
-        await this.#commitUnavailable('cache-error');
+        await this.#commitUnavailable('cache-error', 'storage-failure');
+        this.#recovery(record, 'alarm', 'failure');
 
         return;
     }
   }
 
-  async #commitAvailable(value: AvailablePackageBriefing): Promise<BriefingJobEvent> {
-    return await this.#commitTerminal({ state: 'available', briefing: value });
+  async #commitAvailable(value: AvailablePackageBriefing, settlement: BriefingSettlement): Promise<BriefingJobEvent> {
+    return await this.#commitTerminal({ state: 'available', briefing: value }, settlement);
   }
 
-  async #commitUnavailable(reason: BriefingUnavailableReason): Promise<BriefingJobEvent> {
-    return await this.#commitTerminal({ state: 'unavailable', reason });
+  async #commitUnavailable(
+    reason: BriefingUnavailableReason,
+    settlement: BriefingSettlement,
+  ): Promise<BriefingJobEvent> {
+    return await this.#commitTerminal({ state: 'unavailable', reason }, settlement);
   }
 
   /**
@@ -405,7 +443,11 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     return await this.#synchronized(async () => {
       const record = await this.#readRecord();
 
-      if (record === undefined || record.state !== 'queued' || record.generationId !== generationId) return undefined;
+      if (record === undefined || record.state !== 'queued' || record.generationId !== generationId) {
+        this.#recovery(record, 'queue', 'ignored');
+
+        return undefined;
+      }
 
       const traced = await this.#ensureTraceContext(record, 'briefing.generation.trace_context.attached');
       const fence = (traced.record.fence ?? 0) + 1;
@@ -430,10 +472,16 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     const record = await this.#readRecord();
 
     if (record === undefined || record.state !== 'running' || record.fence !== lease) {
+      this.#recovery(record, 'execution', 'ignored');
+
       return await this.reconciledSnapshot();
     }
 
-    if (result.status === 'unavailable') return await this.#commitUnavailable(result.reason);
+    if (result.status === 'unavailable') {
+      const providerFailed = result.reason === 'provider-error' || result.reason === 'invalid-response';
+
+      return await this.#commitUnavailable(result.reason, providerFailed ? 'provider-failure' : 'generation');
+    }
 
     // The row is written and read back before any terminal event is committed: a refused write is never success.
     let stored: AvailablePackageBriefing;
@@ -443,31 +491,46 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
     } catch (cause) {
       if (!isBriefingStoreFailure(cause)) throw cause;
 
-      return await this.#commitUnavailable('cache-error');
+      return await this.#commitUnavailable('cache-error', 'storage-failure');
     }
 
-    return await this.#commitAvailable(stored);
+    return await this.#commitAvailable(stored, 'generation');
   }
 
   /** The single terminal path, entered under the job lock. */
-  async #commitTerminal(outcome: TerminalOutcome): Promise<BriefingJobEvent> {
-    return await this.#synchronized(async () => await this.#commitTerminalLocked(outcome));
+  async #commitTerminal(outcome: TerminalOutcome, settlement: BriefingSettlement): Promise<BriefingJobEvent> {
+    return await this.#synchronized(async () => await this.#commitTerminalLocked(outcome, settlement));
   }
 
   /**
    * First writer wins, the packet is dropped, the recovery alarm is cleared, and every subscriber is sent this
    * terminal frame and closed. Called with the job lock held, so no subscriber's own snapshot can land after it.
+   * The settled record is emitted only after the terminal put is durable; a repeated read of a settled job emits nothing.
    */
-  async #commitTerminalLocked(outcome: TerminalOutcome): Promise<BriefingJobEvent> {
+  async #commitTerminalLocked(outcome: TerminalOutcome, settlement: BriefingSettlement): Promise<BriefingJobEvent> {
     const record = await this.#readRecord();
 
     if (record === undefined) throw new Error(`No briefing job to settle as ${outcome.state}`);
 
     if (record.state === 'available' || record.state === 'unavailable') return await this.#terminalEvent(record);
 
+    // Captured before the put: the terminal record drops the pending packet and the generation link.
+    const flow = flowCorrelation(record);
     const settled = terminalJobRecord(record, outcome);
 
-    await this.ctx.storage.put(JOB_KEY, settled);
+    await this.#putSettled(flow, record, settled);
+
+    const fields: Types.Mutable<BriefingFlowFields> = {
+      ...flow,
+      operation: 'generation',
+      outcome: outcome.state,
+      settlement,
+      revision: telemetryDecimal(settled.revision),
+    };
+
+    if (outcome.state === 'unavailable') fields.reason = outcome.reason;
+    this.#emit('briefing.job.settled', fields);
+
     await this.ctx.storage.deleteAlarm();
 
     const event: BriefingJobEvent =
@@ -481,17 +544,42 @@ export class BriefingJob extends DurableObject<BriefingEnv> {
   }
 
   /**
+   * The terminal put is the settlement. A refused write settled nothing: it is classified from the pending record's
+   * flow, then the original error is surfaced unchanged.
+   */
+  async #putSettled(flow: BriefingFlowCorrelation, pending: JobRecord, settled: JobRecord): Promise<void> {
+    try {
+      await this.ctx.storage.put(JOB_KEY, settled);
+    } catch (cause) {
+      this.#emit('briefing.job.recovery', {
+        ...flow,
+        operation: 'write',
+        outcome: 'failure',
+        reason: 'storage-write',
+        settlement: 'storage-failure',
+        revision: telemetryDecimal(pending.revision),
+      });
+
+      throw cause;
+    }
+  }
+
+  /**
    * Record one dispatch attempt and arm the recovery alarm before the message is sent, so a Queue outage is retried
    * by the alarm rather than leaving the job queued forever. Terminal after `MAX_DISPATCH_ATTEMPTS`.
    */
-  async #dispatch(): Promise<void> {
-    await dispatchBriefingJob({
-      storage: this.ctx.storage,
-      queue: this.env.BRIEFING_QUEUE,
-      read: async () => await this.#readRecord(),
-      locked: async (section) => await this.#synchronized(section),
-      commitUnavailable: async (reason) => await this.#commitUnavailable(reason),
-    });
+  async #dispatch(trigger: BriefingTrigger): Promise<void> {
+    await dispatchBriefingJob(
+      {
+        storage: this.ctx.storage,
+        queue: this.env.BRIEFING_QUEUE,
+        read: () => this.#readRecord(),
+        locked: (section) => this.#synchronized(section),
+        settle: () => this.#commitUnavailable('provider-error', 'dispatch-exhausted'),
+        emit: (fields) => this.#emit('briefing.dispatch.decision', fields),
+      },
+      trigger,
+    );
   }
 
   async #readRecord(): Promise<JobRecord | undefined> {

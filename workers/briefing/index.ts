@@ -13,8 +13,10 @@ import type { BriefingEvidence } from '../../shared/comparison/briefing/briefing
 import type { BriefingServiceResult } from '../../shared/comparison/briefing/briefingService.defs';
 import { decodeStoredBriefingResult } from '../../shared/comparison/briefing/storedBriefing.defs';
 import type { StoredBriefingResult } from '../../shared/comparison/briefing/storedBriefing.defs';
+import type { TelemetryRuntimeOptions, TelemetryWaitUntil } from '../../shared/telemetry/telemetry';
 import { briefingAllowedOrigins } from './allowedOrigins';
-import { BriefingSubmissionError, type BriefingEnv, type BriefingJobMessage } from './jobState';
+import { BriefingSubmissionError, decodeQueueJob, type BriefingEnv, type BriefingJobMessage } from './jobState';
+import { briefingTelemetryOptions, emitBriefingFlowEvent, type BriefingFlowFields } from './jobTrace';
 
 // Wrangler requires every Durable Object class named by a binding or a migration to be exported from the entrypoint
 // module, so the object is re-exported here rather than only from its own module.
@@ -41,24 +43,54 @@ const EVENTS_PATH = /^\/api\/briefings\/([0-9a-f]{64})\/events$/;
 
 const decodeEvidence = Schema.decodeUnknownSync(BriefingEvidenceSchema, { errors: 'all' });
 
-// The Queue is an internal wake-up channel, so a body that is not a job pointer is dropped rather than retried: it
-// could only address an object with no evidence and no generation.
-const JobMessageSchema = Schema.Struct({
-  hash: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/, { expected: '64 lowercase hexadecimal characters' })),
-  generationId: Schema.Natural,
-});
+/** One Queue decision: the fixed `queue` operation and trigger are supplied here, never by the caller. */
+const emitQueueDecision = (
+  fields: BriefingFlowFields,
+  options: TelemetryRuntimeOptions,
+  waitUntil: TelemetryWaitUntil,
+): void => {
+  emitBriefingFlowEvent(
+    'briefing.queue.decision',
+    { ...fields, operation: 'queue', trigger: 'queue' },
+    options,
+    waitUntil,
+  );
+};
 
-const decodeJobMessage = Schema.decodeUnknownSync(JobMessageSchema, { errors: 'all' });
+/**
+ * Settles one Queue delivery. A body that is not a job pointer is acked rather than retried; a duplicate or stale
+ * generation is acked once the object has classified it; only an unexpected failure is retried. The decoded pointer
+ * is the only value the object receives.
+ */
+const settleQueueDelivery = async (
+  message: Cloudflare.Message<BriefingJobMessage>,
+  env: BriefingEnv,
+  options: TelemetryRuntimeOptions,
+  waitUntil: TelemetryWaitUntil,
+): Promise<void> => {
+  const job = decodeQueueJob(message.body);
 
-function isJobMessage(value: unknown): value is BriefingJobMessage {
-  try {
-    decodeJobMessage(value);
+  if (job === undefined) {
+    emitQueueDecision({ outcome: 'ignored', reason: 'malformed' }, options, waitUntil);
+    message.ack();
 
-    return true;
-  } catch {
-    return false;
+    return;
   }
-}
+
+  try {
+    const jobs = env.BRIEFING_JOBS;
+    const { delivery, flow } = await jobs.get(jobs.idFromName(job.hash)).run(job);
+
+    const decision: BriefingFlowFields =
+      delivery === 'current' ? { outcome: 'ack' } : { outcome: 'ignored', reason: delivery };
+
+    emitQueueDecision({ ...flow, ...decision }, options, waitUntil);
+    message.ack();
+  } catch {
+    emitQueueDecision({ outcome: 'retry', reason: 'unexpected' }, options, waitUntil);
+    message.retry();
+  }
+};
 
 /**
  * Nuxt's private submission path. It only addresses the job that the decoded packet hashes to; the object itself
@@ -147,20 +179,12 @@ export default {
   },
 
   /** One delivery at a time; the object decides whether this generation still needs work. */
-  async queue(batch: MessageBatch, env: BriefingEnv): Promise<void> {
-    for (const message of batch.messages) {
-      if (!isJobMessage(message.body)) {
-        message.ack();
-        continue;
-      }
+  async queue(batch: MessageBatch, env: BriefingEnv, ctx: Cloudflare.ExecutionContext): Promise<void> {
+    const options = briefingTelemetryOptions(env.OTEL_EXPORTER_OTLP_ENDPOINT, env.OTEL_EXPORTER_OTLP_HEADERS);
+    const waitUntil = ctx.waitUntil.bind(ctx);
 
-      try {
-        const jobs = env.BRIEFING_JOBS;
-        await jobs.get(jobs.idFromName(message.body.hash)).run(message.body);
-        message.ack();
-      } catch {
-        message.retry();
-      }
+    for (const message of batch.messages) {
+      await settleQueueDelivery(message, env, options, waitUntil);
     }
   },
 };
