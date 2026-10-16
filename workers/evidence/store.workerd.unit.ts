@@ -99,6 +99,34 @@ async function seedLegacyCache(fixture: EvidenceCacheFixture): Promise<void> {
 }
 
 describe('evidence cache in real SQLite workerd storage', () => {
+  it('preserves fresh and cached values when a diagnostic observer fails', async () => {
+    await withFixture(async (fixture) => {
+      const fresh = await fixture.call({
+        operation: 'load',
+        key: 'diagnostic-isolation',
+        value: 'original',
+        ttlMs: null,
+        cacheable: true,
+        validation: 'string',
+        observationFailure: true,
+      });
+
+      expect(fresh).toEqual({ ok: true, value: 'original', loaderCalls: 1 });
+
+      const cached = await fixture.call({
+        operation: 'load',
+        key: 'diagnostic-isolation',
+        value: 'replacement',
+        ttlMs: null,
+        cacheable: true,
+        validation: 'string',
+        observationFailure: true,
+      });
+
+      expect(cached).toEqual({ ok: true, value: 'original', loaderCalls: 1 });
+    });
+  }, 120_000);
+
   it('adopts populated legacy tables without regenerating or changing cached data', async () => {
     await withFixture(
       async (fixture) => {
@@ -267,6 +295,7 @@ describe('evidence cache in real SQLite workerd storage', () => {
     await withFixture(async (fixture) => {
       const result = await fixture.call({
         operation: 'coalesce',
+        observationFailure: true,
         key: 'coalesce-value',
         value: 'shared',
         rejectSecond: false,
@@ -288,6 +317,7 @@ describe('evidence cache in real SQLite workerd storage', () => {
     await withFixture(async (fixture) => {
       const result = await fixture.call({
         operation: 'coalesce',
+        observationFailure: true,
         key: 'coalesce-validation',
         value: 'shared',
         rejectSecond: true,
@@ -316,6 +346,7 @@ describe('evidence cache in real SQLite workerd storage', () => {
 
       const result = await fixture.call({
         operation: 'coalesce',
+        observationFailure: true,
         key: 'coalesce-write-error',
         value: 'shared',
         rejectSecond: false,

@@ -9,6 +9,7 @@ import { Schema } from 'effect';
 import { EvidenceStorageCorruptionError, EvidenceStorageError } from '../../server/comparison/evidence/errors';
 import type {
   ComparisonEvidenceCache,
+  ComparisonEvidenceCacheDecision,
   ComparisonEvidenceCacheOptions,
 } from '../../server/comparison/evidence/services';
 import { evidenceChunks, evidenceRecords } from '../../shared/db/evidenceSchema';
@@ -26,6 +27,17 @@ const CHUNK_UTF16_UNITS = Math.floor(CHUNK_BYTES / 3);
 
 /** Persisted chunk payloads stay strings; anything else on the row is corruption. */
 const isScalarString = Schema.is(Schema.String);
+
+function observeCacheDecision<T>(
+  options: ComparisonEvidenceCacheOptions<T>,
+  decision: ComparisonEvidenceCacheDecision,
+): void {
+  try {
+    options.observe?.(decision);
+  } catch {
+    // A diagnostic consumer cannot prevent a loader, replace a cached value, or poison a shared promise.
+  }
+}
 
 /** SQLite-backed cache used by one PackageEvidence object. Rows and chunks are replaced atomically. */
 export class SqlEvidenceCache implements ComparisonEvidenceCache {
@@ -51,6 +63,8 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
       if (!isValidValue(value, options))
         throw new EvidenceStorageCorruptionError({ detail: 'Evidence value does not match its schema' });
 
+      observeCacheDecision(options, 'coalesced');
+
       return value;
     }
 
@@ -61,9 +75,12 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
       if (!isValidValue(cached.value, options))
         throw new EvidenceStorageCorruptionError({ detail: 'Evidence value does not match its schema' });
 
+      observeCacheDecision(options, 'hit');
+
       return cached.value;
     }
 
+    observeCacheDecision(options, 'miss');
     const pending = this.populate(key, loader, options);
     this.inFlight.set(key, pending);
 

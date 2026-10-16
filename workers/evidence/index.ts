@@ -57,7 +57,7 @@ const responseAdmission = new BoundedResponseAdmission();
 // Coalesced callers share work, but their request bodies and eventual responses still occupy memory.
 const MAX_PENDING_EVIDENCE_REQUESTS = 16;
 
-const requestAdmission = new BoundedResponseAdmission(MAX_PENDING_EVIDENCE_REQUESTS);
+const requestAdmission = new BoundedResponseAdmission(MAX_PENDING_EVIDENCE_REQUESTS, 'request');
 
 type InFlightValue = Promise<PackageMeasurementsResponse | BriefingEvidence>;
 

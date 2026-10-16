@@ -47,7 +47,8 @@ export const cachedTarball = (
 
   if (services?.cache === undefined || !validUrl) return inspect;
 
-  const result = runCached(
+  return runCached(
+    'tarball',
     cacheKey('archive', {
       revision: ARCHIVE_INSPECTOR_REVISION,
       integrity:
@@ -57,8 +58,10 @@ export const cachedTarball = (
     }),
     inspect,
     services,
-    { ttlMs: null, cacheable: (value) => value.status !== 'unavailable', isValid: Schema.is(PackageTarballSchema) },
-  );
-
-  return result.pipe(Effect.map((value) => ({ ...value, url: manifest.dist.tarball })));
+    {
+      ttlMs: null,
+      cacheable: (value) => value.status !== 'unavailable',
+      isValid: Schema.is(PackageTarballSchema),
+    },
+  ).pipe(Effect.map((value) => ({ ...value, url: manifest.dist.tarball })));
 };

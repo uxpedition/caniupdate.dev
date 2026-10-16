@@ -182,6 +182,9 @@ export class EvidenceCacheFixture extends DurableObject {
           ttlMs: command.ttlMs,
           cacheable: () => command.cacheable,
           isValid: (value: unknown): value is string => command.validation === 'string' && isScalarString(value),
+          observe: () => {
+            if (command.observationFailure === true) throw new Error('Fixture diagnostic observer failed');
+          },
         };
 
         return await this.cacheClient.load(
@@ -238,12 +241,18 @@ export class EvidenceCacheFixture extends DurableObject {
       ttlMs: null,
       cacheable: () => true,
       isValid: (value: unknown): value is string => isScalarString(value),
+      observe: () => {
+        if (command.observationFailure === true) throw new Error('Fixture diagnostic observer failed');
+      },
     };
 
     const secondOptions: ComparisonEvidenceCacheOptions<string> = {
       ttlMs: null,
       cacheable: () => true,
       isValid: (value: unknown): value is string => !command.rejectSecond && isScalarString(value),
+      observe: () => {
+        if (command.observationFailure === true) throw new Error('Fixture diagnostic observer failed');
+      },
     };
 
     const first = this.cacheClient.load(

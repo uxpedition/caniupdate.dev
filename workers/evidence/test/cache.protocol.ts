@@ -11,6 +11,7 @@ export const CacheFixtureCommandSchema = Schema.Union([
     ttlMs: TtlMsSchema,
     cacheable: Schema.Boolean,
     validation: Schema.Literals(['string', 'reject']),
+    observationFailure: Schema.optionalKey(Schema.Literal(true)),
   }),
   Schema.Struct({ operation: Schema.Literal('cleanup'), now: Schema.Finite }),
   Schema.Struct({
@@ -25,6 +26,7 @@ export const CacheFixtureCommandSchema = Schema.Union([
     key: Schema.String,
     value: Schema.String,
     rejectSecond: Schema.Boolean,
+    observationFailure: Schema.optionalKey(Schema.Literal(true)),
   }),
   Schema.Struct({
     operation: Schema.Literal('serialization'),

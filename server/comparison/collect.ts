@@ -23,6 +23,7 @@ import {
   toPackageVersion,
   type RegistryVersionManifest,
 } from '../../shared/comparison/package/package.defs';
+import type { TelemetryProviderSchema } from '../../shared/telemetry/telemetryFields';
 import { RegistryRequestError } from '../httpDependencies/npm/errors';
 import { getRegistryJson } from '../httpDependencies/npm/registry';
 import { compareDeclarations } from './declarations/compare';
@@ -39,6 +40,22 @@ export const EVIDENCE_CACHE_MAX_AGE_MS = 300_000;
 
 export const EVIDENCE_COLLECTOR_REVISION = 'comparison-evidence-v1';
 
+type EvidenceProvider = typeof TelemetryProviderSchema.Type;
+
+type ProviderStatus = 'available' | 'partial' | 'unavailable';
+
+// One summary per provider lookup: `unavailable` only when every side is unavailable, `partial` for any other
+// degradation, and nothing when every side is available. Request-wide failures stay on the error path.
+const reportProviderAvailability = (provider: EvidenceProvider, ...statuses: ReadonlyArray<ProviderStatus>) => {
+  if (statuses.every((status) => status === 'available')) return Effect.void;
+
+  const outcome = statuses.every((status) => status === 'unavailable') ? 'unavailable' : 'partial';
+
+  return Effect.logInfo('evidence.collection.completed').pipe(
+    Effect.annotateLogs({ operation: 'collection', provider, outcome }),
+  );
+};
+
 // The registry does not negotiate content on this route: `install-v1+json` and `application/json` return the
 // same full manifest. Only the packument route abbreviates, so no `Accept` header is sent here.
 const registryVersionManifestRequest = (packageName: string, version: string) =>
@@ -54,6 +71,7 @@ const getManifest = (packageName: string, version: string, services?: Comparison
   const request = registryVersionManifestRequest(packageName, version);
 
   const cached = runCached(
+    'registry',
     cacheKey('manifest', { revision: EVIDENCE_COLLECTOR_REVISION, packageName, version }),
     request,
     services,
@@ -118,6 +136,7 @@ const cachedVulnerabilities = (
   services?: ComparisonEvidenceServices,
 ) =>
   runCached(
+    'osv',
     cacheKey('osv', { revision: EVIDENCE_COLLECTOR_REVISION, packageName, fromVersion, toVersion }),
     getPackageVulnerabilities(packageName, fromVersion, toVersion),
     services,
@@ -126,10 +145,11 @@ const cachedVulnerabilities = (
       cacheable: (value) => value.from.status === 'available' && value.to.status === 'available',
       isValid: Schema.is(Schema.Struct({ from: PackageVulnerabilitiesSchema, to: PackageVulnerabilitiesSchema })),
     },
-  );
+  ).pipe(Effect.tap((value) => reportProviderAvailability('osv', value.from.status, value.to.status)));
 
 const cachedBundleVersion = (packageName: string, version: string, services?: ComparisonEvidenceServices) =>
   runCached(
+    'bundle',
     cacheKey('bundle', { revision: EVIDENCE_COLLECTOR_REVISION, packageName, version }),
     getVersionBundleSize(packageName, version),
     services,
@@ -147,6 +167,7 @@ const cachedReleaseNotes = (
   services?: ComparisonEvidenceServices,
 ) =>
   runCached(
+    'release-notes',
     cacheKey('github', { revision: EVIDENCE_COLLECTOR_REVISION, packageName, from, to }),
     getPackageReleaseNotes(
       packageName,
@@ -160,7 +181,7 @@ const cachedReleaseNotes = (
       cacheable: (value) => value.status === 'available',
       isValid: Schema.is(PackageReleaseNotesSchema),
     },
-  );
+  ).pipe(Effect.tap((value) => reportProviderAvailability('release-notes', value.status)));
 
 const collectMeasurementEvidence = (
   packageName: string,
@@ -183,7 +204,7 @@ const collectMeasurementEvidence = (
           to: lookups.to.pipe(Effect.flatMap((manifest) => cachedTarball(manifest, services))),
         },
         { concurrency: 2 },
-      ),
+      ).pipe(Effect.tap((sides) => reportProviderAvailability('tarball', sides.from.status, sides.to.status))),
       vulnerabilities: versions.pipe(
         Effect.flatMap((pair) => cachedVulnerabilities(packageName, pair.from, pair.to, services)),
       ),
@@ -197,6 +218,7 @@ const collectMeasurementEvidence = (
             { concurrency: 2 },
           ),
         ),
+        Effect.tap((sides) => reportProviderAvailability('bundle', sides.from.status, sides.to.status)),
       ),
     },
     { concurrency: 3 },
