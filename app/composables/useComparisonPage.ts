@@ -2,10 +2,12 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query';
 import type { QueryClient } from '@tanstack/vue-query';
 import type { H3Event } from 'h3';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
-import { computed, type MaybeRefOrGetter } from 'vue';
+import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue';
 
 import { useNuxtApp, useRequestEvent, useRequestFetch } from '#imports';
+import type { PackageMeasurementsResponse } from '#shared/comparison/comparison.defs';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
+import type { ComparisonTierTelemetry } from '~/composables/comparisonPageTelemetry';
 import { prefetchStoredComparison, readStoredComparisonBriefing } from '~/composables/comparisonSsrPrefetch';
 import { packageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
 import type { PackageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
@@ -29,6 +31,35 @@ const prefetchDeclarations = async (queryClient: QueryClient, declarationsOption
       queryClient.removeQueries({ queryKey: declarationsOptions.queryKey });
     }
   }
+};
+
+const useComparisonMeasurementsQuery = (
+  requestFetch: NuxtRequestFetch,
+  packageName: MaybeRefOrGetter<string>,
+  fromVersion: MaybeRefOrGetter<string>,
+  toVersion: MaybeRefOrGetter<string>,
+  tierTelemetry?: ComparisonTierTelemetry,
+) => {
+  const queryClient = useQueryClient();
+  const serverPrefetched = ref(false);
+  const options = packageMeasurementsQueryOptions(requestFetch, packageName, fromVersion, toVersion, tierTelemetry);
+  const query = useQuery(options);
+
+  // SSR observers keep their initial snapshot after the request cache is populated.
+  const measurements = computed(() => {
+    if (!import.meta.server || !serverPrefetched.value) return query.data.value;
+
+    return queryClient.getQueryData<PackageMeasurementsResponse>(toValue(options.queryKey)) ?? query.data.value;
+  });
+
+  const isPending = computed(() => measurements.value === undefined && query.isPending.value);
+  const isUnavailable = computed(() => query.isError.value && measurements.value === undefined);
+
+  const markServerPrefetched = () => {
+    serverPrefetched.value = import.meta.server;
+  };
+
+  return { measurements, isPending, isUnavailable, markServerPrefetched };
 };
 
 /** Create every reactive query synchronously before the page composable awaits server work. */
@@ -55,28 +86,35 @@ const useComparisonPageQueries = (
     toVersion,
     tierTelemetry,
   );
+
   const declarationsQuery = useQuery(declarationsOptions);
   const declarations = computed(() => declarationsQuery.data.value);
+  const isDeclarationsPending = computed(() => declarations.value === undefined && declarationsQuery.isPending.value);
   const resolved = computed(() => resolvedBriefingVersions(declarations.value));
   const resolvedFrom = computed(() => resolved.value.from);
   const resolvedTo = computed(() => resolved.value.to);
 
-  const measurementsQuery = useQuery(
-    packageMeasurementsQueryOptions(requestFetch, packageName, resolvedFrom, resolvedTo, tierTelemetry),
+  const measurements = useComparisonMeasurementsQuery(
+    requestFetch,
+    packageName,
+    resolvedFrom,
+    resolvedTo,
+    tierTelemetry,
   );
-  const measurements = computed(() => measurementsQuery.data.value);
-  const isMeasurementsUnavailable = computed(() => measurementsQuery.isError.value && measurements.value === undefined);
+
   const briefing = useComparisonBriefing(packageName, resolvedFrom, resolvedTo, pageTraceContext);
 
   return {
     declarationsOptions,
     declarationsQuery,
     declarations,
+    isDeclarationsPending,
     resolvedFrom,
     resolvedTo,
-    measurementsQuery,
-    measurements,
-    isMeasurementsUnavailable,
+    measurements: measurements.measurements,
+    isMeasurementsPending: measurements.isPending,
+    isMeasurementsUnavailable: measurements.isUnavailable,
+    markServerMeasurementsPrefetched: measurements.markServerPrefetched,
     briefing,
   };
 };
@@ -122,6 +160,7 @@ export const useComparisonPage = async (pageTraceContext?: TraceContext) => {
   const requestFetch = useRequestFetch();
   const requestEvent = import.meta.server ? useRequestEvent() : undefined;
   const queryClient = useQueryClient();
+
   const queries = useComparisonPageQueries(requestFetch, packageName, fromVersion, toVersion, pageTraceContext);
 
   await prefetchDeclarations(queryClient, queries.declarationsOptions);
@@ -134,15 +173,21 @@ export const useComparisonPage = async (pageTraceContext?: TraceContext) => {
     to: queries.resolvedTo.value,
   });
 
+  queries.markServerMeasurementsPrefetched();
+
+  if (import.meta.server) {
+    queries.briefing.markServerBriefingSeeded();
+  }
+
   return {
     packageName,
     displayFromVersion: computed(() => queries.declarations.value?.from.version ?? fromVersion.value),
     displayToVersion: computed(() => queries.declarations.value?.to.version ?? toVersion.value),
     declarations: queries.declarations,
     measurements: queries.measurements,
-    isDeclarationsPending: computed(() => queries.declarationsQuery.isPending.value),
+    isDeclarationsPending: queries.isDeclarationsPending,
     isDeclarationsError: computed(() => queries.declarationsQuery.isError.value),
-    isMeasurementsPending: computed(() => queries.measurementsQuery.isPending.value),
+    isMeasurementsPending: queries.isMeasurementsPending,
     isMeasurementsUnavailable: queries.isMeasurementsUnavailable,
     briefing: queries.briefing.briefing,
     isBriefingPending: queries.briefing.isBriefingPending,

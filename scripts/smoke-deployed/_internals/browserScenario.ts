@@ -4,7 +4,13 @@ import { chromium, firefox, type Page, type Response as BrowserResponse } from '
 
 import { parseBuildIdentity } from '../../../shared/site/buildIdentity.ts';
 import { installScopedBrowserAccess, SmokeFailure, type SmokeConfig } from './access.ts';
-import { BriefingObserver, decodeSubmission, nextSubmission, type GenerationOutcome } from './briefing.ts';
+import {
+  BriefingObserver,
+  decodeSubmission,
+  isBriefingSubmission,
+  nextSubmission,
+  type GenerationOutcome,
+} from './briefing.ts';
 import {
   decodePackageDeclarationsResponse,
   decodePackageMeasurementsResponse,
@@ -156,15 +162,52 @@ async function waitForComparisonRender(page: Page): Promise<void> {
   await waitForOpaqueSurface(page, '.comparison-shell');
 }
 
+async function waitForStoredBriefing(page: Page): Promise<void> {
+  const briefingRegion = page.locator('[aria-label="AI briefing"]');
+  const disclosure = page.locator('details').filter({ has: briefingRegion });
+  const firstBullet = briefingRegion.locator('li').first();
+
+  await firstBullet.waitFor({ state: 'attached' });
+
+  if (!(await disclosure.evaluate((element) => element.matches('details[open]')))) {
+    await disclosure.locator('summary').click();
+  }
+
+  await firstBullet.waitFor({ state: 'visible' });
+  await waitForOpaqueSurface(page, '[aria-label="AI briefing"]');
+}
+
 async function verifyReload(page: Page, config: SmokeConfig): Promise<GenerationOutcome> {
-  const pending = nextSubmission(page, config).then(decodeSubmission);
-  const [submission] = await Promise.all([pending, page.reload({ waitUntil: 'domcontentloaded' })]);
+  const submissions: BrowserResponse[] = [];
 
-  if (submission.status !== 'available') throw new SmokeFailure('reload-cached-briefing');
+  const recordSubmission = (response: BrowserResponse): void => {
+    if (isBriefingSubmission(config, response.request().method(), response.url())) submissions.push(response);
+  };
 
-  await waitForComparisonRender(page);
+  page.on('response', recordSubmission);
 
-  return { submission: 'available', outcome: 'cached-available', frames: 0 };
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForComparisonRender(page);
+    await waitForStoredBriefing(page);
+    // A seed older than the query stale time refetches during hydration; let that request settle before inspecting.
+    await page.waitForLoadState('networkidle');
+  } finally {
+    page.off('response', recordSubmission);
+  }
+
+  // A fresh seed submits nothing. A stale seed may refetch, and that POST must return the stored result, never a generation.
+  const decoded = await Promise.all(submissions.map((response) => decodeSubmission(response)));
+
+  if (decoded.some((submission) => submission.status !== 'available')) {
+    throw new SmokeFailure('reload-cached-briefing');
+  }
+
+  return {
+    submission: decoded.length === 0 ? 'not-submitted' : 'available',
+    outcome: 'cached-available',
+    frames: 0,
+  };
 }
 
 async function openHomepage(page: Page, config: SmokeConfig, screenshot: string): Promise<void> {

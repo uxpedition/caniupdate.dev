@@ -106,19 +106,20 @@ export async function decodeSubmission(response: BrowserResponse): Promise<Brief
   return submission;
 }
 
-export function nextSubmission(page: Page, config: SmokeConfig): Promise<BrowserResponse> {
-  const pathname = `/api/package/${PACKAGE_NAME}/compare/briefing`;
+/** Matches a browser briefing submission to this scenario's comparison endpoint. */
+export function isBriefingSubmission(config: SmokeConfig, method: string, url: string): boolean {
+  if (method !== 'POST') return false;
 
-  return page.waitForResponse(
-    (response) => {
-      const url = new URL(response.url());
+  const parsed = new URL(url);
 
-      return (
-        response.request().method() === 'POST' &&
-        url.origin === config.frontendOrigin.origin &&
-        url.pathname === pathname
-      );
-    },
-    { timeout: 30_000 },
+  return (
+    parsed.origin === config.frontendOrigin.origin &&
+    parsed.pathname === `/api/package/${PACKAGE_NAME}/compare/briefing`
   );
+}
+
+export function nextSubmission(page: Page, config: SmokeConfig): Promise<BrowserResponse> {
+  return page.waitForResponse((response) => isBriefingSubmission(config, response.request().method(), response.url()), {
+    timeout: 30_000,
+  });
 }
