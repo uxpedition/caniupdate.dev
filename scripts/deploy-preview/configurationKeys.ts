@@ -25,8 +25,4 @@ export function assertCredentialIsolation(environment: NodeJS.ProcessEnv): void 
       'Deployment/private runtime variables must be scoped exactly to stage, never to build or validation jobs',
     );
   }
-
-  if (environment.CI_JOB_NAME === 'build:stage' && environment.NUXT_PUBLIC_SITE_URL !== STAGE_ORIGIN) {
-    throw new Error('stage-build requires the GitLab NUXT_PUBLIC_SITE_URL stage origin');
-  }
 }

@@ -18,7 +18,7 @@ deploy:stage:
   interruptible: false
   needs:
     - pipeline: '$PARENT_PIPELINE_ID'
-      job: build:stage
+      job: build-smoke
   environment:
     name: stage
     url: https://stage.caniupdate.dev

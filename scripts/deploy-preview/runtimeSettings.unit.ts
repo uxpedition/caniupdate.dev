@@ -18,7 +18,7 @@ describe('GitLab private configuration boundaries', () => {
     const privateValue = 'private-fixture-marker';
 
     try {
-      assertCredentialIsolation({ CI_ENVIRONMENT_NAME: 'stage-build', [key]: privateValue });
+      assertCredentialIsolation({ [key]: privateValue });
     } catch (cause) {
       expect(cause).toBeInstanceOf(Error);
       expect(String(cause)).not.toContain(privateValue);

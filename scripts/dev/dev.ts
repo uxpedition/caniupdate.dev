@@ -17,6 +17,7 @@ import { NodeRuntime, NodeServices } from '@effect/platform-node';
 import { Deferred, Effect, PlatformError, Result, Scope, Schema, Stream, Data } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 
+import { parseSiteOrigin } from '../../shared/site/siteUrl.ts';
 import { browserOrigins } from './_internals/browserOrigins.ts';
 import { parseOptions, UsageError, type Options } from './_internals/devOptions.ts';
 import { migrateLocalState } from './_internals/localState.ts';
@@ -153,7 +154,24 @@ const briefingWorkerCommand = (launch: Options) =>
     },
   );
 
-const previewFrontendCommand = (launch: Options) =>
+/**
+ * The origin the preview publishes: `NUXT_PUBLIC_SITE_URL` when set, else `undefined`. An unset origin means no
+ * canonical link, never a guessed one. A set value must be an origin: a malformed one throws, and `program` calls this
+ * before the lock, migrations, or any child process starts.
+ */
+const previewSiteOrigin = (): string | undefined => {
+  const configured = process.env['NUXT_PUBLIC_SITE_URL']?.trim();
+
+  if (!configured) return undefined;
+
+  const parsed = parseSiteOrigin(configured);
+
+  if (!parsed.ok) throw new Error(`NUXT_PUBLIC_SITE_URL ${parsed.reason}.`);
+
+  return parsed.origin;
+};
+
+const previewFrontendCommand = (launch: Options, siteOrigin: string | undefined) =>
   ChildProcess.make(
     process.execPath,
     [
@@ -170,6 +188,7 @@ const previewFrontendCommand = (launch: Options) =>
       String(launch.frontendPort),
       '--inspector-port',
       String(launch.inspectorBase + 2),
+      ...(siteOrigin === undefined ? [] : ['--var', `NUXT_PUBLIC_SITE_URL:${siteOrigin}`]),
       ...(launch.otelEndpoint === undefined
         ? []
         : ['--var', `NUXT_OTEL_ENDPOINT:${launch.otelEndpoint}`, '--var', 'NUXT_PUBLIC_TELEMETRY_ENABLED:true']),
@@ -200,8 +219,8 @@ const nuxtFrontendCommand = (launch: Options) =>
     forceKillAfter: '5 seconds',
   });
 
-const frontendCommand = (launch: Options) => {
-  if (launch.preview) return previewFrontendCommand(launch);
+const frontendCommand = (launch: Options, siteOrigin: string | undefined) => {
+  if (launch.preview) return previewFrontendCommand(launch, siteOrigin);
 
   return nuxtFrontendCommand(launch);
 };
@@ -384,6 +403,8 @@ const waitForAnyChildProcessToStop = (workers: readonly WorkerHandle[], frontend
 
 const program = Effect.gen(function* () {
   const launch = yield* options;
+  // Preview only, before the lock, migrations, or any child process: a malformed origin starts nothing.
+  const siteOrigin = launch.preview ? previewSiteOrigin() : undefined;
 
   yield* Effect.log(
     `${launch.preview ? 'Preview: the built frontend' : 'Development: Nuxt HMR'} on ${launch.frontendPort}, ` +
@@ -410,7 +431,7 @@ const program = Effect.gen(function* () {
 
   yield* Effect.log('Both private Workers are ready');
 
-  const frontend = yield* startWorker('Frontend', frontendCommand(launch));
+  const frontend = yield* startWorker('Frontend', frontendCommand(launch, siteOrigin));
 
   yield* waitForAnyChildProcessToStop([evidenceWorker, briefingWorker], frontend);
 });

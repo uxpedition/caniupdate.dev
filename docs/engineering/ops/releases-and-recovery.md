@@ -34,7 +34,7 @@ Preview identity is implemented in [`SiteFooter.vue`](../../../app/components/Si
 2. Run the applicable type, lint, format, unit, and isolated fixture checks in [development](development.md#how-do-i-run-checks).
 3. Review the exact target account, origins, private bindings, resources, secrets ownership, and access policy.
 4. Review pending migrations, stored-response compatibility, deployment order, and the known compatible recovery revision.
-5. Build for the target frontend origin. Stop a built local preview before replacing its output.
+5. Build the origin-independent artifact and record its identity. Supply the target frontend origin at runtime; stop a built local preview before replacing its output.
 6. For production, establish representative deployed CPU/quota evidence and verify implemented abuse controls. These are not replaced by local CPU measurements.
 
 ### After deployment
@@ -172,7 +172,7 @@ Removing provider configuration can refuse new cold submissions and pending-job 
 
 - Identify deployed versions and the point of failure, including partially completed deploys.
 - Restore a known-compatible reviewed revision only after checking schema, stored JSON, job-state, and queued-message compatibility.
-- If rebuilding, use the target origin and configuration, not the old stage build.
+- Reuse the identified compatible artifact, or rebuild its reviewed revision; supply the target origin and environment-owned configuration at runtime, never stage credentials.
 - Re-exercise API/browser and storage behavior, then record the recovered versions and remaining limitations.
 - Prefer a forward fix where previous code is incompatible with the new state. Do not claim every release can be safely rolled back.
 

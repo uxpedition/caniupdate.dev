@@ -12,7 +12,6 @@ import { withWorkerSecrets } from './workerSecrets.ts';
 
 const BuildSchema = Schema.Struct({
   commitSha: Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)),
-  origin: Schema.Literal(STAGE_ORIGIN),
   pipelineId: Schema.String,
 });
 

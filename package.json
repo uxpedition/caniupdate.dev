@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node scripts/check-site-url/check-site-url.ts && nuxt build && wrangler deploy --dry-run --config workers/evidence/wrangler.jsonc --env= && wrangler deploy --dry-run --config workers/briefing/wrangler.jsonc --env=",
+    "build": "nuxt build && wrangler deploy --dry-run --config workers/evidence/wrangler.jsonc --env= && wrangler deploy --dry-run --config workers/briefing/wrangler.jsonc --env=",
     "db:check": "node scripts/sync-migrations/sync-migrations.ts --check && node scripts/bundle-evidence-migrations/bundle-evidence-migrations.ts --check",
     "db:check:evidence": "node scripts/bundle-evidence-migrations/bundle-evidence-migrations.ts --check",
     "db:generate": "drizzle-kit generate && node scripts/sync-migrations/sync-migrations.ts",

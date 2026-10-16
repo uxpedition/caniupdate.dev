@@ -132,7 +132,7 @@ SSR-prefetched query data is dehydrated by the [Vue Query plugin](../../app/plug
 
 ## Edge response caching
 
-The prerendered homepage is served as a static asset, so [`public/_headers`](../../public/_headers) supplies its one-year Cloudflare edge TTL with browser revalidation (`public, max-age=0, must-revalidate`). Nitro response hooks do not run for this static response.
+The homepage is rendered at runtime rather than prerendered, so its canonical and social URLs use the deployed Worker's `NUXT_PUBLIC_SITE_URL`. The same frontend build can serve different environments without embedding their origins; the Nitro response policy supplies the homepage's cache headers.
 
 The [response policy](../../server/plugins/responseCache.ts) caches only successful GET HTML handled by Nitro: `/`, `/privacy`, and `/about` receive a one-year Cloudflare edge TTL, and a comparison page receives 12 hours only after SSR has hydrated a validated stored briefing and successful measurements. `Cache-Control: no-cache` makes browsers revalidate; Cloudflare's CDN-specific header carries the edge TTL with `must-revalidate` to prevent stale serving beyond expiry. Misses, pending/failed briefings, evidence/storage errors, other routes, APIs, and non-HTML responses use `no-store`. Comparison routes disable SSR streaming so the eligibility decision and headers are final before the response starts.
 

@@ -6,21 +6,19 @@ import { defineNuxtConfig } from 'nuxt/config';
 import { parseBuildIdentity } from './shared/site/buildIdentity';
 import { parseSiteOrigin } from './shared/site/siteUrl';
 
-// The origin every absolute URL is built from. A configured value is validated here so a typo fails the run instead of
-// shipping a wrong canonical address; `scripts/check-site-url/check-site-url.ts` additionally requires one to exist for a build. An
-// unset value is allowed here: local development then emits no canonical link rather than a guessed origin.
-const rawSiteUrl = process.env['NUXT_PUBLIC_SITE_URL'] ?? '';
-
-const parsedSiteUrl = parseSiteOrigin(rawSiteUrl);
-
-if (!parsedSiteUrl.ok && rawSiteUrl.trim() !== '') {
-  throw new Error(`NUXT_PUBLIC_SITE_URL ${parsedSiteUrl.reason}.`);
-}
-
 const buildIdentity = parseBuildIdentity(
   process.env['NUXT_BUILD_COMMIT_SHA'],
   process.env['NUXT_BUILD_REPOSITORY_URL'],
 );
+
+// Builds never embed the origin: each runtime reads `NUXT_PUBLIC_SITE_URL`; an empty value emits no canonical link.
+// A non-empty value is validated here so `nuxt dev` and `nuxt build` fail at startup, not on every page render.
+
+const rawSiteUrl = process.env['NUXT_PUBLIC_SITE_URL'] ?? '';
+
+const siteOrigin = parseSiteOrigin(rawSiteUrl);
+
+if (rawSiteUrl !== '' && !siteOrigin.ok) throw new Error(`NUXT_PUBLIC_SITE_URL ${siteOrigin.reason}`);
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-09-16',
@@ -29,9 +27,9 @@ export default defineNuxtConfig({
     otelEndpoint: '',
     otelHeaders: {},
     public: {
-      // Public by design: canonical, social, and later sitemap URLs. The deployed Worker must carry the same value
-      // (`wrangler.jsonc`), because the prerendered homepage bakes the build-time value into its HTML.
-      siteUrl: parsedSiteUrl.ok ? parsedSiteUrl.origin : '',
+      // Public by design: canonical, social, and later sitemap URLs. Builds never bake it: each deployed Worker and
+      // local preview supplies `NUXT_PUBLIC_SITE_URL` at runtime, and an unset value emits no canonical link.
+      siteUrl: '',
       telemetryEnabled: false,
     },
   },
@@ -50,9 +48,6 @@ export default defineNuxtConfig({
   ignore: ['**/*.unit.ts'],
   pages: {
     pattern: ['**/*.vue'],
-  },
-  routeRules: {
-    '/': { prerender: true },
   },
   nitro: {
     ignore: ['**/*.unit.ts', '**/_internals/**'],
