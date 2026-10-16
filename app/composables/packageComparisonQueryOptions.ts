@@ -1,9 +1,13 @@
 import { queryOptions } from '@tanstack/vue-query';
 import type { QueryFunctionContext } from '@tanstack/vue-query';
-import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
+import type { $Fetch, H3Event$Fetch, NitroFetchOptions } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
 import type { PackageDeclarationsResponse } from '#shared/comparison/comparison.defs';
+import { formatTraceparent } from '#shared/telemetry/traceContext.defs';
+
+import { runComparisonTier } from './comparisonPageTelemetry';
+import type { ComparisonTierTelemetry } from './comparisonPageTelemetry';
 
 export const PACKAGE_COMPARISON_QUERY_KEY_PREFIX = ['npm', 'packages', 'comparison'] as const;
 
@@ -15,6 +19,31 @@ type PackageComparisonQueryKey = readonly [...typeof PACKAGE_COMPARISON_QUERY_KE
 
 type PackageComparisonQueryContext = QueryFunctionContext<PackageComparisonQueryKey>;
 
+const loadDeclarations = (
+  { queryKey, signal, client }: PackageComparisonQueryContext,
+  requestFetch: NuxtRequestFetch,
+  diagnostics: ComparisonTierTelemetry | undefined,
+): Promise<PackageDeclarationsResponse> => {
+  const [, , , packageName, from, to] = queryKey;
+
+  return runComparisonTier(
+    'declarations',
+    diagnostics,
+    signal,
+    client.getQueryData(queryKey) !== undefined,
+    (context) => {
+      const options: NitroFetchOptions<string> = { query: { from, to }, retry: false, signal };
+
+      if (context !== undefined) options.headers = { traceparent: formatTraceparent(context) };
+
+      return requestFetch<PackageDeclarationsResponse>(
+        `/api/package/${encodeURIComponent(packageName)}/compare`,
+        options,
+      );
+    },
+  );
+};
+
 /** The reactive declaration-query options handle shared by `useQuery`, prefetch, and cache removal. */
 export type PackageComparisonQueryOptions = ReturnType<typeof packageComparisonQueryOptions>;
 
@@ -23,6 +52,7 @@ export const packageComparisonQueryOptions = (
   packageName: MaybeRefOrGetter<string>,
   fromVersion: MaybeRefOrGetter<string>,
   toVersion: MaybeRefOrGetter<string>,
+  diagnostics?: ComparisonTierTelemetry,
 ) => {
   const normalizedPackageName = computed(() => toValue(packageName).trim());
   const normalizedFromVersion = computed(() => toValue(fromVersion).trim());
@@ -35,15 +65,7 @@ export const packageComparisonQueryOptions = (
       normalizedFromVersion.value,
       normalizedToVersion.value,
     ]),
-    queryFn: async ({ queryKey, signal }: PackageComparisonQueryContext): Promise<PackageDeclarationsResponse> => {
-      const [, , , packageName, from, to] = queryKey;
-
-      return requestFetch<PackageDeclarationsResponse>(`/api/package/${encodeURIComponent(packageName)}/compare`, {
-        query: { from, to },
-        retry: false,
-        signal,
-      });
-    },
+    queryFn: (context: PackageComparisonQueryContext) => loadDeclarations(context, requestFetch, diagnostics),
     enabled: computed(
       () =>
         normalizedPackageName.value.length > 0 &&

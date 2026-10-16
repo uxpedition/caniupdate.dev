@@ -599,4 +599,67 @@ describe('packageBriefingQueryOptions', () => {
     await expect(promise).rejects.toThrow('The briefing stream sent a frame the page cannot read');
     expect(socket.closeCalls).toBe(1);
   });
+
+  it('calls onStatus for every status frame but records each subscription transition once', async () => {
+    const { requests, telemetry } = installTelemetryCollector();
+    await telemetry.context();
+    const statuses: string[] = [];
+    requestFetch.mockResolvedValue(pending());
+    const promise = runQuery(statuses, new AbortController().signal, undefined, { telemetryRuntime: telemetry });
+
+    const socket = await waitForSocket(0);
+    socket.snapshot({ status: 'running', revision: 4 });
+    socket.snapshot({ status: 'running', revision: 5 });
+    socket.snapshot({ status: 'available', revision: 6, briefing: briefing() });
+
+    await expect(promise).resolves.toMatchObject({ briefing: { status: 'available' } });
+    await telemetry.dispose();
+
+    expect(statuses).toEqual(['queued', 'running', 'running']);
+    expect(requestFetch).toHaveBeenCalledTimes(1);
+    expect(FakeSocket.instances).toHaveLength(1);
+
+    const logsRequest = requests.find(({ url }) => url.endsWith('/v1/logs'));
+
+    if (logsRequest === undefined) throw new Error('Expected OTLP log export');
+
+    const logs = decodeTelemetryPayload('logs')(JSON.parse(logsRequest.body));
+
+    const outcomes = logs.resourceLogs
+      .flatMap(({ scopeLogs }) => scopeLogs.flatMap(({ logRecords }) => logRecords))
+      .filter(({ body }) => body.stringValue === 'briefing.subscription.transition')
+      .map(({ attributes }) => attributes.find(({ key }) => key === 'outcome')?.value);
+
+    expect(outcomes).toEqual([{ stringValue: 'queued' }, { stringValue: 'running' }, { stringValue: 'available' }]);
+  });
+
+  it('leaves status callbacks and the resolved briefing unchanged when the subscription reporter throws', async () => {
+    const { telemetry } = installTelemetryCollector();
+    await telemetry.context();
+
+    const reporterSpy = vi.spyOn(telemetry, 'runSync').mockImplementation(() => {
+      throw new Error('PRIVATE_REPORTER_MARKER');
+    });
+
+    const statuses: string[] = [];
+    requestFetch.mockResolvedValue(pending());
+
+    try {
+      const promise = runQuery(statuses, new AbortController().signal, undefined, { telemetryRuntime: telemetry });
+      const socket = await waitForSocket(0);
+      socket.snapshot({ status: 'running', revision: 4 });
+      socket.snapshot({ status: 'available', revision: 5, briefing: briefing() });
+
+      await expect(promise).resolves.toEqual({
+        packageName: 'minimist',
+        from: '1.0.0',
+        to: '2.0.0',
+        briefing: briefing(),
+      });
+      expect(statuses).toEqual(['queued', 'running']);
+      expect(reporterSpy).toHaveBeenCalled();
+    } finally {
+      await telemetry.dispose();
+    }
+  });
 });

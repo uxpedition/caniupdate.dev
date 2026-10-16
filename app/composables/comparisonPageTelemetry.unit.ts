@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTelemetryRuntime } from '#shared/telemetry/telemetry';
 import { decodeTelemetryPayload } from '#shared/telemetry/telemetry.defs';
 
-import { openComparisonPage } from './comparisonPageTelemetry';
+import { openComparisonPage, runComparisonTier } from './comparisonPageTelemetry';
 
 const installCollector = () => {
   const requests: Array<{ url: string; body: string }> = [];
@@ -68,5 +68,70 @@ describe('openComparisonPage', () => {
     expect(span.attributes.map(({ key }) => key)).not.toContain('comparison.version.to');
     expect(log.attributes.map(({ key }) => key)).not.toContain('comparison.version.from');
     expect(log.attributes.map(({ key }) => key)).not.toContain('comparison.version.to');
+  });
+});
+
+describe('runComparisonTier', () => {
+  it('returns the original query value when diagnostic getters or classifiers throw', async () => {
+    const { telemetry } = installCollector();
+    const result = { packageName: 'minimist', from: '1.0.0', to: '2.0.0' };
+    const load = vi.fn(async () => result);
+
+    try {
+      await expect(
+        runComparisonTier('measurements', { runtime: telemetry }, new AbortController().signal, true, load, () => {
+          throw new Error('PRIVATE_CLASSIFIER_MARKER');
+        }),
+      ).resolves.toBe(result);
+      Object.defineProperty(result, 'packageName', {
+        get() {
+          throw new Error('PRIVATE_GETTER_MARKER');
+        },
+      });
+      await expect(
+        runComparisonTier('declarations', { runtime: telemetry }, new AbortController().signal, true, load),
+      ).resolves.toBe(result);
+      expect(load).toHaveBeenCalledTimes(2);
+    } finally {
+      await telemetry.dispose();
+    }
+  });
+  it('rejects with the original load failure and records a failure, then a cancellation, outcome', async () => {
+    const { requests, telemetry } = installCollector();
+    await telemetry.context();
+    const failure = new Error('PRIVATE_LOAD_MARKER');
+    const controller = new AbortController();
+    const cancelled = new Error('PRIVATE_CANCEL_MARKER');
+
+    try {
+      await expect(
+        runComparisonTier('measurements', { runtime: telemetry }, new AbortController().signal, false, () =>
+          Promise.reject(failure),
+        ),
+      ).rejects.toBe(failure);
+      await expect(
+        runComparisonTier('declarations', { runtime: telemetry }, controller.signal, false, () => {
+          controller.abort();
+
+          return Promise.reject(cancelled);
+        }),
+      ).rejects.toBe(cancelled);
+    } finally {
+      await telemetry.dispose();
+    }
+
+    const logsRequest = firstRecord(requests.filter(({ url }) => url.endsWith('/v1/logs')));
+    const logs = decodeTelemetryPayload('logs')(JSON.parse(logsRequest.body));
+
+    const settled = logs.resourceLogs
+      .flatMap(({ scopeLogs }) => scopeLogs.flatMap(({ logRecords }) => logRecords))
+      .filter(({ body }) => body.stringValue === 'comparison.tier.settled');
+
+    expect(settled.map(({ attributes }) => attributes.find(({ key }) => key === 'outcome')?.value)).toEqual([
+      { stringValue: 'failure' },
+      { stringValue: 'cancelled' },
+    ]);
+    expect(JSON.stringify(requests)).not.toContain('PRIVATE_LOAD_MARKER');
+    expect(JSON.stringify(requests)).not.toContain('PRIVATE_CANCEL_MARKER');
   });
 });

@@ -6,10 +6,50 @@ import { decodeBriefingJobEvent, type BriefingJobEvent } from '#shared/compariso
 /** The generation states a submitted job reports before it settles. */
 export type BriefingStatus = 'queued' | 'running';
 
+export type SubscriptionOutcome =
+  | 'queued'
+  | 'running'
+  | 'available'
+  | 'unavailable'
+  | 'failure'
+  | 'cancelled'
+  | 'retry';
+
+export type SubscriptionReason =
+  | 'timeout'
+  | 'malformed'
+  | 'transport'
+  | 'disconnected'
+  | 'disconnect-exhausted'
+  | 'cancelled'
+  | 'unexpected';
+
+/** One observable step of a subscription. `attempt` counts reconnects; either number is absent when it is not known. */
+export type SubscriptionTransition = {
+  readonly outcome: SubscriptionOutcome;
+  readonly reason?: SubscriptionReason;
+  readonly attempt?: number;
+  readonly revision?: number;
+};
+
+export type SubscriptionReporter = (transition: SubscriptionTransition) => void;
+
 /** One second, two, then four: the whole backoff one subscription may spend before it gives up. */
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000] as const;
 
 const SUBSCRIPTION_DEADLINE = Duration.seconds(180);
+
+/** Best-effort: a throwing reporter cannot change subscription, reconnect, or query results. */
+export const reportSubscriptionTransition = (
+  report: SubscriptionReporter | undefined,
+  transition: SubscriptionTransition,
+): void => {
+  try {
+    report?.(transition);
+  } catch {
+    // Observing a socket transition must not alter subscription or reconnect behavior.
+  }
+};
 
 /** Preserves arbitrary DOM abort reasons without exposing them through a return contract. */
 const throwSubscriptionAbort = (signal: AbortSignal): never => {
@@ -88,6 +128,7 @@ const listenForJobEvents = (
   socket: WebSocket,
   revision: number,
   onStatus: (state: BriefingStatus) => void,
+  onTransition?: SubscriptionReporter,
 ): Effect.Effect<SocketOutcome, Error> =>
   Effect.callback<SocketOutcome, Error>((resume) => {
     let highest = revision;
@@ -97,6 +138,7 @@ const listenForJobEvents = (
       const message = messageFromSocketEvent(event, highest);
 
       if (message === undefined) {
+        reportSubscriptionTransition(onTransition, { outcome: 'failure', reason: 'malformed', revision: highest });
         complete(Effect.fail(new Error('The briefing stream sent a frame the page cannot read')));
 
         return;
@@ -107,6 +149,7 @@ const listenForJobEvents = (
       highest = message.revision;
 
       if (isCompletedSocketMessage(message)) {
+        reportSubscriptionTransition(onTransition, { outcome: message.briefing.status, revision: highest });
         complete(Effect.succeed(message));
 
         return;
@@ -114,7 +157,10 @@ const listenForJobEvents = (
 
       const statusError = reportBriefingStatus(onStatus, message.status);
 
-      if (statusError !== undefined) complete(Effect.fail(statusError));
+      if (statusError !== undefined) {
+        reportSubscriptionTransition(onTransition, { outcome: 'failure', reason: 'unexpected', revision: highest });
+        complete(Effect.fail(statusError));
+      }
     }
 
     function onClose(): void {
@@ -145,6 +191,7 @@ const readJobEventSocket = (
   url: string,
   revision: number,
   onStatus: (state: BriefingStatus) => void,
+  onTransition?: SubscriptionReporter,
 ): Effect.Effect<SocketOutcome, Error> =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -153,11 +200,15 @@ const readJobEventSocket = (
           try: () => new WebSocket(url),
           catch: (cause) =>
             cause instanceof Error ? cause : new Error('The briefing socket could not be opened', { cause }),
-        }),
+        }).pipe(
+          Effect.tapError(() =>
+            Effect.sync(() => reportSubscriptionTransition(onTransition, { outcome: 'failure', reason: 'transport' })),
+          ),
+        ),
         (socket) => Effect.sync(() => socket.close()),
       );
 
-      return yield* listenForJobEvents(socket, revision, onStatus);
+      return yield* listenForJobEvents(socket, revision, onStatus, onTransition);
     }),
   );
 
@@ -170,8 +221,12 @@ export const waitForJobEvent = async (
   revision: number,
   signal: AbortSignal,
   onStatus: (state: BriefingStatus) => void,
+  onTransition?: SubscriptionReporter,
 ): Promise<PackageBriefing> => {
-  if (signal.aborted) throwSubscriptionAbort(signal);
+  if (signal.aborted) {
+    reportSubscriptionTransition(onTransition, { outcome: 'cancelled', reason: 'cancelled' });
+    throwSubscriptionAbort(signal);
+  }
 
   let highest = revision;
 
@@ -179,26 +234,47 @@ export const waitForJobEvent = async (
     let attempts = 0;
 
     while (true) {
-      const outcome = yield* readJobEventSocket(url, highest, onStatus);
+      const outcome = yield* readJobEventSocket(url, highest, onStatus, onTransition);
       highest = outcome.revision;
 
       if (isCompletedSocketMessage(outcome)) return outcome.briefing;
       const delay = RECONNECT_DELAYS_MS.at(attempts);
 
-      if (delay === undefined)
+      if (delay === undefined) {
+        reportSubscriptionTransition(onTransition, {
+          outcome: 'failure',
+          reason: 'disconnect-exhausted',
+          attempt: attempts,
+          revision: highest,
+        });
+
         return yield* Effect.fail(new Error('The briefing stream closed before it reported a result'));
+      }
+
       attempts += 1;
+      reportSubscriptionTransition(onTransition, {
+        outcome: 'retry',
+        reason: 'disconnected',
+        attempt: attempts,
+        revision: highest,
+      });
       yield* Effect.sleep(Duration.millis(delay));
     }
   });
 
   const boundedSubscription = Effect.timeoutOrElse(subscription, {
     duration: SUBSCRIPTION_DEADLINE,
-    orElse: () => Effect.fail(new Error('The briefing subscription exceeded its 180-second deadline')),
+    orElse: () => {
+      reportSubscriptionTransition(onTransition, { outcome: 'failure', reason: 'timeout', revision: highest });
+
+      return Effect.fail(new Error('The briefing subscription exceeded its 180-second deadline'));
+    },
   });
 
   return Effect.runPromise(boundedSubscription, { signal }).catch((cause: unknown) => {
     if (!signal.aborted) throw cause;
+
+    reportSubscriptionTransition(onTransition, { outcome: 'cancelled', reason: 'cancelled', revision: highest });
 
     return throwSubscriptionAbort(signal);
   });

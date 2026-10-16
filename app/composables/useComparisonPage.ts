@@ -4,7 +4,7 @@ import type { H3Event } from 'h3';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, type MaybeRefOrGetter } from 'vue';
 
-import { useRequestEvent, useRequestFetch } from '#imports';
+import { useNuxtApp, useRequestEvent, useRequestFetch } from '#imports';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import { prefetchStoredComparison, readStoredComparisonBriefing } from '~/composables/comparisonSsrPrefetch';
 import { packageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
@@ -39,14 +39,31 @@ const useComparisonPageQueries = (
   toVersion: MaybeRefOrGetter<string>,
   pageTraceContext?: TraceContext,
 ) => {
-  const declarationsOptions = packageComparisonQueryOptions(requestFetch, packageName, fromVersion, toVersion);
+  const runtime = import.meta.client ? useNuxtApp().$telemetry : undefined;
+
+  const tierTelemetry =
+    runtime === undefined
+      ? undefined
+      : pageTraceContext === undefined
+        ? { runtime }
+        : { runtime, context: pageTraceContext };
+
+  const declarationsOptions = packageComparisonQueryOptions(
+    requestFetch,
+    packageName,
+    fromVersion,
+    toVersion,
+    tierTelemetry,
+  );
   const declarationsQuery = useQuery(declarationsOptions);
   const declarations = computed(() => declarationsQuery.data.value);
   const resolved = computed(() => resolvedBriefingVersions(declarations.value));
   const resolvedFrom = computed(() => resolved.value.from);
   const resolvedTo = computed(() => resolved.value.to);
-  const measurementsOptions = packageMeasurementsQueryOptions(requestFetch, packageName, resolvedFrom, resolvedTo);
-  const measurementsQuery = useQuery(measurementsOptions);
+
+  const measurementsQuery = useQuery(
+    packageMeasurementsQueryOptions(requestFetch, packageName, resolvedFrom, resolvedTo, tierTelemetry),
+  );
   const measurements = computed(() => measurementsQuery.data.value);
   const isMeasurementsUnavailable = computed(() => measurementsQuery.isError.value && measurements.value === undefined);
   const briefing = useComparisonBriefing(packageName, resolvedFrom, resolvedTo, pageTraceContext);

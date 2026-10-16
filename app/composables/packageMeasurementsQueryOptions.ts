@@ -1,10 +1,13 @@
 import { queryOptions } from '@tanstack/vue-query';
 import type { QueryClient, QueryFunctionContext } from '@tanstack/vue-query';
-import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
+import type { $Fetch, H3Event$Fetch, NitroFetchOptions } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
 import type { PackageMeasurementsResponse } from '#shared/comparison/comparison.defs';
+import { formatTraceparent } from '#shared/telemetry/traceContext.defs';
 
+import { runComparisonTier } from './comparisonPageTelemetry';
+import type { ComparisonTierTelemetry } from './comparisonPageTelemetry';
 import { PACKAGE_COMPARISON_STALE_TIME } from './packageComparisonQueryOptions';
 
 export const PACKAGE_MEASUREMENTS_QUERY_KEY_PREFIX = ['npm', 'packages', 'measurements'] as const;
@@ -15,11 +18,45 @@ type PackageMeasurementsQueryKey = readonly [...typeof PACKAGE_MEASUREMENTS_QUER
 
 type PackageMeasurementsQueryContext = QueryFunctionContext<PackageMeasurementsQueryKey>;
 
+const loadMeasurements = (
+  { queryKey, signal, client }: PackageMeasurementsQueryContext,
+  requestFetch: NuxtRequestFetch,
+  diagnostics: ComparisonTierTelemetry | undefined,
+): Promise<PackageMeasurementsResponse> => {
+  const [, , , packageName, from, to] = queryKey;
+
+  return runComparisonTier(
+    'measurements',
+    diagnostics,
+    signal,
+    client.getQueryData(queryKey) !== undefined,
+    (context) => {
+      const options: NitroFetchOptions<string> = { query: { from, to }, retry: false, signal };
+
+      if (context !== undefined) options.headers = { traceparent: formatTraceparent(context) };
+
+      return requestFetch<PackageMeasurementsResponse>(
+        `/api/package/${encodeURIComponent(packageName)}/compare/measurements`,
+        options,
+      );
+    },
+    (result) =>
+      result.comparison.advisories.status !== 'available' ||
+      result.from.tarball.status !== 'available' ||
+      result.to.tarball.status !== 'available' ||
+      result.from.bundleSize.status !== 'available' ||
+      result.to.bundleSize.status !== 'available'
+        ? 'partial'
+        : 'success',
+  );
+};
+
 export const packageMeasurementsQueryOptions = (
   requestFetch: NuxtRequestFetch,
   packageName: MaybeRefOrGetter<string>,
   fromVersion: MaybeRefOrGetter<string>,
   toVersion: MaybeRefOrGetter<string>,
+  diagnostics?: ComparisonTierTelemetry,
 ) => {
   const normalizedPackageName = computed(() => toValue(packageName).trim());
   const normalizedFromVersion = computed(() => toValue(fromVersion).trim());
@@ -32,14 +69,7 @@ export const packageMeasurementsQueryOptions = (
       normalizedFromVersion.value,
       normalizedToVersion.value,
     ]),
-    queryFn: async ({ queryKey, signal }: PackageMeasurementsQueryContext): Promise<PackageMeasurementsResponse> => {
-      const [, , , packageName, from, to] = queryKey;
-
-      return requestFetch<PackageMeasurementsResponse>(
-        `/api/package/${encodeURIComponent(packageName)}/compare/measurements`,
-        { query: { from, to }, retry: false, signal },
-      );
-    },
+    queryFn: (context: PackageMeasurementsQueryContext) => loadMeasurements(context, requestFetch, diagnostics),
     // Measurements are client-only: awaiting declarations during SSR would otherwise enable this query and collect
     // tarballs, OSV, and Bundlephobia evidence on the server for every page view.
     enabled: computed(

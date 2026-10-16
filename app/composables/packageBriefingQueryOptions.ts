@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/vue-query';
 import type { QueryFunctionContext } from '@tanstack/vue-query';
-import { Effect, Predicate, Tracer } from 'effect';
+import { Effect, Predicate, Tracer, type Types } from 'effect';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
@@ -8,10 +8,20 @@ import type { PackageBriefing } from '#shared/comparison/briefing/briefing.defs'
 import type { BriefingSubmission } from '#shared/comparison/briefing/briefingJob.defs';
 import type { TelemetryRuntime } from '#shared/telemetry/telemetry';
 import { comparisonTelemetryAttributes } from '#shared/telemetry/telemetryComparison';
+import type { ComparisonTelemetryAttributes } from '#shared/telemetry/telemetryComparison';
+import { telemetryDecimal } from '#shared/telemetry/telemetryFields';
 import { formatTraceparent } from '#shared/telemetry/traceContext.defs';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
-import { waitForJobEvent, type BriefingStatus } from './briefingSubscription';
+import {
+  reportSubscriptionTransition,
+  waitForJobEvent,
+  type BriefingStatus,
+  type SubscriptionOutcome,
+  type SubscriptionReason,
+  type SubscriptionReporter,
+} from './briefingSubscription';
+import { runComparisonTier } from './comparisonPageTelemetry';
 import { PACKAGE_COMPARISON_STALE_TIME } from './packageComparisonQueryOptions';
 
 export const PACKAGE_BRIEFING_QUERY_KEY_PREFIX = ['npm', 'packages', 'briefing'] as const;
@@ -152,6 +162,43 @@ const submitBriefing = async (
   }
 };
 
+/** The closed field set one transition logs; absent evidence stays absent rather than becoming an empty string. */
+type SubscriptionTransitionAnnotations = ComparisonTelemetryAttributes &
+  Partial<TraceContext> & {
+    readonly operation: 'subscription';
+    readonly outcome: SubscriptionOutcome;
+    readonly reason?: SubscriptionReason;
+    readonly attempt?: string;
+    readonly revision?: string;
+    readonly durationMs: string;
+  };
+
+const createSubscriptionReporter = (
+  runtime: TelemetryRuntime | undefined,
+  identity: ComparisonTelemetryAttributes,
+  pageContext: TraceContext | undefined,
+  started: number,
+): SubscriptionReporter | undefined => {
+  if (runtime === undefined) return undefined;
+
+  return (transition) => {
+    const annotations: Types.Mutable<SubscriptionTransitionAnnotations> = {
+      ...identity,
+      ...pageContext,
+      operation: 'subscription',
+      outcome: transition.outcome,
+      durationMs: telemetryDecimal(Date.now() - started),
+    };
+
+    if (transition.reason !== undefined) annotations.reason = transition.reason;
+
+    if (transition.attempt !== undefined) annotations.attempt = telemetryDecimal(transition.attempt);
+
+    if (transition.revision !== undefined) annotations.revision = telemetryDecimal(transition.revision);
+    runtime.runSync(Effect.logInfo('briefing.subscription.transition').pipe(Effect.annotateLogs(annotations)));
+  };
+};
+
 const fetchBriefingResponse = async (
   context: PackageBriefingQueryContext,
   requestFetch: NuxtRequestFetch,
@@ -169,8 +216,34 @@ const fetchBriefingResponse = async (
   const response = await submitBriefing(requestFetch, packageName, from, to, signal, pageContext, telemetryRuntime);
 
   if (response.status === 'available') return response;
+  const started = Date.now();
+
+  const identity = comparisonTelemetryAttributes({
+    packageName: response.packageName,
+    from: response.from,
+    to: response.to,
+  });
+
+  const report = createSubscriptionReporter(telemetryRuntime, identity, pageContext, started);
+
+  let lastStatus: BriefingStatus = response.status;
+  reportSubscriptionTransition(report, { outcome: response.status, revision: response.revision });
   onStatus?.(response.status);
-  const briefing = await waitForJobEvent(response.eventsUrl, response.revision, signal, (state) => onStatus?.(state));
+
+  const briefing = await waitForJobEvent(
+    response.eventsUrl,
+    response.revision,
+    signal,
+    (state) => {
+      if (state !== lastStatus) {
+        lastStatus = state;
+        reportSubscriptionTransition(report, { outcome: state });
+      }
+
+      onStatus?.(state);
+    },
+    report,
+  );
 
   return { packageName: response.packageName, from: response.from, to: response.to, briefing };
 };
@@ -188,12 +261,26 @@ export const packageBriefingQueryOptions = (
   const normalizedFromVersion = computed(() => toValue(fromVersion).trim());
   const normalizedToVersion = computed(() => toValue(toVersion).trim());
 
+  const diagnostics =
+    telemetryRuntime === undefined
+      ? undefined
+      : pageContext === undefined
+        ? { runtime: telemetryRuntime }
+        : { runtime: telemetryRuntime, context: pageContext };
+
   const options = queryOptions({
     queryKey: computed<PackageBriefingQueryKey>(() =>
       packageBriefingQueryKey(normalizedPackageName.value, normalizedFromVersion.value, normalizedToVersion.value),
     ),
     queryFn: (context: PackageBriefingQueryContext) =>
-      fetchBriefingResponse(context, requestFetch, onStatus, pageContext, telemetryRuntime),
+      runComparisonTier(
+        'briefing',
+        diagnostics,
+        context.signal,
+        context.client.getQueryData(context.queryKey) !== undefined,
+        () => fetchBriefingResponse(context, requestFetch, onStatus, pageContext, telemetryRuntime),
+        (result) => (result.briefing.status === 'available' ? 'success' : 'unavailable'),
+      ),
     // Briefing is client-only: with declarations awaited during SSR, this query would otherwise enable server-side
     // and spend a model call on every page view.
     enabled: computed(
