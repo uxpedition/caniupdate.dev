@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { Schema } from 'effect';
 
 import { PRIVATE_CI_KEYS, STAGE_ORIGIN } from './configurationKeys.ts';
+import { withRateLimitConfig } from './rateLimitConfig.ts';
 import { readRuntimeSettings, RuntimeSettingsFailure } from './runtimeSettings.ts';
 import type { WorkerSecrets } from './runtimeSettings.ts';
 import { withWorkerSecrets } from './workerSecrets.ts';
@@ -115,6 +116,7 @@ async function deployWorker(
   config: string,
   secrets: WorkerSecrets,
   environment: NodeJS.ProcessEnv,
+  rateLimit?: { binding: 'PUBLIC_RATE_LIMITER' | 'BRIEFING_GENERATION_LIMITER'; limit: number },
 ): Promise<void> {
   currentStep = { name, status: 'started' };
   steps.push(currentStep);
@@ -122,24 +124,30 @@ async function deployWorker(
   const outputFile = join(reportDirectory, `${name}.ndjson`);
 
   await writeFile(outputFile, '', { mode: 0o600 });
-  await withWorkerSecrets(secrets, async (secretFile) => {
-    run(
-      'nub',
-      [
-        'exec',
-        'wrangler',
-        'deploy',
-        '--config',
-        config,
-        '--env',
-        'preview',
-        '--secrets-file',
-        secretFile,
-        ...(dryRun ? ['--dry-run'] : []),
-      ],
-      { ...environment, WRANGLER_OUTPUT_FILE_PATH: outputFile },
-    );
-  });
+
+  const deploy = async (deploymentConfig: string) => {
+    await withWorkerSecrets(secrets, async (secretFile) => {
+      run(
+        'nub',
+        [
+          'exec',
+          'wrangler',
+          'deploy',
+          '--config',
+          deploymentConfig,
+          '--env',
+          'preview',
+          '--secrets-file',
+          secretFile,
+          ...(dryRun ? ['--dry-run'] : []),
+        ],
+        { ...environment, WRANGLER_OUTPUT_FILE_PATH: outputFile },
+      );
+    });
+  };
+
+  if (rateLimit === undefined) await deploy(config);
+  else await withRateLimitConfig(config, rateLimit.binding, rateLimit.limit, deploy);
 
   if (!dryRun) currentStep.versionId = await readDeployedVersion(outputFile, name);
 
@@ -220,8 +228,12 @@ try {
     'workers/briefing/wrangler.jsonc',
     settings.briefing,
     workerEnvironment,
+    { binding: 'BRIEFING_GENERATION_LIMITER', limit: settings.rateLimits.generation },
   );
-  await deployWorker('can-i-update-preview', '.output/server/wrangler.json', settings.frontend, workerEnvironment);
+  await deployWorker('can-i-update-preview', '.output/server/wrangler.json', settings.frontend, workerEnvironment, {
+    binding: 'PUBLIC_RATE_LIMITER',
+    limit: settings.rateLimits.public,
+  });
 } catch (cause) {
   failureReason =
     cause instanceof PreviewFailure || cause instanceof RuntimeSettingsFailure

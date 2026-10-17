@@ -9,6 +9,8 @@ export const PRIVATE_CI_KEYS = [
   'AI_BRIEFING_ENDPOINT',
   'AI_BRIEFING_API_KEY',
   'AI_BRIEFING_MODEL',
+  'PUBLIC_RATE_LIMIT',
+  'BRIEFING_GENERATION_RATE_LIMIT',
   // Runtime-only Nuxt names are not GitLab inputs, but must also stay out of build/validation processes.
   'NUXT_OTEL_ENDPOINT',
   'NUXT_OTEL_HEADERS',

@@ -1,9 +1,13 @@
-import { Schema } from 'effect';
+import { Effect, Schema, SchemaTransformation } from 'effect';
 
 import { STAGE_ORIGIN, STAGE_SOCKET_ORIGIN } from './configurationKeys.ts';
 
 const NonBlank = Schema.String.check(
   Schema.makeFilter((value) => value.trim() !== '', { expected: 'nonblank configuration' }),
+);
+
+const RateLimitSchema = Schema.String.check(Schema.isPattern(/^[1-9][0-9]*$/)).pipe(
+  Schema.decodeTo(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)), SchemaTransformation.numberFromString),
 );
 
 const RuntimeSchema = Schema.Struct({
@@ -16,6 +20,8 @@ const RuntimeSchema = Schema.Struct({
   OTEL_EXPORTER_OTLP_ENDPOINT: Schema.optionalKey(Schema.String),
   OTEL_EXPORTER_OTLP_HEADERS: Schema.optionalKey(Schema.String),
   GITHUB_TOKEN: Schema.optionalKey(Schema.String),
+  PUBLIC_RATE_LIMIT: RateLimitSchema.pipe(Schema.withDecodingDefaultKey(Effect.succeed('60'))),
+  BRIEFING_GENERATION_RATE_LIMIT: RateLimitSchema.pipe(Schema.withDecodingDefaultKey(Effect.succeed('3'))),
 });
 
 const HeaderSchema = Schema.Record(Schema.String, Schema.String);
@@ -85,6 +91,7 @@ export function readRuntimeSettings(environment: NodeJS.ProcessEnv) {
   }
 
   return {
+    rateLimits: { public: settings.PUBLIC_RATE_LIMIT, generation: settings.BRIEFING_GENERATION_RATE_LIMIT },
     frontend: {
       NUXT_PUBLIC_SITE_URL: settings.NUXT_PUBLIC_SITE_URL,
       NUXT_PUBLIC_TELEMETRY_ENABLED: settings.NUXT_PUBLIC_TELEMETRY_ENABLED,
