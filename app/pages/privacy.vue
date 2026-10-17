@@ -12,59 +12,55 @@ useSeoMeta({ title: 'Privacy · Can I Update?' });
   >
     <header>
       <h1 class="font-mono text-3xl font-semibold uppercase tracking-tight">Privacy</h1>
-      <p class="text-muted-foreground">Last updated: 16 October 2026</p>
-      <p>This page explains what data we use and how to contact us about it.</p>
+      <p class="text-muted-foreground">Last updated: 17 October 2026</p>
+      <p>Here's what data we use and why.</p>
     </header>
 
     <h2>Cookies and analytics</h2>
-    <p>
-      We don't use analytics or advertising trackers. You don't need an account to use the site. The public site doesn't
-      require sign-in cookies.
-    </p>
+    <p>We don't use analytics or advertising trackers. No account or sign-in cookies are needed.</p>
 
     <h2>Hosting and logs</h2>
     <p>
-      We use Cloudflare to host the site. Cloudflare processes your IP address to serve requests and protect its
-      network. Default request logs are disabled. We use application logs to diagnose errors. Diagnostic logs and, when
-      enabled, traces include the public npm package name and the registry-resolved versions being compared, along with
-      operation timing and correlation IDs. We exclude credentials, AI prompts, evidence packets and raw provider error
-      text from these diagnostic records.
+      Cloudflare hosts the site and processes your IP address to serve requests and protect its network. Default request
+      logs are disabled.
     </p>
     <p>
-      When you enable diagnostics in your browser session, failures are reported automatically: rendering errors, page
-      load failures and promise rejections are recorded with a reviewed error type and source and, where available, a
-      code filename and location. Error messages and raw rejection values are not recorded; neither are URLs, query
-      strings, function names or machine-local paths. Server render and handler failures use the same policy. These
-      records never include package file contents, provider responses, or your IP address.
+      We use diagnostic logs and traces to investigate errors. These can include public package names, compared
+      versions, timings and IDs that link related operations.
+    </p>
+    <p>
+      Browser diagnostics report errors automatically. Browser and server error records include the error type, source
+      and code location, but not error messages, URLs, function names or local file paths.
+    </p>
+    <p>
+      Diagnostics exclude your IP address, credentials, AI prompts, package file contents, evidence packets and provider
+      responses.
     </p>
 
+    <h2>Abuse prevention</h2>
     <p>
-      To limit abuse, we derive a temporary hashed key from the IP address Cloudflare supplies and use it with
-      Cloudflare-managed rate limits. The private briefing service receives this key only to check new-generation
-      allowances. It is not added to saved jobs, package evidence, AI requests or diagnostic logs. Hashing is not
-      anonymization. People sharing a network address share these approximate allowances. We do not create visitor
-      accounts or persistent visitor profiles for rate limiting.
+      We use a temporary hash of your IP address for Cloudflare rate limits, including limits on new AI notes. Hashing
+      does not make it anonymous. People on the same network share these limits.
+    </p>
+    <p>
+      This key stays out of saved jobs, package evidence, AI requests and diagnostic logs. We don't create visitor
+      accounts or profiles for rate limiting.
     </p>
 
     <h2>Package data and AI</h2>
     <p>
-      We fetch public package data from npm, GitHub, OSV and Bundlephobia. We cache this data and save AI notes for
-      reuse. Saved archive inspections and AI notes have no automatic expiry. When we detect changes to the source data
-      used for a result, we generate a new result when it's next requested.
+      We fetch public package data from npm, GitHub, OSV and Bundlephobia, and save data and AI notes for reuse. Saved
+      archive inspections and AI notes don't expire automatically.
     </p>
+    <p>When we detect source data changes, we refresh the result the next time it's requested.</p>
     <p>
-      To generate AI notes, we send comparison data and public release notes to an AI provider. This may include
-      contributor names or handles from those sources.
+      AI providers receive comparison data and public release notes to generate AI notes. These may include contributor
+      names or handles.
     </p>
 
     <h2>Your rights</h2>
-    <p>You can:</p>
-    <ul>
-      <li>Ask what data we use and how we use it.</li>
-      <li>Clear cookies and site data in your browser.</li>
-      <li>Request information about our privacy practices.</li>
-    </ul>
-    <p>We don't require an account or track visitors, so there is typically no visitor profile to delete or export.</p>
+    <p>You can ask what data we use or clear cookies and site data in your browser.</p>
+    <p>We don't require accounts or track visitors, so there's usually no visitor profile to delete or export.</p>
 
     <h2>Contact us</h2>
     <p>
