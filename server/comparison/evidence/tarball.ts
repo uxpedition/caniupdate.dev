@@ -8,7 +8,7 @@ import { cacheKey, runCached } from './cacheLookup';
 import { toPackageEvidenceFailure, type PackageEvidenceFailure } from './errors';
 import type { ComparisonEvidenceServices } from './services';
 
-const ARCHIVE_INSPECTOR_REVISION = 'archive-inspector-v2';
+const ARCHIVE_INSPECTOR_REVISION = 'archive-inspector-v3';
 
 const safeTarballUrl = (url: string): boolean => {
   try {
@@ -51,6 +51,7 @@ export const cachedTarball = (
     'tarball',
     cacheKey('archive', {
       revision: ARCHIVE_INSPECTOR_REVISION,
+      packageName: manifest.name,
       integrity:
         manifest.dist.integrity === undefined
           ? { algorithm: 'sha1', value: manifest.dist.shasum }

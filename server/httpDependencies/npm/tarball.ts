@@ -43,6 +43,8 @@ type EntryResult = {
 };
 
 type EntryInspectionState = {
+  packageRoot: string;
+  archiveRoot: string | undefined;
   files: PublishedFile[];
   changelogs: ShippedChangelog[];
   paths: Set<string>;
@@ -149,24 +151,32 @@ function hasUnsafePathCharacters(value: string): boolean {
   return false;
 }
 
-function archivePath(name: string, directory: boolean): string {
+function archivePath(name: string, directory: boolean, root: string): string {
   const path = directory && name.endsWith('/') ? name.slice(0, -1) : name;
 
   if (
     path.length > 4096 ||
     hasUnsafePathCharacters(path) ||
     path.split('/').some((part) => !part || part === '.' || part === '..') ||
-    (path !== 'package' && !path.startsWith('package/'))
+    (path !== root && !path.startsWith(`${root}/`))
   ) {
     throw new Error('Unsafe or unsupported tarball path');
   }
 
-  if (path === 'package' && !directory) throw new Error('Invalid tarball root');
+  if (path === root && !directory) throw new Error('Invalid tarball root');
 
-  return path.slice('package/'.length);
+  return path.slice(root.length + 1);
 }
 
-function inspectHeader(header: Header): PublishedFile {
+function archiveRoot(name: string, state: EntryInspectionState): string {
+  const root = state.archiveRoot ?? name.split('/')[0] ?? '';
+
+  if (root !== 'package' && root !== state.packageRoot) throw new Error('Unsupported tarball root');
+
+  return root;
+}
+
+function inspectHeader(header: Header, state: EntryInspectionState): PublishedFile {
   const { type, size } = header;
 
   if (type !== 'file' && type !== 'directory' && type !== 'symlink' && type !== 'link') {
@@ -174,9 +184,11 @@ function inspectHeader(header: Header): PublishedFile {
   }
 
   validateEntrySize(header);
-  const file: PublishedFile = { path: archivePath(header.name, type === 'directory'), type, size, sha256: null };
+  const root = archiveRoot(header.name, state);
+  const file: PublishedFile = { path: archivePath(header.name, type === 'directory', root), type, size, sha256: null };
+  state.archiveRoot = root;
 
-  if (type === 'link' || type === 'symlink') return { ...file, linkTarget: inspectLink(header) };
+  if (type === 'link' || type === 'symlink') return { ...file, linkTarget: inspectLink(header, root) };
 
   return file;
 }
@@ -189,7 +201,7 @@ function validateEntrySize({ size, type }: Header): void {
   if (type !== 'file' && size !== 0) throw new Error('Invalid non-file tarball entry size');
 }
 
-function inspectLink(header: Header): string {
+function inspectLink(header: Header, root: string): string {
   const target = header.linkname;
 
   if (!target || target.length > 4096 || posix.isAbsolute(target) || hasUnsafePathCharacters(target)) {
@@ -198,7 +210,7 @@ function inspectLink(header: Header): string {
 
   // Hardlinks are archive-root-relative; symlinks are relative to their containing directory.
   const resolved = header.type === 'link' ? target : posix.join(posix.dirname(header.name), target);
-  archivePath(resolved, false);
+  archivePath(resolved, false, root);
 
   return target;
 }
@@ -264,8 +276,10 @@ function decodeChangelog(file: PublishedFile, text: Buffer, reasons: Set<string>
   }
 }
 
-function createEntryState(): EntryInspectionState {
+function createEntryState(packageRoot: string): EntryInspectionState {
   return {
+    packageRoot,
+    archiveRoot: undefined,
     files: [],
     changelogs: [],
     paths: new Set<string>(),
@@ -291,7 +305,7 @@ function inspectEntry(
   signal.throwIfAborted();
 
   if (state.paths.size >= MAX_ENTRIES) throw new Error('Tarball exceeds entry limit');
-  const file = inspectHeader(entry.header);
+  const file = inspectHeader(entry.header, state);
 
   if (state.paths.has(file.path)) throw new Error('Duplicate tarball path');
   state.paths.add(file.path);
@@ -345,8 +359,8 @@ function finalizeEntries(results: Array<Outcome<EntryResult>>, state: EntryInspe
   return { files: state.files, changelogs: state.changelogs, reasons: [...state.reasons] };
 }
 
-async function inspectEntries(parser: TarParser, signal: AbortSignal): Promise<InspectionResult> {
-  const state = createEntryState();
+async function inspectEntries(parser: TarParser, signal: AbortSignal, packageRoot: string): Promise<InspectionResult> {
+  const state = createEntryState(packageRoot);
 
   try {
     const results = await collectEntryResults(parser, signal, state);
@@ -370,6 +384,7 @@ const unavailableTarball = (url: string, cause: unknown): PackageTarball => ({
 const inspectPackageTarball = (
   url: string,
   dist: RegistryVersionManifest['dist'],
+  packageRoot: string,
 ): Effect.Effect<InspectedTarball, Error> =>
   Effect.tryPromise({
     try: async (signal) => {
@@ -380,7 +395,7 @@ const inspectPackageTarball = (
     },
     catch: toTarballError,
   }).pipe(
-    Effect.flatMap((body) => inspectTarball(body, inspectEntries)),
+    Effect.flatMap((body) => inspectTarball(body, (parser, signal) => inspectEntries(parser, signal, packageRoot))),
     Effect.map((result): InspectedTarball => ({ status: result.reasons.length ? 'partial' : 'available', ...result })),
     Effect.timeout(TIMEOUT_MS),
   );
@@ -395,7 +410,7 @@ export const getPackageTarball = (manifest: RegistryVersionManifest): Effect.Eff
     return Effect.succeed(unavailableTarball(url, cause));
   }
 
-  return inspectPackageTarball(normalizedUrl, manifest.dist).pipe(
+  return inspectPackageTarball(normalizedUrl, manifest.dist, posix.basename(manifest.name)).pipe(
     Effect.map((result) => ({ ...result, url })),
     Effect.catch((cause) => Effect.succeed(unavailableTarball(url, cause))),
   );

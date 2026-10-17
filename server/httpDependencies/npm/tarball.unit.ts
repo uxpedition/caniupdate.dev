@@ -93,6 +93,69 @@ describe('published tarball evidence', () => {
     expect(result.to.files).toEqual(result.from.files);
   });
 
+  it.each(['package', 'widget'])('inspects scoped packages rooted at %s with safe links', async (root) => {
+    const body = await archive([
+      { name: `${root}/`, type: 'directory' },
+      { name: `${root}/index.d.ts`, body: 'export {};' },
+      { name: `${root}/CHANGELOG.md`, body: 'Published fixes' },
+      { name: `${root}/current`, type: 'symlink', linkname: 'index.d.ts' },
+      { name: `${root}/copy`, type: 'link', linkname: `${root}/index.d.ts` },
+    ]);
+    const metadata = manifest(body);
+    metadata.name = '@example/widget';
+    metadata.dist.tarball = 'https://registry.npmjs.org/@example/widget/-/widget-1.0.0.tgz';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(body)),
+    );
+
+    const result = await Effect.runPromise(getPackageTarball(metadata));
+    expect(result.status).toBe('available');
+    expect(result.files).toContainEqual({
+      path: 'index.d.ts',
+      type: 'file',
+      size: 10,
+      sha256: createHash('sha256').update('export {};').digest('hex'),
+    });
+    expect(result.files).toContainEqual({
+      path: 'copy',
+      type: 'link',
+      size: 0,
+      sha256: null,
+      linkTarget: `${root}/index.d.ts`,
+    });
+    expect(result.changelogs).toEqual([{ path: 'CHANGELOG.md', body: 'Published fixes', truncated: false }]);
+  });
+
+  it.each([
+    [{ name: 'other/index.js' }],
+    [{ name: 'widget/../escape' }],
+    [{ name: 'widget//index.js' }],
+    [{ name: '/widget/index.js' }],
+    [{ name: 'widget/./index.js' }],
+    [{ name: 'widget\\index.js' }],
+    [{ name: 'widget/\u007findex.js' }],
+    [{ name: 'widget', body: 'not a directory' }],
+    [{ name: 'widget/a' }, { name: 'package/b' }],
+    [{ name: 'widget/a' }, { name: 'widget/a' }],
+    [{ name: 'widget/link', type: 'symlink' as const, linkname: '../package/outside' }],
+    [{ name: 'widget/link', type: 'link' as const, linkname: 'package/outside' }],
+    [{ name: 'widget/link', type: 'link' as const, linkname: 'widget/../escape' }],
+    [{ name: 'widget/link', type: 'symlink' as const, linkname: '/widget/target' }],
+    [{ name: 'widget/device', type: 'character-device' as const }],
+  ])('rejects hostile or unsupported legacy-root layouts: %j', async (...entries) => {
+    const body = await archive(entries);
+    const metadata = manifest(body);
+    metadata.name = '@example/widget';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(body)),
+    );
+
+    const result = await Effect.runPromise(getPackageTarball(metadata));
+    expect(result).toMatchObject({ status: 'unavailable', files: [], changelogs: [] });
+  });
+
   it('discards untrusted bytes on integrity mismatch while preserving the other version', async () => {
     const body = await archive([{ name: 'package/index.js', body: 'safe' }]);
     const bad = manifest(body);

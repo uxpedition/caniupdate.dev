@@ -76,7 +76,7 @@ Download and streaming adapters convert caught failures to `Error` before passin
 Archive entries must meet all these rules:
 
 - Types: file, directory, hard link, or symlink only.
-- Paths: unique, rooted under `package`, and at most 4,096 characters. No empty, `.` or `..` component, control character, DEL, or backslash.
+- Paths: unique, under one consistent top-level directory: `package` or the manifest's unscoped package basename (for example, `is-number` for `@types/is-number`). The directory is removed from inventory paths. Paths are at most 4,096 characters, with no empty, `.` or `..` component, control character, DEL, or backslash. Mixed roots and unrelated directory names are rejected.
 - Link targets: at most 4,096 characters, non-absolute, and resolving inside the root. Hard links resolve from the archive root; symlinks from their containing directory. Links are recorded, never followed.
 - Entry sizes: nonnegative safe integers, no larger than 32 MiB. Non-file entries must have zero size.
 - Entry count: at most 10,000.
@@ -152,17 +152,19 @@ The [cache lifetime decision](adrs/evidence-cache-lifetimes.md) explains the fre
 
 The object supplies cache and capacity-check services to the collector; the collector has no process-global cache. Keys are SHA-256 digests of JSON-serialized scope inputs. Each package object's SQLite cache reuses that package's provider results and archive inspections. It is not a separate global cache.
 
-| Evidence             | Key inputs                                                                                                 | Expiry and write rule                            |
-| -------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| npm manifest         | `comparison-evidence-v1`, package name, requested version/tag                                              | 300,000 ms; every schema-valid manifest          |
-| OSV pair             | `comparison-evidence-v1`, package name, resolved from/to versions                                          | 300,000 ms; only when both sides are `available` |
-| Bundlephobia version | `comparison-evidence-v1`, package name, resolved version                                                   | 300,000 ms; only `available`                     |
-| GitHub release notes | `comparison-evidence-v1`, package name and both full resolved manifests                                    | 300,000 ms; only `available`                     |
-| Inspected archive    | `archive-inspector-v2` and integrity policy (exact SRI string when present, otherwise SHA-1 shasum policy) | No expiry; `available` and `partial` only        |
+| Evidence             | Key inputs                                                                                                                | Expiry and write rule                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| npm manifest         | `comparison-evidence-v1`, package name, requested version/tag                                                             | 300,000 ms; every schema-valid manifest          |
+| OSV pair             | `comparison-evidence-v1`, package name, resolved from/to versions                                                         | 300,000 ms; only when both sides are `available` |
+| Bundlephobia version | `comparison-evidence-v1`, package name, resolved version                                                                  | 300,000 ms; only `available`                     |
+| GitHub release notes | `comparison-evidence-v1`, package name and both full resolved manifests                                                   | 300,000 ms; only `available`                     |
+| Inspected archive    | `archive-inspector-v3`, package name, and integrity policy (exact SRI string when present, otherwise SHA-1 shasum policy) | No expiry; `available` and `partial` only        |
 
 Mutable entries expire after five minutes and are deleted on cache access. Errors and non-cacheable partial/unavailable results are not saved. Later requests retry them instead of keeping a failed refresh.
 
-Archive keys follow verified content identity, not a version or tarball URL. Matching integrity policies can share a successful/partial inspection; the returned value gets the caller's manifest URL. Failed inspections are retried. SRI and SHA-1 policies cannot collide. A changed inspector revision creates a new key for changed inspection rules.
+Archive keys follow verified content identity and package identity, not a version or tarball URL. Package identity constrains the accepted archive root. Matching integrity policies within a package can share a successful/partial inspection; the returned value gets the caller's manifest URL. Failed inspections are retried. SRI and SHA-1 policies cannot collide. A changed inspector revision creates a new key for changed inspection rules.
+
+The scoped-package root fix uses revision `archive-inspector-v3`. Previous unavailable inspections were not stored, so they need no evidence-cache purge. Existing successful inspections use the old revision and are inspected again on demand. Stored AI briefings are separate results and are not regenerated by this revision; an older briefing may still describe missing archive evidence. No stored-state reset or schema change is required for fresh measurements.
 
 This reduces duplicate evidence work. It is not a fixed spending cap, a lifetime inference limit per version pair, or a replacement for external provider budgets. It does not share data across package objects.
 
