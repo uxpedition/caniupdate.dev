@@ -41,17 +41,17 @@ Preview identity is implemented in [`SiteFooter.vue`](../../../app/components/Si
 
 Exercise the actual public surface, not only bundle compilation:
 
-| Check                           | Evidence to retain                                                                                                                      |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Health                          | HTTP status and expected health payload                                                                                                 |
-| Search and metadata             | Requested package identity and valid response                                                                                           |
-| Declarations and measurements   | Requested package/version pair, validated response, rendered evidence                                                                   |
-| Browser interaction             | Hydrated search, version selection, comparison navigation, and direct reload; browser errors                                            |
-| Briefing reuse                  | Stored-result response distinguished from new generation                                                                                |
-| Socket lifecycle                | Queue/subscription completion when intentionally exercised; origin/access results                                                       |
-| Restricted preview              | Authorized browser and approved automation work; unauthorized access is refused on both browser-facing hosts                            |
-| Rate limiting, once implemented | General rejection behavior; new-generation allowance rejects before acceptance; D1 hits and pending joins do not consume that allowance |
-| Capacity                        | Workload, duration, cache state, concurrency, generator locations, deployed CPU/limits and observed failures                            |
+| Check                         | Evidence to retain                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Health                        | HTTP status and expected health payload                                                                      |
+| Search and metadata           | Requested package identity and valid response                                                                |
+| Declarations and measurements | Requested package/version pair, validated response, rendered evidence                                        |
+| Browser interaction           | Hydrated search, version selection, comparison navigation, and direct reload; browser errors                 |
+| Briefing reuse                | Stored-result response distinguished from new generation                                                     |
+| Socket lifecycle              | Queue/subscription completion when intentionally exercised; origin/access results                            |
+| Restricted preview            | Authorized browser and approved automation work; unauthorized access is refused on both browser-facing hosts |
+| Public rate limiting          | General API/SSR refusals: sanitized `429`, `Retry-After: 60`, `no-store`                                     |
+| Capacity                      | Workload, duration, cache state, concurrency, generator locations, deployed CPU/limits and observed failures |
 
 For frontend/build configuration changes, exercise both Firefox and Chromium. The [entry-import-map decision](../adrs/firefox-entry-import-map.md) records the historical Firefox failure, retained startup workaround, and limits of the observation.
 

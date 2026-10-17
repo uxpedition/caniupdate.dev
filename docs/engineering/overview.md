@@ -71,6 +71,16 @@ Sources: [collection and validation](../../server/comparison/collect.ts), [decla
 
 The browser supplies only package/version selectors, never trusted comparison facts. Measurements responses are decoded against the complete shared response schema, checked against the requested package/versions, and reject excess fields, including archive inventories. Briefing packets and service responses are likewise schema-decoded. Missing bindings, transport failures, upstream failures, or protocol violations become sanitized service failures rather than falling back to frontend collection or generation.
 
+### Public request protection
+
+The [public middleware](../../server/middleware/rateLimit.ts) checks Cloudflare's built-in `PUBLIC_RATE_LIMITER` for every request reaching Nitro, before its handler runs. The initial allowance is 60 requests per 60 seconds per network address, shared across pages, APIs (including health and telemetry), and unmatched paths. A single incoming SSR request is admitted once, including its internal API fetches. Static assets and cached responses served by Cloudflare without invoking Nitro remain outside this check; Worker-first asset routing is not enabled.
+
+The middleware derives a transient SHA-256 key from `CF-Connecting-IP` on Nitro's original Cloudflare request, not browser body/query/forwarded identity or an SSR-local request. Missing address metadata shares an unidentified bucket rather than selecting a caller-chosen key. The key remains in request-local context; it is not evidence identity, authentication, or anonymization, and is never returned or logged. Local Node development is not a trusted ingress.
+
+Refusals return sanitized `429`, `Retry-After: 60`, `no-store`, and structured `data.code: request-rate-limited` with `retryAfter: 60`. This is conservative retry advice, not a reset-time guarantee. Binding failure fails closed with sanitized `503`.
+
+Cloudflare's [limiter](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) is approximate, eventually consistent and per location. This site has no accounts, so shared-IP households, offices, carrier NAT and proxies share allowances; rotating addresses/locations can evade them. Limits reduce abuse, not global spend: retain provider-side spend limits. See [configuration](ops/deployment.md#rate-limit-configuration).
+
 ## Declaration comparison invariants
 
 The [declaration comparator](../../server/comparison/declarations/compare.ts) runs on resolved manifest declarations without extra I/O or executing package code. Direction is the requested `from` → `to`; identical versions and downgrades do not take a separate approval path.

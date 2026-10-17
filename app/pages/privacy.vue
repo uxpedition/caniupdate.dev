@@ -12,7 +12,7 @@ useSeoMeta({ title: 'Privacy · Can I Update?' });
   >
     <header>
       <h1 class="font-mono text-3xl font-semibold uppercase tracking-tight">Privacy</h1>
-      <p class="text-muted-foreground">Last updated: 14 October 2026</p>
+      <p class="text-muted-foreground">Last updated: 16 October 2026</p>
       <p>This page explains what data we use and how to contact us about it.</p>
     </header>
 
@@ -36,6 +36,13 @@ useSeoMeta({ title: 'Privacy · Can I Update?' });
       code filename and location. Error messages and raw rejection values are not recorded; neither are URLs, query
       strings, function names or machine-local paths. Server render and handler failures use the same policy. These
       records never include package file contents, provider responses, or your IP address.
+    </p>
+
+    <p>
+      To limit abuse, we derive a temporary hashed key from the IP address Cloudflare supplies and use it with
+      Cloudflare-managed public request rate limits. Hashing is not anonymization. People sharing a network address
+      share these approximate allowances. We do not create visitor accounts or persistent visitor profiles for rate
+      limiting.
     </p>
 
     <h2>Package data and AI</h2>

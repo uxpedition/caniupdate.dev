@@ -1,7 +1,10 @@
+import type { RateLimit } from '@cloudflare/workers-types';
+
 import type { BriefingEvidence } from './comparison/briefing/briefing.defs';
 import type { BriefingServiceResult } from './comparison/briefing/briefingService.defs';
 import type { StoredBriefingResult } from './comparison/briefing/storedBriefing.defs';
 import type { PackageEvidenceNamespace } from './comparison/evidence/packageEvidence.defs';
+import type { RateLimitCaller } from './request/rateLimit.defs';
 
 type DisposableBriefingServiceResult = BriefingServiceResult & { [Symbol.dispose](): void };
 
@@ -19,10 +22,13 @@ export type BriefingServiceBinding = {
 declare module 'h3' {
   interface H3EventContext {
     comparisonHtmlCacheable?: boolean;
+    rateLimitCaller?: RateLimitCaller;
     cloudflare?: {
+      readonly request?: Request;
       readonly env?: {
         readonly PACKAGE_EVIDENCE?: PackageEvidenceNamespace;
         readonly BRIEFING_SERVICE?: BriefingServiceBinding;
+        readonly PUBLIC_RATE_LIMITER?: RateLimit;
         /** Private OTLP endpoint supplied only to the Nuxt Worker. */
         readonly NUXT_OTEL_ENDPOINT?: string;
         /** JSON-encoded private OTLP authentication headers supplied only to the Nuxt Worker. */
