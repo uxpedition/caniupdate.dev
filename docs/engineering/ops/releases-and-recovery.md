@@ -55,7 +55,9 @@ Exercise the actual public surface, not only bundle compilation:
 
 For frontend/build configuration changes, exercise both Firefox and Chromium. The [entry-import-map decision](../adrs/firefox-entry-import-map.md) records the historical Firefox failure, retained startup workaround, and limits of the observation.
 
-Routine contribution checks and the [local smoke](development.md#exercise-the-asynchronous-briefing-without-paid-inference) use a fixture. The official preview is staging: real AI generation there is authorized, including deployed browser checks using that environment's dedicated key. These checks can incur charges, including when the response or persistence fails. This authorization does not extend to production or reuse production keys.
+Routine contribution checks and the [local smoke](development.md#exercise-the-asynchronous-briefing-without-paid-inference) use a fixture. The deployed browser smoke intercepts the briefing POST before dispatch, validates the response envelope, and verifies fixture text and its citation render both after comparison and after reload. It does not exercise provider generation, durable briefing reuse, or subscription completion. A separate, intentionally authorized stage provider check may use that environment's dedicated key; it is not part of the default smoke and can incur charges. This does not authorize production provider calls or reuse of production keys.
+
+The deployed smoke uses Effect's HTTP, configuration, and filesystem services. HTTP admission probes do not follow redirects; the health deadline covers response-body decoding as well as transport. Each run attempts to write its owner-only `.data/preview-verification/report.json` on success, failure, defects, or graceful cancellation. A report-write failure fails the command; forced process termination cannot guarantee a report.
 
 Label these outcomes separately:
 

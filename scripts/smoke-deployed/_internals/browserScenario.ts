@@ -1,21 +1,45 @@
 import { resolve } from 'node:path';
 
-import { chromium, firefox, type Page, type Response as BrowserResponse } from 'playwright';
+import { Effect, Fiber, Schema } from 'effect';
+import { chromium, firefox, type Browser, type Page, type Response as BrowserResponse, type Route } from 'playwright';
 
-import { parseBuildIdentity } from '../../../shared/site/buildIdentity.ts';
-import { installScopedBrowserAccess, SmokeFailure, type SmokeConfig } from './access.ts';
 import {
-  BriefingObserver,
-  decodeSubmission,
-  isBriefingSubmission,
-  nextSubmission,
-  type GenerationOutcome,
-} from './briefing.ts';
+  BriefingSubmissionSchema,
+  decodeBriefingSubmission,
+} from '../../../shared/comparison/briefing/briefingJob.defs.ts';
+import { parseBuildIdentity } from '../../../shared/site/buildIdentity.ts';
+import { installScopedBrowserAccess, playwrightCall } from './browserAccess.ts';
+import type { SmokeConfig } from './config.ts';
 import {
   decodePackageDeclarationsResponse,
   decodePackageMeasurementsResponse,
   decodePackageSearchResponse,
 } from './contracts.ts';
+import { SmokeFailure } from './errors.ts';
+
+const FIXTURE_BULLET = 'Smoke fixture: inspect the package changes before updating.';
+
+const smokeBriefingSubmission = decodeBriefingSubmission({
+  status: 'available',
+  packageName: 'is-number',
+  from: '6.0.0',
+  to: '7.0.0',
+  briefing: {
+    status: 'available',
+    model: 'smoke-fixture',
+    bullets: [{ kind: 'coverage', basis: 'fact', text: FIXTURE_BULLET, evidenceNumbers: [0] }],
+    sources: [
+      {
+        number: 0,
+        id: 'smoke-fixture',
+        kind: 'coverage',
+        label: 'Smoke fixture evidence',
+        urls: [],
+        text: 'This fixture verifies briefing rendering without contacting an AI provider.',
+      },
+    ],
+  },
+});
 
 const browsers = { chromium, firefox } as const;
 
@@ -24,245 +48,385 @@ export type BrowserName = keyof typeof browsers;
 export type BrowserOutcome = {
   browser: BrowserName;
   outcome: 'passed' | 'failed';
-  generation?: GenerationOutcome;
-  reloadGeneration?: GenerationOutcome;
+  blockedBriefingPosts: number;
   failureStage?: string;
 };
 
-async function waitForOpaqueSurface(page: Page, selector: string): Promise<void> {
-  await page.waitForFunction((target) => {
-    let element = document.querySelector(target);
+const waitForOpaqueSurface = (page: Page, selector: string): Effect.Effect<void, SmokeFailure> =>
+  playwrightCall('browser-interaction', () =>
+    page.waitForFunction((target) => {
+      let element = document.querySelector(target);
 
-    if (element === null) return false;
+      if (element === null) return false;
 
-    while (element !== null) {
-      if (getComputedStyle(element).opacity !== '1') return false;
+      while (element !== null) {
+        if (getComputedStyle(element).opacity !== '1') return false;
 
-      element = element.parentElement;
+        element = element.parentElement;
+      }
+
+      return true;
+    }, selector),
+  ).pipe(Effect.asVoid);
+
+const verifyFooter = (page: Page, config: SmokeConfig): Effect.Effect<void, SmokeFailure> =>
+  Effect.gen(function* () {
+    const footer = page.locator('footer');
+    const link = footer.getByRole('link', { name: `View preview commit ${config.expectedSha}`, exact: true });
+
+    yield* playwrightCall('browser-interaction', () => link.waitFor({ state: 'visible' }));
+
+    const href = yield* playwrightCall('browser-interaction', () => link.getAttribute('href'));
+    const suffix = `/-/commit/${config.expectedSha}`;
+
+    if (href === null || !href.endsWith(suffix)) return yield* Effect.fail(new SmokeFailure('footer-identity'));
+
+    yield* Effect.try({
+      try: () => parseBuildIdentity(config.expectedSha, href.slice(0, -suffix.length)),
+      catch: () => new SmokeFailure('browser-interaction'),
+    });
+  });
+
+const searchPackage = (page: Page, config: SmokeConfig): Effect.Effect<void, SmokeFailure> =>
+  Effect.gen(function* () {
+    const responseFiber = yield* Effect.forkChild(
+      playwrightCall('browser-interaction', () =>
+        page.waitForResponse((candidate) => {
+          const url = new URL(candidate.url());
+
+          return (
+            url.origin === config.frontendOrigin.origin &&
+            url.pathname === '/api/search' &&
+            url.searchParams.get('text') === 'is-number'
+          );
+        }),
+      ),
+      { startImmediately: true },
+    );
+
+    yield* Effect.yieldNow;
+    yield* playwrightCall('browser-interaction', () => page.locator('#package-search').fill('is-number'));
+
+    const response = yield* Fiber.join(responseFiber);
+    const search = yield* decodePackageSearchResponse(playwrightCall('browser-interaction', () => response.json()));
+
+    if (response.status() !== 200 || !search.data.some((item) => item.name === 'is-number')) {
+      return yield* Effect.fail(new SmokeFailure('package-search'));
     }
 
-    return true;
-  }, selector);
-}
-
-async function verifyFooter(page: Page, expectedSha: string): Promise<void> {
-  const link = page.getByRole('link', { name: `View preview commit ${expectedSha}`, exact: true });
-
-  await link.waitFor({ state: 'visible' });
-
-  const href = await link.getAttribute('href');
-  const suffix = `/-/commit/${expectedSha}`;
-
-  if (href === null || !href.endsWith(suffix)) throw new SmokeFailure('footer-identity');
-
-  parseBuildIdentity(expectedSha, href.slice(0, -suffix.length));
-}
-
-async function searchPackage(page: Page, config: SmokeConfig): Promise<void> {
-  const responsePromise = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-
-    return (
-      url.origin === config.frontendOrigin.origin &&
-      url.pathname === '/api/search' &&
-      url.searchParams.get('text') === 'is-number'
+    yield* playwrightCall('browser-interaction', () =>
+      page
+        .getByRole('option', { name: /^is-number\b/ })
+        .first()
+        .click(),
     );
   });
 
-  const [response] = await Promise.all([responsePromise, page.locator('#package-search').fill('is-number')]);
-  const payload: unknown = await response.json();
-  const search = decodePackageSearchResponse(payload);
+const selectVersion = (page: Page, label: string, version: string): Effect.Effect<void, SmokeFailure> =>
+  Effect.gen(function* () {
+    yield* playwrightCall('browser-interaction', () =>
+      page.getByRole('combobox', { name: label, exact: true }).click(),
+    );
+    yield* playwrightCall('browser-interaction', () =>
+      page.getByRole('option', { name: version, exact: true }).click(),
+    );
+  });
 
-  if (response.status() !== 200 || !search.data.some((item) => item.name === 'is-number'))
-    throw new SmokeFailure('package-search');
+const comparisonResponse = (
+  page: Page,
+  config: SmokeConfig,
+  suffix: string,
+): Effect.Effect<BrowserResponse, SmokeFailure> =>
+  playwrightCall('browser-interaction', () =>
+    page.waitForResponse(
+      (response) => {
+        const url = new URL(response.url());
 
-  await page
-    .getByRole('option', { name: /^is-number\b/ })
-    .first()
-    .click();
-}
-
-async function selectVersion(page: Page, label: string, version: string): Promise<void> {
-  await page.getByRole('combobox', { name: label, exact: true }).click();
-  await page.getByRole('option', { name: version, exact: true }).click();
-}
-
-function comparisonResponse(page: Page, config: SmokeConfig, suffix: string): Promise<BrowserResponse> {
-  return page.waitForResponse(
-    (response) => {
-      const url = new URL(response.url());
-
-      return (
-        url.origin === config.frontendOrigin.origin &&
-        url.pathname === `/api/package/is-number/compare${suffix}` &&
-        response.request().method() === 'GET'
-      );
-    },
-    { timeout: 30_000 },
+        return (
+          url.origin === config.frontendOrigin.origin &&
+          url.pathname === `/api/package/is-number/compare${suffix}` &&
+          response.request().method() === 'GET'
+        );
+      },
+      { timeout: 30_000 },
+    ),
   );
-}
 
-async function verifyDeclarations(response: BrowserResponse): Promise<void> {
-  const payload: unknown = await response.json();
-  const value = decodePackageDeclarationsResponse(payload);
+const verifyDeclarations = (response: BrowserResponse): Effect.Effect<void, SmokeFailure> =>
+  Effect.gen(function* () {
+    const value = yield* decodePackageDeclarationsResponse(
+      playwrightCall('browser-interaction', () => response.json()),
+    );
 
-  if (
-    response.status() !== 200 ||
-    value.packageName !== 'is-number' ||
-    value.from.name !== 'is-number' ||
-    value.to.name !== 'is-number' ||
-    value.from.version !== '6.0.0' ||
-    value.to.version !== '7.0.0'
-  ) {
-    throw new SmokeFailure('declarations-response');
-  }
-}
-
-async function verifyMeasurements(response: BrowserResponse): Promise<void> {
-  const payload: unknown = await response.json();
-  const value = decodePackageMeasurementsResponse(payload);
-
-  if (
-    response.status() !== 200 ||
-    value.packageName !== 'is-number' ||
-    value.from.name !== 'is-number' ||
-    value.to.name !== 'is-number' ||
-    value.from.version !== '6.0.0' ||
-    value.to.version !== '7.0.0'
-  ) {
-    throw new SmokeFailure('measurements-response');
-  }
-}
-
-async function compare(page: Page, config: SmokeConfig, observer: BriefingObserver): Promise<GenerationOutcome> {
-  await searchPackage(page, config);
-  await selectVersion(page, 'From version', '6.0.0');
-  await selectVersion(page, 'To version', '7.0.0');
-
-  const declarations = comparisonResponse(page, config, '').then(verifyDeclarations);
-  const measurements = comparisonResponse(page, config, '/measurements').then(verifyMeasurements);
-  const submission = nextSubmission(page, config).then(decodeSubmission);
-  const navigation = page.waitForURL('**/is-number/6.0.0...7.0.0');
-
-  const [decoded] = await Promise.all([
-    submission,
-    declarations,
-    measurements,
-    navigation,
-    page.getByTestId('compare').click(),
-  ]);
-
-  await waitForComparisonRender(page);
-
-  return await observer.settle(decoded, config);
-}
-
-async function waitForComparisonRender(page: Page): Promise<void> {
-  await page.getByRole('heading', { name: 'At a glance', exact: true }).waitFor({ state: 'visible' });
-  await waitForOpaqueSurface(page, '.comparison-shell');
-}
-
-async function waitForStoredBriefing(page: Page): Promise<void> {
-  const briefingRegion = page.locator('[aria-label="AI briefing"]');
-  const disclosure = page.locator('details').filter({ has: briefingRegion });
-  const firstBullet = briefingRegion.locator('li').first();
-
-  await firstBullet.waitFor({ state: 'attached' });
-
-  if (!(await disclosure.evaluate((element) => element.matches('details[open]')))) {
-    await disclosure.locator('summary').click();
-  }
-
-  await firstBullet.waitFor({ state: 'visible' });
-  await waitForOpaqueSurface(page, '[aria-label="AI briefing"]');
-}
-
-async function verifyReload(page: Page, config: SmokeConfig): Promise<GenerationOutcome> {
-  const submissions: BrowserResponse[] = [];
-
-  const recordSubmission = (response: BrowserResponse): void => {
-    if (isBriefingSubmission(config, response.request().method(), response.url())) submissions.push(response);
-  };
-
-  page.on('response', recordSubmission);
-
-  try {
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await waitForComparisonRender(page);
-    await waitForStoredBriefing(page);
-    // A seed older than the query stale time refetches during hydration; let that request settle before inspecting.
-    await page.waitForLoadState('networkidle');
-  } finally {
-    page.off('response', recordSubmission);
-  }
-
-  // A fresh seed submits nothing. A stale seed may refetch, and that POST must return the stored result, never a generation.
-  const decoded = await Promise.all(submissions.map((response) => decodeSubmission(response)));
-
-  if (decoded.some((submission) => submission.status !== 'available')) {
-    throw new SmokeFailure('reload-cached-briefing');
-  }
-
-  return {
-    submission: decoded.length === 0 ? 'not-submitted' : 'available',
-    outcome: 'cached-available',
-    frames: 0,
-  };
-}
-
-async function openHomepage(page: Page, config: SmokeConfig, screenshot: string): Promise<void> {
-  await page.goto(config.frontendOrigin.href, { waitUntil: 'domcontentloaded' });
-  await page
-    .getByRole('heading', { name: 'Check what changes before you update an npm package.', exact: true })
-    .waitFor();
-  await verifyFooter(page, config.expectedSha);
-  await waitForOpaqueSurface(page, 'h1');
-  await waitForOpaqueSurface(page, '#package-search');
-  await page.screenshot({ path: screenshot, fullPage: true });
-}
-
-async function exercisePage(page: Page, config: SmokeConfig, output: string, outcome: BrowserOutcome): Promise<void> {
-  let errors = 0;
-
-  page.on('pageerror', () => {
-    errors += 1;
+    if (
+      response.status() !== 200 ||
+      value.packageName !== 'is-number' ||
+      value.from.name !== 'is-number' ||
+      value.to.name !== 'is-number' ||
+      value.from.version !== '6.0.0' ||
+      value.to.version !== '7.0.0'
+    ) {
+      return yield* Effect.fail(new SmokeFailure('declarations-response'));
+    }
   });
-  page.on('console', (message) => {
-    if (message.type() === 'error') errors += 1;
+
+const verifyMeasurements = (response: BrowserResponse): Effect.Effect<void, SmokeFailure> =>
+  Effect.gen(function* () {
+    const value = yield* decodePackageMeasurementsResponse(
+      playwrightCall('browser-interaction', () => response.json()),
+    );
+
+    if (
+      response.status() !== 200 ||
+      value.packageName !== 'is-number' ||
+      value.from.name !== 'is-number' ||
+      value.to.name !== 'is-number' ||
+      value.from.version !== '6.0.0' ||
+      value.to.version !== '7.0.0'
+    ) {
+      return yield* Effect.fail(new SmokeFailure('measurements-response'));
+    }
   });
-  page.setDefaultTimeout(30_000);
-  await openHomepage(page, config, resolve(output, `${outcome.browser}-homepage.png`));
 
-  const observer = new BriefingObserver(page);
+const handleBriefingSubmission = (route: Route, outcome: BrowserOutcome): Effect.Effect<void, SmokeFailure> =>
+  Effect.gen(function* () {
+    const method = yield* Effect.try({
+      try: () => route.request().method(),
+      catch: () => new SmokeFailure('browser-interaction'),
+    });
 
-  outcome.generation = await compare(page, config, observer);
-  outcome.reloadGeneration = await verifyReload(page, config);
-  await verifyFooter(page, config.expectedSha);
-  await page.screenshot({ path: resolve(output, `${outcome.browser}-comparison.png`), fullPage: true });
+    if (method !== 'POST') {
+      yield* playwrightCall('browser-interaction', () => route.continue());
 
-  if (errors) throw new SmokeFailure('browser-errors');
-}
-
-export async function runBrowser(name: BrowserName, config: SmokeConfig, output: string): Promise<BrowserOutcome> {
-  const outcome: BrowserOutcome = { browser: name, outcome: 'failed' };
-  const browser = await browsers[name].launch({ headless: true });
-
-  try {
-    const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1365, height: 900 } });
-
-    // Routed loopback documents need Chromium's explicit local-network permission for the separate socket port.
-    if (config.local && name === 'chromium') {
-      await context.grantPermissions(['local-network-access'], { origin: config.frontendOrigin.origin });
+      return;
     }
 
-    await installScopedBrowserAccess(context, config);
-    await exercisePage(await context.newPage(), config, output, outcome);
-    outcome.outcome = 'passed';
-  } catch (cause) {
-    outcome.failureStage = cause instanceof SmokeFailure ? cause.stage : `browser-${name}-interaction`;
-  } finally {
-    await browser.close();
-  }
+    yield* Effect.sync(() => {
+      outcome.blockedBriefingPosts += 1;
+    });
 
-  return outcome;
-}
+    // Return an available fixture before dispatch: the browser smoke exercises the page without invoking a provider.
+    yield* playwrightCall('browser-interaction', () =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(smokeBriefingSubmission),
+      }),
+    );
+  });
+
+const interceptBriefingSubmissions = (
+  page: Page,
+  config: SmokeConfig,
+  outcome: BrowserOutcome,
+): Effect.Effect<void, SmokeFailure> =>
+  playwrightCall('browser-interaction', () =>
+    page.route(
+      (url) =>
+        url.origin === config.frontendOrigin.origin && url.pathname === '/api/package/is-number/compare/briefing',
+      (route) =>
+        Effect.runPromise(
+          handleBriefingSubmission(route, outcome).pipe(
+            Effect.catch(() =>
+              playwrightCall('browser-interaction', () => route.abort('blockedbyclient')).pipe(
+                Effect.orElseSucceed(() => undefined),
+              ),
+            ),
+          ),
+        ),
+    ),
+  );
+
+const verifyBriefingResponse = (page: Page, config: SmokeConfig) =>
+  Effect.gen(function* () {
+    const response = yield* playwrightCall('briefing-submission', () =>
+      page.waitForResponse((candidate) => {
+        const url = new URL(candidate.url());
+
+        return (
+          candidate.request().method() === 'POST' &&
+          url.origin === config.frontendOrigin.origin &&
+          url.pathname === '/api/package/is-number/compare/briefing'
+        );
+      }),
+    );
+
+    const payload: unknown = yield* playwrightCall('briefing-submission', () => response.json());
+
+    const submission = yield* Schema.decodeUnknownEffect(BriefingSubmissionSchema, {
+      errors: 'all',
+      onExcessProperty: 'error',
+    })(payload).pipe(Effect.mapError(() => new SmokeFailure('briefing-submission')));
+
+    if (
+      response.status() !== 200 ||
+      submission.status !== 'available' ||
+      submission.packageName !== 'is-number' ||
+      submission.from !== '6.0.0' ||
+      submission.to !== '7.0.0'
+    ) {
+      return yield* Effect.fail(new SmokeFailure('briefing-submission'));
+    }
+  });
+
+const verifyBriefingRender = (page: Page): Effect.Effect<void, SmokeFailure> =>
+  Effect.gen(function* () {
+    const region = page.getByRole('region', { name: 'AI briefing', exact: true, includeHidden: true });
+    const bullet = region.getByText(FIXTURE_BULLET, { exact: true });
+    const disclosure = page.locator('details').filter({ has: region });
+
+    yield* playwrightCall('briefing-render', () => bullet.waitFor({ state: 'attached' }));
+
+    const open = yield* playwrightCall('briefing-render', () =>
+      disclosure.evaluate((element) => element.matches('details[open]')),
+    );
+
+    if (!open) yield* playwrightCall('briefing-render', () => disclosure.locator('summary').click());
+    yield* playwrightCall('briefing-render', () => bullet.waitFor({ state: 'visible' }));
+    yield* playwrightCall('briefing-render', () =>
+      region.getByRole('link', { name: 'Jump to Smoke fixture evidence', exact: true }).waitFor({ state: 'visible' }),
+    );
+    yield* waitForOpaqueSurface(page, '[aria-label="AI briefing"]');
+  });
+
+const compare = (page: Page, config: SmokeConfig): Effect.Effect<void, SmokeFailure> =>
+  Effect.gen(function* () {
+    yield* searchPackage(page, config);
+    yield* selectVersion(page, 'From version', '6.0.0');
+    yield* selectVersion(page, 'To version', '7.0.0');
+
+    const declarations = comparisonResponse(page, config, '').pipe(Effect.flatMap(verifyDeclarations));
+    const measurements = comparisonResponse(page, config, '/measurements').pipe(Effect.flatMap(verifyMeasurements));
+    const navigation = playwrightCall('browser-interaction', () => page.waitForURL('**/is-number/6.0.0...7.0.0'));
+
+    const responseAndNavigation = Effect.all(
+      [declarations, measurements, navigation, verifyBriefingResponse(page, config)],
+      { concurrency: 'unbounded' },
+    );
+
+    const waitFiber = yield* Effect.forkChild(responseAndNavigation, { startImmediately: true });
+
+    yield* Effect.yieldNow;
+    yield* playwrightCall('browser-interaction', () => page.getByTestId('compare').click());
+    yield* Fiber.join(waitFiber);
+
+    yield* waitForComparisonRender(page);
+    yield* verifyBriefingRender(page);
+  });
+
+const waitForComparisonRender = (page: Page): Effect.Effect<void, SmokeFailure> =>
+  Effect.gen(function* () {
+    yield* playwrightCall('browser-interaction', () =>
+      page.getByRole('heading', { name: 'At a glance', exact: true }).waitFor({ state: 'visible' }),
+    );
+    yield* waitForOpaqueSurface(page, '.comparison-shell');
+  });
+
+const verifyReload = (page: Page): Effect.Effect<void, SmokeFailure> =>
+  Effect.gen(function* () {
+    yield* playwrightCall('browser-interaction', () => page.reload({ waitUntil: 'domcontentloaded' }));
+    yield* waitForComparisonRender(page);
+    yield* playwrightCall('browser-interaction', () => page.waitForLoadState('networkidle'));
+    yield* verifyBriefingRender(page);
+  });
+
+const openHomepage = (page: Page, config: SmokeConfig, screenshot: string): Effect.Effect<void, SmokeFailure> =>
+  Effect.gen(function* () {
+    yield* playwrightCall('browser-interaction', () =>
+      page.goto(config.frontendOrigin.href, { waitUntil: 'domcontentloaded' }),
+    );
+    yield* playwrightCall('browser-interaction', () =>
+      page
+        .getByRole('heading', { name: 'Check what changes before you update an npm package.', exact: true })
+        .waitFor(),
+    );
+    yield* verifyFooter(page, config);
+    yield* waitForOpaqueSurface(page, 'h1');
+    yield* waitForOpaqueSurface(page, '#package-search');
+    yield* playwrightCall('browser-interaction', () => page.screenshot({ path: screenshot, fullPage: true }));
+  });
+
+const exercisePage = (
+  page: Page,
+  config: SmokeConfig,
+  output: string,
+  outcome: BrowserOutcome,
+): Effect.Effect<void, SmokeFailure> =>
+  Effect.gen(function* () {
+    let errors = 0;
+
+    yield* Effect.sync(() => {
+      page.on('pageerror', () => {
+        errors += 1;
+      });
+      page.on('console', (message) => {
+        if (message.type() === 'error') errors += 1;
+      });
+      page.setDefaultTimeout(30_000);
+    });
+
+    yield* interceptBriefingSubmissions(page, config, outcome);
+    yield* openHomepage(page, config, resolve(output, `${outcome.browser}-homepage.png`));
+    yield* compare(page, config);
+    yield* verifyReload(page);
+    yield* verifyFooter(page, config);
+    yield* playwrightCall('browser-interaction', () =>
+      page.screenshot({ path: resolve(output, `${outcome.browser}-comparison.png`), fullPage: true }),
+    );
+
+    if (errors !== 0) return yield* Effect.fail(new SmokeFailure('browser-errors'));
+  });
+
+const exerciseBrowser = (
+  browser: Browser,
+  name: BrowserName,
+  config: SmokeConfig,
+  output: string,
+  outcome: BrowserOutcome,
+) =>
+  Effect.acquireUseRelease(
+    playwrightCall('browser-interaction', () =>
+      browser.newContext({ serviceWorkers: 'block', viewport: { width: 1365, height: 900 } }),
+    ),
+    (context) =>
+      Effect.gen(function* () {
+        // Routed loopback documents need Chromium's explicit local-network permission for the separate socket port.
+        if (config.local && name === 'chromium') {
+          yield* playwrightCall('browser-interaction', () =>
+            context.grantPermissions(['local-network-access'], { origin: config.frontendOrigin.origin }),
+          );
+        }
+
+        yield* installScopedBrowserAccess(context, config);
+
+        const page = yield* playwrightCall('browser-interaction', () => context.newPage());
+
+        yield* exercisePage(page, config, output, outcome);
+      }),
+    (context) => playwrightCall('browser-interaction', () => context.close()).pipe(Effect.asVoid),
+  );
+
+export const runBrowser = (
+  name: BrowserName,
+  config: SmokeConfig,
+  output: string,
+): Effect.Effect<BrowserOutcome, SmokeFailure> => {
+  const outcome: BrowserOutcome = { browser: name, outcome: 'failed', blockedBriefingPosts: 0 };
+
+  return Effect.acquireUseRelease(
+    playwrightCall('configuration-or-response', () => browsers[name].launch({ headless: true })),
+    (browser) =>
+      Effect.matchEffect(exerciseBrowser(browser, name, config, output, outcome), {
+        onFailure: (failure) => {
+          const failureStage =
+            failure.stage === 'browser-interaction' || failure.stage === 'browser-access'
+              ? `browser-${name}-interaction`
+              : failure.stage;
+
+          return Effect.succeed({ ...outcome, outcome: 'failed' as const, failureStage });
+        },
+        onSuccess: () => Effect.succeed({ ...outcome, outcome: 'passed' as const }),
+      }),
+    (browser) => playwrightCall('configuration-or-response', () => browser.close()).pipe(Effect.asVoid),
+  );
+};
