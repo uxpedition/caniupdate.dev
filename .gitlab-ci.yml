@@ -1,5 +1,5 @@
-# Required validation precedes serialized deployment on protected main. The frontend deployed from .output is the
-# artifact build-smoke builds once; the evidence and briefing Workers deploy from the same commit's source.
+# Required validation precedes serialized deployment on protected main. One immutable artifact contains the
+# frontend and both backend Worker bundles, with content hashes checked again before stage deployment.
 # Pins: Node image digest, Node/Nub versions, Nub archive SHA-256, and the locked browser tooling.
 # Stage credentials MUST be protected and environment-scoped to stage; no shared writable caches.
 
@@ -11,10 +11,10 @@ workflow:
 
 stages:
   - verify
-  - deploy
+  - deploy-stage
 
 include:
-  - local: scripts/deploy-preview/ci-bootstrap.yml
+  - local: scripts/deploy/ci-bootstrap.yml
 
 quality:
   stage: verify
@@ -40,22 +40,21 @@ build-smoke:
     NUXT_BUILD_REPOSITORY_URL: '$CI_PROJECT_URL'
   script:
     - nub run build
-    - node -e 'require("node:fs").writeFileSync(".output/preview-build.json", JSON.stringify({ commitSha:process.env.CI_COMMIT_SHA, pipelineId:process.env.CI_PIPELINE_ID }))'
+    - nub run build:identity
   artifacts:
     access: maintainer
     expire_in: 7 days
     paths:
       - .output/
 
-# Separate job: it runs on its own copy of .output, so nothing it writes can reach the artifact build-smoke publishes.
+# Separate job: it runs on its own copy of .output, so smoke writes cannot reach the published artifact.
 smoke:preview:
   stage: verify
   timeout: 5m
   needs:
     - job: build-smoke
-  variables:
-    NUXT_PUBLIC_SITE_URL: 'http://localhost:5273'
   script:
+    - export NUXT_PUBLIC_SITE_URL='http://localhost:5273'
     - printf '%s\n' 'AI_BRIEFING_ENDPOINT="http://127.0.0.1:8787/v1/chat/completions"' 'AI_BRIEFING_API_KEY="local-fixture-key"' 'AI_BRIEFING_MODEL="local-fixture-model"' > workers/briefing/.dev.vars
     - nub run smoke:preview
 
@@ -69,7 +68,7 @@ stage:delivery:
   inherit:
     default: false
     variables: false
-  stage: deploy
+  stage: deploy-stage
   # The child jobs must not acquire this lock themselves: it spans deployment AND both browser checks.
   resource_group: stage
   interruptible: false
@@ -77,7 +76,7 @@ stage:delivery:
     PARENT_PIPELINE_ID: '$CI_PIPELINE_ID'
   trigger:
     include:
-      - local: scripts/deploy-preview/ci-stage.yml
+      - local: scripts/deploy/ci-stage.yml
     strategy: mirror
     forward:
       yaml_variables: true

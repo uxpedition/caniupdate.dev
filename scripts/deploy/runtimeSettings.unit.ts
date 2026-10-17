@@ -1,3 +1,4 @@
+import { Effect } from 'effect';
 import { describe, expect, it } from 'vitest';
 
 import { assertCredentialIsolation, PRIVATE_CI_KEYS, STAGE_ORIGIN, STAGE_SOCKET_ORIGIN } from './configurationKeys.ts';
@@ -12,18 +13,30 @@ const validSettings = {
   BRIEFING_PUBLIC_URL: STAGE_SOCKET_ORIGIN,
 };
 
+const checkCredentialIsolation = (environment: NodeJS.ProcessEnv) =>
+  Effect.runSync(assertCredentialIsolation(environment));
+const readSettings = (environment: NodeJS.ProcessEnv) => Effect.runSync(readRuntimeSettings(environment));
+
 describe('GitLab private configuration boundaries', () => {
   it.each(PRIVATE_CI_KEYS)('rejects %s in the public build scope without exposing its value', (key) => {
     expect.assertions(2);
     const privateValue = 'private-fixture-marker';
 
     try {
-      assertCredentialIsolation({ [key]: privateValue });
+      checkCredentialIsolation({ [key]: privateValue });
     } catch (cause) {
       expect(cause).toBeInstanceOf(Error);
       expect(String(cause)).not.toContain(privateValue);
     }
   });
+
+  it.each(['PUBLIC_RATE_LIMIT', 'BRIEFING_GENERATION_RATE_LIMIT'] as const)(
+    'allows %s only in the stage deployment environment',
+    (key) => {
+      expect(() => checkCredentialIsolation({ CI_ENVIRONMENT_NAME: 'stage', [key]: '90' })).not.toThrow();
+      expect(() => checkCredentialIsolation({ CI_ENVIRONMENT_NAME: 'build-smoke', [key]: '90' })).toThrow(Error);
+    },
+  );
 
   it.each([
     ['AI_BRIEFING_ENDPOINT', 'https://inference.example/v1/responses'],
@@ -49,7 +62,7 @@ describe('GitLab private configuration boundaries', () => {
     expect.assertions(2);
 
     try {
-      readRuntimeSettings({ ...validSettings, [key]: value });
+      readSettings({ ...validSettings, [key]: value });
     } catch (cause) {
       expect(cause).toBeInstanceOf(RuntimeSettingsFailure);
       expect(String(cause)).not.toContain('private-fixture-marker');
@@ -57,17 +70,17 @@ describe('GitLab private configuration boundaries', () => {
   });
 
   it('refuses telemetry enablement that cannot reach an exporter', () => {
-    expect(() => readRuntimeSettings({ ...validSettings, NUXT_PUBLIC_TELEMETRY_ENABLED: 'true' })).toThrow(
+    expect(() => readSettings({ ...validSettings, NUXT_PUBLIC_TELEMETRY_ENABLED: 'true' })).toThrow(
       RuntimeSettingsFailure,
     );
   });
 
   it('uses the checked-in defaults when GitLab does not override rate limits', () => {
-    expect(readRuntimeSettings(validSettings).rateLimits).toEqual({ public: 60, generation: 3 });
+    expect(readSettings(validSettings).rateLimits).toEqual({ public: 60, generation: 3 });
   });
 
   it('accepts the inclusive positive safe-integer boundaries', () => {
-    const settings = readRuntimeSettings({
+    const settings = readSettings({
       ...validSettings,
       PUBLIC_RATE_LIMIT: '9007199254740991',
       BRIEFING_GENERATION_RATE_LIMIT: '1',
@@ -77,7 +90,7 @@ describe('GitLab private configuration boundaries', () => {
   });
 
   it('keeps GitLab rate settings in deployment configuration, never Worker secrets or public runtime values', () => {
-    const settings = readRuntimeSettings({
+    const settings = readSettings({
       ...validSettings,
       PUBLIC_RATE_LIMIT: '90',
       BRIEFING_GENERATION_RATE_LIMIT: '2',
@@ -89,5 +102,14 @@ describe('GitLab private configuration boundaries', () => {
       expect(workerSettings).not.toHaveProperty('PUBLIC_RATE_LIMIT');
       expect(workerSettings).not.toHaveProperty('BRIEFING_GENERATION_RATE_LIMIT');
     }
+  });
+
+  it('requires the exact stage origins', () => {
+    expect(() => readSettings({ ...validSettings, NUXT_PUBLIC_SITE_URL: 'https://unrelated.example' })).toThrow(
+      RuntimeSettingsFailure,
+    );
+    expect(() => readSettings({ ...validSettings, BRIEFING_PUBLIC_URL: 'wss://unrelated.example' })).toThrow(
+      RuntimeSettingsFailure,
+    );
   });
 });

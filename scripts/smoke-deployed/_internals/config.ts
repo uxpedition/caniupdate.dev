@@ -1,10 +1,7 @@
 import { Config, Effect, Schema } from 'effect';
 
+import { STAGE_ORIGIN, STAGE_SOCKET_ORIGIN } from '../../deploy/configurationKeys.ts';
 import { SmokeFailure } from './errors.ts';
-
-const STAGE_ORIGIN = 'https://stage.caniupdate.dev';
-
-const STAGE_SOCKET_ORIGIN = 'wss://stage-briefing.caniupdate.dev';
 
 export const isRayId = Schema.is(Schema.String.check(Schema.isPattern(/^[0-9a-f]{16}(?:-[A-Z]{3})?$/i)));
 
@@ -42,9 +39,13 @@ const OriginSchema = NonBlankString.check(
 
 const EnvironmentSchema = Schema.Struct({
   SMOKE_LOCAL: Schema.optionalKey(Schema.Literals(['true', 'false'])),
-  PREVIEW_ORIGIN: OriginSchema,
-  PREVIEW_SOCKET_ORIGIN: OriginSchema,
-  PREVIEW_EXPECTED_SHA: Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)),
+  SMOKE_TARGET: Schema.optionalKey(Schema.Literal('stage')),
+  SMOKE_EXPECTED_SHA: Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)),
+});
+
+const LocalOriginsSchema = Schema.Struct({
+  SMOKE_ORIGIN: OriginSchema,
+  SMOKE_SOCKET_ORIGIN: OriginSchema,
 });
 
 const CredentialsSchema = Schema.Struct({
@@ -63,8 +64,15 @@ function isAllowedTarget(local: boolean, frontend: URL, socket: URL): boolean {
 export const readSmokeConfig: Effect.Effect<SmokeConfig, SmokeFailure> = Effect.gen(function* () {
   const environment = yield* Config.schema(EnvironmentSchema);
   const local = environment.SMOKE_LOCAL === 'true';
-  const frontendOrigin = environment.PREVIEW_ORIGIN;
-  const socketOrigin = environment.PREVIEW_SOCKET_ORIGIN;
+
+  if (local ? environment.SMOKE_TARGET !== undefined : environment.SMOKE_TARGET !== 'stage')
+    return yield* Effect.fail(new SmokeFailure('configuration'));
+
+  const origins = local
+    ? yield* Config.schema(LocalOriginsSchema)
+    : { SMOKE_ORIGIN: new URL(STAGE_ORIGIN), SMOKE_SOCKET_ORIGIN: new URL(STAGE_SOCKET_ORIGIN) };
+  const frontendOrigin = origins.SMOKE_ORIGIN;
+  const socketOrigin = origins.SMOKE_SOCKET_ORIGIN;
 
   if (socketOrigin.protocol === 'https:') socketOrigin.protocol = 'wss:';
   else if (socketOrigin.protocol === 'http:') socketOrigin.protocol = 'ws:';
@@ -89,7 +97,7 @@ export const readSmokeConfig: Effect.Effect<SmokeConfig, SmokeFailure> = Effect.
     frontendOrigin,
     socketOrigin,
     socketHttpOrigin: socketHttpOrigin.origin,
-    expectedSha: environment.PREVIEW_EXPECTED_SHA,
+    expectedSha: environment.SMOKE_EXPECTED_SHA,
     accessHeaders,
   } satisfies SmokeConfig;
 }).pipe(Effect.mapError(() => new SmokeFailure('configuration')));

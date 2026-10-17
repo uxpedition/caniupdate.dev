@@ -11,9 +11,9 @@ import { runSmoke } from './workflow.ts';
 
 const environment = {
   SMOKE_LOCAL: 'true',
-  PREVIEW_ORIGIN: 'http://localhost:5173',
-  PREVIEW_SOCKET_ORIGIN: 'ws://localhost:8791',
-  PREVIEW_EXPECTED_SHA: 'a'.repeat(40),
+  SMOKE_ORIGIN: 'http://localhost:5173',
+  SMOKE_SOCKET_ORIGIN: 'ws://localhost:8791',
+  SMOKE_EXPECTED_SHA: 'a'.repeat(40),
 };
 
 let directory: string;
@@ -69,7 +69,7 @@ describe('deployed verification report lifetime', () => {
     );
     expect(JSON.parse(await readFile(join(directory, 'report.json'), 'utf8'))).toMatchObject({
       outcome: 'failed',
-      commitSha: environment.PREVIEW_EXPECTED_SHA,
+      commitSha: environment.SMOKE_EXPECTED_SHA,
       failureStage: 'interrupted',
       browsers: [],
     });

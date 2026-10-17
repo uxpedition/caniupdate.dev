@@ -1,0 +1,63 @@
+include:
+  - local: scripts/deploy/ci-bootstrap.yml
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "parent_pipeline" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true"
+    - when: never
+
+stages:
+  - deploy
+  - verify
+
+# stage:delivery in the parent owns the stage resource group for this entire pipeline.
+# No child job acquires it, so both browser jobs can run concurrently without deadlocking.
+deploy:stage:
+  stage: deploy
+  timeout: 15m
+  interruptible: false
+  needs:
+    - pipeline: '$PARENT_PIPELINE_ID'
+      job: build-smoke
+  environment:
+    name: stage
+    url: https://stage.caniupdate.dev
+    deployment_tier: staging
+  variables:
+    CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false'
+    CLOUDFLARE_INCLUDE_PROCESS_ENV: 'false'
+  script:
+    - nub run deploy:stage
+  artifacts:
+    when: always
+    access: maintainer
+    expire_in: 30 days
+    paths:
+      - .data/preview-deployment/report.json
+
+verify:stage:
+  stage: verify
+  timeout: 10m
+  interruptible: false
+  needs:
+    - job: deploy:stage
+      artifacts: false
+  parallel:
+    matrix:
+      - SMOKE_BROWSER: [chromium, firefox]
+  environment:
+    name: stage
+    action: verify
+    deployment_tier: staging
+  variables:
+    SMOKE_TARGET: stage
+    SMOKE_EXPECTED_SHA: '$CI_COMMIT_SHA'
+  script:
+    - node scripts/smoke-deployed/ci-run.ts
+  artifacts:
+    when: always
+    access: maintainer
+    expire_in: 30 days
+    name: 'stage-$SMOKE_BROWSER-$CI_COMMIT_SHA'
+    paths:
+      - .data/preview-verification/

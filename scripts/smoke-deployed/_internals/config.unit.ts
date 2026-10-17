@@ -5,20 +5,19 @@ import { readSmokeConfig } from './config.ts';
 
 const localEnvironment = {
   SMOKE_LOCAL: 'true',
-  PREVIEW_ORIGIN: 'http://127.0.0.1:5173',
-  PREVIEW_SOCKET_ORIGIN: 'http://localhost:8791',
-  PREVIEW_EXPECTED_SHA: 'a'.repeat(40),
+  SMOKE_ORIGIN: 'http://127.0.0.1:5173',
+  SMOKE_SOCKET_ORIGIN: 'http://localhost:8791',
+  SMOKE_EXPECTED_SHA: 'a'.repeat(40),
 };
 
 const stageEnvironment = {
-  PREVIEW_ORIGIN: 'https://stage.caniupdate.dev',
-  PREVIEW_SOCKET_ORIGIN: 'https://stage-briefing.caniupdate.dev',
-  PREVIEW_EXPECTED_SHA: 'b'.repeat(40),
+  SMOKE_TARGET: 'stage',
+  SMOKE_EXPECTED_SHA: 'b'.repeat(40),
   CF_ACCESS_CLIENT_ID: 'fixture-id',
   CF_ACCESS_CLIENT_SECRET: 'fixture-secret',
 };
 
-const loadConfig = (environment: Record<string, string>) =>
+const loadConfig = (environment: Record<string, string | undefined>) =>
   readSmokeConfig.pipe(
     Effect.provideService(
       ConfigProvider.ConfigProvider,
@@ -35,7 +34,7 @@ describe('deployed smoke configuration boundaries', () => {
     expect(config.accessHeaders).toEqual({});
   });
 
-  it('admits only the configured stage hosts and attaches the dedicated credentials', async () => {
+  it('uses fixed stage hosts without requiring configurable origins and attaches dedicated credentials', async () => {
     const config = await Effect.runPromise(loadConfig(stageEnvironment));
     expect(config.socketOrigin.origin).toBe('wss://stage-briefing.caniupdate.dev');
     expect(config.accessHeaders).toEqual({
@@ -48,15 +47,16 @@ describe('deployed smoke configuration boundaries', () => {
     { SMOKE_LOCAL: '' },
     { SMOKE_LOCAL: 'yes' },
     { SMOKE_LOCAL: '1' },
-    { PREVIEW_ORIGIN: ' https://localhost' },
-    { PREVIEW_ORIGIN: 'http://user:password@localhost:5173' },
-    { PREVIEW_ORIGIN: 'http://localhost:5173/path' },
-    { PREVIEW_ORIGIN: 'http://localhost:5173/?query=yes' },
-    { PREVIEW_ORIGIN: 'http://localhost:5173/#fragment' },
-    { PREVIEW_ORIGIN: 'https://example.com' },
-    { PREVIEW_SOCKET_ORIGIN: 'wss://example.com' },
-    { PREVIEW_SOCKET_ORIGIN: 'ftp://localhost' },
-    { PREVIEW_EXPECTED_SHA: 'not-a-commit' },
+    { SMOKE_TARGET: 'stage' },
+    { SMOKE_ORIGIN: ' https://localhost' },
+    { SMOKE_ORIGIN: 'http://user:password@localhost:5173' },
+    { SMOKE_ORIGIN: 'http://localhost:5173/path' },
+    { SMOKE_ORIGIN: 'http://localhost:5173/?query=yes' },
+    { SMOKE_ORIGIN: 'http://localhost:5173/#fragment' },
+    { SMOKE_ORIGIN: 'https://example.com' },
+    { SMOKE_SOCKET_ORIGIN: 'wss://example.com' },
+    { SMOKE_SOCKET_ORIGIN: 'ftp://localhost' },
+    { SMOKE_EXPECTED_SHA: 'not-a-commit' },
   ])('rejects invalid local settings %j with a sanitized failure', async (overrides) => {
     const failure = await Effect.runPromise(Effect.flip(loadConfig({ ...localEnvironment, ...overrides })));
     expect(failure.stage).toBe('configuration');
@@ -64,12 +64,12 @@ describe('deployed smoke configuration boundaries', () => {
   });
 
   it.each([
-    { PREVIEW_ORIGIN: 'https://caniupdate.dev' },
-    { PREVIEW_SOCKET_ORIGIN: 'wss://briefing.caniupdate.dev' },
+    { SMOKE_TARGET: undefined },
+    { SMOKE_TARGET: 'production' },
     { CF_ACCESS_CLIENT_ID: '' },
     { CF_ACCESS_CLIENT_SECRET: '   ' },
     { CF_ACCESS_CLIENT_SECRET: undefined },
-  ])('rejects non-stage destinations and missing stage credentials %j', async (overrides) => {
+  ])('rejects invalid stage selection and missing stage credentials %j', async (overrides) => {
     const provider = ConfigProvider.fromEnvRecord(
       { ...stageEnvironment, ...overrides },
       { preserveEmptyStrings: true },

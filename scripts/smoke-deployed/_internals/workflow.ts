@@ -15,7 +15,7 @@ import { SmokeFailure } from './errors.ts';
 
 type SmokeReport = {
   outcome: 'passed' | 'failed';
-  mode?: 'local' | 'preview';
+  target?: SmokeConfig['target'];
   commitSha?: string;
   access?: { frontend: number; socket: number; authorizedSocketAdmission: number };
   health?: 'passed';
@@ -60,7 +60,7 @@ export const runSmoke = (outputDirectory: string) =>
     const fs = yield* FileSystem.FileSystem;
 
     const run = Effect.gen(function* () {
-      const browser = yield* Config.Literals(['chromium', 'firefox'], 'PREVIEW_BROWSER').pipe(
+      const browser = yield* Config.Literals(['chromium', 'firefox'], 'SMOKE_BROWSER').pipe(
         Config.option,
         Effect.mapError(() => new SmokeFailure('browser-selection')),
       );
@@ -69,7 +69,7 @@ export const runSmoke = (outputDirectory: string) =>
 
       const config = yield* readSmokeConfig;
 
-      report.mode = config.local ? 'local' : 'preview';
+      report.target = config.target;
       report.commitSha = config.expectedSha;
       yield* fs
         .makeDirectory(outputDirectory, { recursive: true, mode: 0o700 })

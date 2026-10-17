@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "nuxt build && wrangler deploy --dry-run --config workers/evidence/wrangler.jsonc --env= && wrangler deploy --dry-run --config workers/briefing/wrangler.jsonc --env=",
+    "build": "nuxt build && wrangler deploy --dry-run --config .output/server/wrangler.json --env= --outdir ../workers/frontend && wrangler deploy --dry-run --config workers/evidence/wrangler.jsonc --env= --outdir ../../.output/workers/evidence && wrangler deploy --dry-run --config workers/briefing/wrangler.jsonc --env= --outdir ../../.output/workers/briefing",
+    "build:identity": "node scripts/deploy/writeBuildIdentity.ts",
     "db:check": "node scripts/sync-migrations/sync-migrations.ts --check && node scripts/bundle-evidence-migrations/bundle-evidence-migrations.ts --check",
     "db:check:evidence": "node scripts/bundle-evidence-migrations/bundle-evidence-migrations.ts --check",
     "db:generate": "drizzle-kit generate && node scripts/sync-migrations/sync-migrations.ts",
@@ -14,7 +15,7 @@
     "preview": "node scripts/dev/dev.ts --preview",
     "smoke:preview": "node scripts/smoke/smoke.ts --preview",
     "smoke:deployed": "tsx scripts/smoke-deployed/smoke-deployed.ts",
-    "deploy:stage": "node scripts/deploy-preview/deploy-preview.ts",
+    "deploy:stage": "node scripts/deploy/deploy.ts --target=stage",
     "preinstall": "node scripts/check-package-manager/check-package-manager.mjs",
     "prepare": "nuxt prepare && lefthook install",
     "postinstall": "nuxt prepare",
