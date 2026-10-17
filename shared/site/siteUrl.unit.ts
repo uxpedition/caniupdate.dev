@@ -26,7 +26,7 @@ describe('parseSiteOrigin', () => {
     expect(parseSiteOrigin('http://[::1]:5173')).toEqual({ ok: true, origin: 'http://[::1]:5173' });
   });
 
-  it('accepts a plain-http preview on this machine’s own address', () => {
+  it('accepts a plain-http dev runtime on this machine’s own address', () => {
     expect(parseSiteOrigin('http://192.168.101.197:5173')).toEqual({ ok: true, origin: 'http://192.168.101.197:5173' });
     expect(parseSiteOrigin('http://100.122.224.20:5173')).toEqual({ ok: true, origin: 'http://100.122.224.20:5173' });
     expect(parseSiteOrigin('http://[fd7a:115c:a1e0::1]:5173')).toEqual({

@@ -53,7 +53,7 @@ describe('verified Worker build artifacts', () => {
       workerDeployArguments(
         workerBundleEntryPoint('evidence'),
         'workers/evidence/wrangler.jsonc',
-        'preview',
+        'stage',
         '/tmp/secrets.json',
         false,
       ),
@@ -64,7 +64,7 @@ describe('verified Worker build artifacts', () => {
       '--config',
       'workers/evidence/wrangler.jsonc',
       '--env',
-      'preview',
+      'stage',
       '--secrets-file',
       '/tmp/secrets.json',
     ]);

@@ -33,7 +33,7 @@ deploy:stage:
     access: maintainer
     expire_in: 30 days
     paths:
-      - .data/preview-deployment/report.json
+      - .data/stage-deployment/report.json
 
 verify:stage:
   stage: verify
@@ -60,4 +60,4 @@ verify:stage:
     expire_in: 30 days
     name: 'stage-$SMOKE_BROWSER-$CI_COMMIT_SHA'
     paths:
-      - .data/preview-verification/
+      - .data/deployed-verification/

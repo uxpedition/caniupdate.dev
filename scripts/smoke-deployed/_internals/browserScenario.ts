@@ -72,7 +72,10 @@ const waitForOpaqueSurface = (page: Page, selector: string): Effect.Effect<void,
 const verifyFooter = (page: Page, config: SmokeConfig): Effect.Effect<void, SmokeFailure> =>
   Effect.gen(function* () {
     const footer = page.locator('footer');
-    const link = footer.getByRole('link', { name: `View preview commit ${config.expectedSha}`, exact: true });
+    const link = footer.getByRole('link', {
+      name: `View ${config.local ? 'dev' : 'stage'} commit ${config.expectedSha}`,
+      exact: true,
+    });
 
     yield* playwrightCall('browser-interaction', () => link.waitFor({ state: 'visible' }));
 

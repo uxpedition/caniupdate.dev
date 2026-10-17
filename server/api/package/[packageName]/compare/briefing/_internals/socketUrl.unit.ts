@@ -55,9 +55,9 @@ describe('browser briefing socket URL', () => {
     },
     {
       label: 'leaves the deployed service hostname untouched',
-      eventsUrl: at('wss://can-i-update-preview-briefing.caniupdate-dev.workers.dev'),
-      origin: 'https://can-i-update-preview.caniupdate-dev.workers.dev',
-      expected: at('wss://can-i-update-preview-briefing.caniupdate-dev.workers.dev'),
+      eventsUrl: at('wss://stage-briefing.caniupdate.dev'),
+      origin: 'https://stage.caniupdate.dev',
+      expected: at('wss://stage-briefing.caniupdate.dev'),
     },
     {
       label: 'leaves a loopback advertisement alone when the page is on loopback too',

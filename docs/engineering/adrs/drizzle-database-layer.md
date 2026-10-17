@@ -2,7 +2,9 @@
 
 **Decision (2026-10-04):** Adopt Drizzle for typed query construction in D1 briefing storage, Durable Object SQLite evidence storage, and the offline briefing exporter. Keep Wrangler as the only D1 migration applier. Reset the local and preview D1 databases and restart migration history at the pre-production cutover, as explicitly approved by the user.
 
-**Status:** Accepted; implementation and local cutover verified, preview cutover blocked on maintenance/quiescence. Approval is not reset or rollout evidence.
+**Status:** Accepted; implementation and local cutover verified, stage cutover blocked on maintenance/quiescence. Approval is not reset or rollout evidence.
+
+**Terminology:** Historical decisions and rollout observations below retain “preview”, the hosted environment's former name. Current operations use `stage` and Wrangler `--env stage`, with the same physical resource names and IDs; see the [deployment naming procedure](../ops/deployment.md#migrating-logical-environment-selectors-and-gitlab-scopes). This naming change does not execute or authorize the blocked database cutover.
 
 **Exporter retirement (2026-10-09):** The offline briefing exporter and its legacy-import procedure were removed because that transfer workflow is no longer needed. Exporter decisions and verification below describe the historical implementation, not a currently available tool.
 
@@ -25,7 +27,7 @@ The user confirmed that the application is not yet deployed to production and ap
 - Verify generated schema metadata. In the tested RC, column-level primary-key declarations omitted explicit `NOT NULL`; a table-level declaration generated matching briefing-table metadata.
 - The minimal D1 worker comparison added approximately 38 KiB gzip. Actual Worker/Nuxt bundle impact and browser import boundaries must be measured during implementation; materially different costs require review before rollout.
 - The spike did not establish DO rollback, atomic replacement, expiry/corruption behavior, full exporter streaming behavior, or application-wide type compatibility. Complete the RFC's acceptance checks before rollout rather than treating successful-path probes as full verification.
-- The reset approval covers local and preview D1 databases only, not production, Durable Object state, or unrelated databases. Record exact targets, resolve stored-data retention/export requirements, and rehearse fresh initialization locally before the preview reset. Record execution separately from approval.
+- The reset approval covers local and stage D1 databases only, not production, Durable Object state, or unrelated databases. Record exact targets, resolve stored-data retention/export requirements, and rehearse fresh initialization locally before the stage reset. Record execution separately from approval.
 
 Reconsider the decision if the selected drivers cannot preserve existing behavior or the measured application costs materially outweigh the type-safety benefit.
 
@@ -56,5 +58,5 @@ Raw verification/review artifacts are retained privately in the isolated maintai
 ## Artifacts
 
 - [RFC 0001: proposal, feasibility findings, and implementation acceptance checks](../rfcs/0001-drizzle-database-layer.md).
-- [Database and stored-data release policy](../ops/releases-and-recovery.md#database-and-stored-data-changes); the user-approved local/preview reset is a scoped exception.
+- [Database and stored-data release policy](../ops/releases-and-recovery.md#database-and-stored-data-changes); the user-approved local/stage reset is a scoped exception.
 - Current implementations: [D1 briefing store](../../../server/comparison/briefing/store.ts), [DO evidence store](../../../workers/evidence/store.ts).

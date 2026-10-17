@@ -63,7 +63,7 @@ Review conclusions against [product meaning and limitations](docs/product/meanin
 - Use reviewed, versioned migrations for both D1 and Durable Object SQLite. Treat generated history and its runtime artifacts as one change; preserve applied history and validate stored data when reading it.
 - Design recovery around the actual durable owner, not assumptions about a long-lived process. Persistence changes need evidence for restart behavior, concurrent writes, and reuse of existing results where affected.
 - Keep configuration ownership explicit across the three runtimes. Verification uses isolated state and fixture credentials; routine QA must not mutate shared environments or user-owned secrets.
-- Infrastructure changes document the authorized environment and recovery implications. Local builds and previews are verification, not deployment authorization.
+- Infrastructure changes document the authorized environment and recovery implications. Local builds and built dev runs are verification, not deployment authorization.
 
 For database changes, read the [database ADR](docs/engineering/adrs/drizzle-database-layer.md). For deployment or recovery changes, read [deployment operations](docs/engineering/ops/deployment.md) and [release/recovery operations](docs/engineering/ops/releases-and-recovery.md).
 

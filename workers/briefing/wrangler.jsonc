@@ -34,10 +34,10 @@
   // A comma-separated list of exact Origins: the local launcher overrides it with every hostname the page is served on
   // (the loopback aliases and this machine's interface addresses), and an unset or empty list refuses every upgrade.
   "vars": { "BRIEFING_PUBLIC_URL": "ws://localhost:8791", "BRIEFING_ALLOWED_ORIGIN": "http://localhost:5173" },
-  // The default environment is local-only and uses placeholder IDs. Only `env.preview` may be deployed, and it
-  // repeats every non-inheritable binding with preview names and the preview D1 database.
+  // The default environment is local-only and uses placeholder IDs. Only `env.stage` may be deployed, and it
+  // repeats every non-inheritable binding with the existing physical names and stage D1 database.
   "env": {
-    "preview": {
+    "stage": {
       "name": "can-i-update-preview-briefing",
       "account_id": "8a0be24aad326a55ba610b94b106be81",
       "workers_dev": false,

@@ -19,7 +19,7 @@ describe('stage rate binding configuration', () => {
           assets: { directory: '../public', binding: 'ASSETS' },
           ratelimits: [{ name: 'PUBLIC_RATE_LIMITER', namespace_id: '1001', simple: { limit: 60, period: 60 } }],
           env: {
-            preview: {
+            stage: {
               name: 'can-i-update-preview',
               d1_databases: [{ binding: 'DB', migrations_dir: '../../migrations' }],
             },
@@ -31,12 +31,12 @@ describe('stage rate binding configuration', () => {
       ),
     );
 
-    expect(config.env.preview.ratelimits).toEqual([
+    expect(config.env.stage.ratelimits).toEqual([
       { name: 'PUBLIC_RATE_LIMITER', namespace_id: '2001', simple: { limit: 90, period: 60 } },
     ]);
     expect(config.main).toBe('/artifact/server/index.mjs');
     expect(config.assets?.directory).toBe('/artifact/public');
-    expect(config.env.preview.d1_databases?.[0]?.migrations_dir).toBe('/migrations');
+    expect(config.env.stage.d1_databases?.[0]?.migrations_dir).toBe('/migrations');
   });
 
   it('does not alter the source config and removes the temporary override when deployment fails', async () => {

@@ -43,7 +43,7 @@ afterAll(async () => {
 });
 
 describe('public read-only upgrade', () => {
-  for (const environment of ['local', 'preview'] as const) {
+  for (const environment of ['local', 'stage'] as const) {
     describe(`${environment} configuration`, () => {
       let runtime: RuntimeFixture;
       let hash: string;
@@ -80,7 +80,7 @@ describe('public read-only upgrade', () => {
       it.each([
         [
           "the other configuration's Origin",
-          BRIEFING_ENVIRONMENTS[environment === 'local' ? 'preview' : 'local'].allowedOrigin,
+          BRIEFING_ENVIRONMENTS[environment === 'local' ? 'stage' : 'local'].allowedOrigin,
         ],
         ['an unrelated Origin', FOREIGN_ORIGIN],
       ] as const)(

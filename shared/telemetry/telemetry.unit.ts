@@ -8,6 +8,7 @@ import { decodeTelemetryPayload } from './telemetry.defs';
 const TELEMETRY_OPTIONS = {
   endpoint: 'http://collector.test:4318',
   serviceName: 'can-i-update-briefing',
+  environment: 'stage',
 };
 
 const installCollector = (status = 200) => {
@@ -167,6 +168,9 @@ describe('runWithTelemetry', () => {
     const traces = decodeTraceExport(findRequest(requests, 'traces').body);
     const log = logs.resourceLogs[0]?.scopeLogs[0]?.logRecords[0];
     const span = traces.resourceSpans[0]?.scopeSpans[0]?.spans[0];
+    const environmentAttribute = { key: 'deployment.environment.name', value: { stringValue: 'stage' } };
+    expect(logs.resourceLogs[0]?.resource.attributes).toContainEqual(environmentAttribute);
+    expect(traces.resourceSpans[0]?.resource.attributes).toContainEqual(environmentAttribute);
     expect(result.traceId).toMatch(/^[0-9a-f]{32}$/);
     expect(result.spanId).toMatch(/^[0-9a-f]{16}$/);
     expect(log).toMatchObject({

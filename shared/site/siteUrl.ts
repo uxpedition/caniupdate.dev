@@ -1,10 +1,12 @@
 /**
  * The site's public origin — `NUXT_PUBLIC_SITE_URL` — names the scheme, host, and optional port this deployment
  * publishes under. Everything absolute (canonical links, social URLs, later the sitemap) is built from this value, so
- * it is never derived from a request's `Host` or forwarded headers: a preview hostname or an alias cannot leak into a
+ * it is never derived from a request's `Host` or forwarded headers: a dev hostname or an alias cannot leak into a
  * canonical address. A configured value must therefore be an origin and nothing else — a path, query, fragment, or
  * credential is a configuration error, not a silently ignored part of a URL.
  */
+
+export const PRODUCTION_SITE_ORIGIN = 'https://caniupdate.dev';
 
 export type SiteOriginParse =
   | { readonly ok: true; readonly origin: string }
@@ -23,7 +25,7 @@ const originRejection = (url: URL): string | undefined => {
     return 'must be an origin without a path, query, or fragment';
   }
 
-  // Plain http is meaningful for a preview served on this machine's own address — the loopback alias, or the LAN or
+  // Plain http is meaningful for a dev runtime served on this machine's own address — the loopback alias, or the LAN or
   // Tailscale IP literal a laptop opens — but never for a public hostname, which must be https.
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOCAL_HOSTNAME.test(url.hostname))) {
     return 'must use https, or http for a local address';

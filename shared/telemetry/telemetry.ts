@@ -57,7 +57,7 @@ const EXPORT_SHUTDOWN_TIMEOUT = Duration.millis(250);
 const DISPOSE_TIMEOUT = Duration.seconds(1);
 
 const safeResourceOptions = (options: TelemetryRuntimeOptions): TelemetryResourceOptions => {
-  const environment = ['local', 'development', 'test', 'preview', 'production'].includes(options.environment ?? '')
+  const environment = ['local', 'development', 'test', 'stage', 'production'].includes(options.environment ?? '')
     ? options.environment
     : undefined;
 

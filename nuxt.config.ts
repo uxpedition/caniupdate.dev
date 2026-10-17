@@ -28,8 +28,10 @@ export default defineNuxtConfig({
     otelHeaders: {},
     public: {
       // Public by design: canonical, social, and later sitemap URLs. Builds never bake it: each deployed Worker and
-      // local preview supplies `NUXT_PUBLIC_SITE_URL` at runtime, and an unset value emits no canonical link.
+      // dev runtime supplies `NUXT_PUBLIC_SITE_URL` at runtime, and an unset value emits no canonical link.
       siteUrl: '',
+      // A production version is runtime identity from the validated release receipt, never part of the build artifact.
+      releaseVersion: '',
       telemetryEnabled: false,
     },
   },

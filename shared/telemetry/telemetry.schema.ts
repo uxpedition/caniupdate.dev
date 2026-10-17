@@ -204,7 +204,7 @@ export const TelemetrySpanNameSchema = Schema.Literals([
   'briefing.generation',
 ]);
 
-export const TelemetryEnvironmentSchema = Schema.Literals(['local', 'development', 'test', 'preview', 'production']);
+export const TelemetryEnvironmentSchema = Schema.Literals(['local', 'development', 'test', 'stage', 'production']);
 
 export const TelemetryFailureReasonSchema = Schema.Literals([
   'binding-unavailable',

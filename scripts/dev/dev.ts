@@ -2,7 +2,7 @@
 //
 // - the private evidence Worker on 8790 (its Durable Object namespace owns the shared provider evidence),
 // - the private briefing Worker on 8791 (its D1 database and job Durable Objects own generation and snapshots),
-// - the frontend on 5173: Nuxt with HMR, or the built Worker from `.output/server/wrangler.json` under `--preview`.
+// - the frontend on 5173: Nuxt with HMR, or the built Worker from `.output/server/wrangler.json` under `--built`.
 //
 // The migration runs against the briefing Worker's configuration, because that is the only local owner of the D1
 // database. Each Wrangler session owns a subdirectory of the persistence root: sharing one directory makes their
@@ -155,11 +155,11 @@ const briefingWorkerCommand = (launch: Options) =>
   );
 
 /**
- * The origin the preview publishes: `NUXT_PUBLIC_SITE_URL` when set, else `undefined`. An unset origin means no
+ * The origin the built runtime publishes: `NUXT_PUBLIC_SITE_URL` when set, else `undefined`. An unset origin means no
  * canonical link, never a guessed one. A set value must be an origin: a malformed one throws, and `program` calls this
  * before the lock, migrations, or any child process starts.
  */
-const previewSiteOrigin = (): string | undefined => {
+const builtSiteOrigin = (): string | undefined => {
   const configured = process.env['NUXT_PUBLIC_SITE_URL']?.trim();
 
   if (!configured) return undefined;
@@ -171,7 +171,7 @@ const previewSiteOrigin = (): string | undefined => {
   return parsed.origin;
 };
 
-const previewFrontendCommand = (launch: Options, siteOrigin: string | undefined) =>
+const builtFrontendCommand = (launch: Options, siteOrigin: string | undefined) =>
   ChildProcess.make(
     process.execPath,
     [
@@ -220,7 +220,7 @@ const nuxtFrontendCommand = (launch: Options) =>
   });
 
 const frontendCommand = (launch: Options, siteOrigin: string | undefined) => {
-  if (launch.preview) return previewFrontendCommand(launch, siteOrigin);
+  if (launch.built) return builtFrontendCommand(launch, siteOrigin);
 
   return nuxtFrontendCommand(launch);
 };
@@ -296,12 +296,12 @@ const acquireStateLock = (launch: Options) =>
           throw new StateInUseError({
             message:
               `Another launcher (${holder.mode ?? 'unknown'}, pid ${holder.pid}) already owns ${launch.persistTo}. ` +
-              'Stop it first: dev and preview must not own the same local state concurrently.',
+              'Stop it first: dev and dev:built must not own the same local state concurrently.',
           });
         }
 
         await mkdir(dirname(lockPath), { recursive: true });
-        await writeFile(lockPath, JSON.stringify({ pid: process.pid, mode: launch.preview ? 'preview' : 'dev' }));
+        await writeFile(lockPath, JSON.stringify({ pid: process.pid, mode: launch.built ? 'dev:built' : 'dev' }));
       },
       catch: (error) =>
         error instanceof StateInUseError
@@ -403,11 +403,11 @@ const waitForAnyChildProcessToStop = (workers: readonly WorkerHandle[], frontend
 
 const program = Effect.gen(function* () {
   const launch = yield* options;
-  // Preview only, before the lock, migrations, or any child process: a malformed origin starts nothing.
-  const siteOrigin = launch.preview ? previewSiteOrigin() : undefined;
+  // Built runtime only, before the lock, migrations, or any child process: a malformed origin starts nothing.
+  const siteOrigin = launch.built ? builtSiteOrigin() : undefined;
 
   yield* Effect.log(
-    `${launch.preview ? 'Preview: the built frontend' : 'Development: Nuxt HMR'} on ${launch.frontendPort}, ` +
+    `${launch.built ? 'Development: the built frontend' : 'Development: Nuxt HMR'} on ${launch.frontendPort}, ` +
       `evidence ${launch.evidencePort}, briefing ${launch.briefingPort}, state ${launch.persistTo}`,
   );
 

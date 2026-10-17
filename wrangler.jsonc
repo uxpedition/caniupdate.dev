@@ -25,7 +25,7 @@
     },
   ],
   "env": {
-    "preview": {
+    "stage": {
       "name": "can-i-update-preview",
       "account_id": "8a0be24aad326a55ba610b94b106be81",
       "workers_dev": false,

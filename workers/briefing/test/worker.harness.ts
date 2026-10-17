@@ -79,7 +79,7 @@ export const LEASE_WAIT_MS = 150_000;
 
 /**
  * The two configurations `workers/briefing/wrangler.jsonc` declares, mirrored exactly: the default environment is
- * local-only, and `env.preview` is the deployed hostname and site origin. Tests exercise both, because the Origin
+ * local-only, and `env.stage` is the deployed hostname and site origin. Tests exercise both, because the Origin
  * check is a value, not a constant.
  */
 const ENVIRONMENTS = {
@@ -88,10 +88,10 @@ const ENVIRONMENTS = {
     requests: 'http://localhost:8791',
     allowedOrigin: 'http://localhost:5173',
   },
-  preview: {
-    publicUrl: 'wss://can-i-update-preview-briefing.caniupdate-dev.workers.dev',
-    requests: 'https://can-i-update-preview-briefing.caniupdate-dev.workers.dev',
-    allowedOrigin: 'https://can-i-update-preview.caniupdate-dev.workers.dev',
+  stage: {
+    publicUrl: 'wss://stage-briefing.caniupdate.dev',
+    requests: 'https://stage-briefing.caniupdate.dev',
+    allowedOrigin: 'https://stage.caniupdate.dev',
   },
 } as const;
 

@@ -41,7 +41,7 @@ const WorkerConfigSchema = Schema.StructWithRest(Schema.Struct(WorkerFields), [E
 const ConfigSchema = Schema.StructWithRest(
   Schema.Struct({
     ...WorkerFields,
-    env: Schema.StructWithRest(Schema.Struct({ preview: WorkerConfigSchema }), [Extras]),
+    env: Schema.StructWithRest(Schema.Struct({ stage: WorkerConfigSchema }), [Extras]),
   }),
   [Extras],
 );
@@ -88,13 +88,13 @@ export function deploymentRateLimitConfig(
     const config = yield* Schema.decodeUnknownEffect(ConfigSchema, { errors: 'all' })(input).pipe(
       Effect.mapError(() => new RateLimitConfigFailure({ message: 'Invalid Worker deployment configuration' })),
     );
-    const environmentConfig = config.env.preview;
+    const environmentConfig = config.env.stage;
 
     return {
       ...relocateWorkerConfig(config, directory),
       env: {
         ...config.env,
-        preview: {
+        stage: {
           ...relocateWorkerConfig(environmentConfig, directory),
           ratelimits: [
             {

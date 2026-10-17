@@ -1,7 +1,7 @@
 // The reproducible local scenario for the three-runtime launcher, run against an isolated persistence root so it
 // never touches `.wrangler/state`:
 //
-//   node scripts/smoke/smoke.ts [--preview] [--measure] [--keep]
+//   node scripts/smoke/smoke.ts [--built] [--measure] [--keep]
 //
 // It starts the loopback fixture provider the briefing Worker's `.dev.vars` names, starts `scripts/dev/dev.ts` with its
 // own ports, then drives the real browser-facing path — POST, socket `available`, a device-shaped Origin on this
@@ -70,12 +70,12 @@ const fixtureProviderPort = async (): Promise<number> => {
  * job must never cost another provider call, on the D1 hit or on the reconnect that follows it.
  */
 const verifyRestart = async (
-  preview: boolean,
+  built: boolean,
   persistTo: string,
   provider: ProviderFixture,
   eventsUrl: string,
 ): Promise<Launcher> => {
-  const restarted = startLauncher(preview, persistTo);
+  const restarted = startLauncher(built, persistTo);
   await waitForHealth(restarted, HEALTH_TIMEOUT_MS);
   const afterRestart = provider.requestsFor(PACKAGE_NAME);
   const second = await submit(SETTLED_FROM, SETTLED_TO);
@@ -92,9 +92,9 @@ const verifyRestart = async (
   return restarted;
 };
 
-const runScenario = async (preview: boolean, persistTo: string, provider: ProviderFixture): Promise<Launcher> => {
-  log(`scenario: ${preview ? 'preview (built frontend)' : 'dev (Nuxt HMR)'}, persistence root ${persistTo}`);
-  const launcher = startLauncher(preview, persistTo);
+const runScenario = async (built: boolean, persistTo: string, provider: ProviderFixture): Promise<Launcher> => {
+  log(`scenario: ${built ? 'dev (built frontend)' : 'dev (Nuxt HMR)'}, persistence root ${persistTo}`);
+  const launcher = startLauncher(built, persistTo);
 
   try {
     await waitForHealth(launcher, HEALTH_TIMEOUT_MS);
@@ -106,20 +106,20 @@ const runScenario = async (preview: boolean, persistTo: string, provider: Provid
     await launcher.stop();
     check(await portsAreFree(), 'Shutdown must release the evidence, briefing, and frontend ports');
 
-    return await verifyRestart(preview, persistTo, provider, eventsUrl);
+    return await verifyRestart(built, persistTo, provider, eventsUrl);
   } catch (error) {
     await launcher.stop();
     throw error;
   }
 };
 
-/** A `--preview` run drives the built frontend, so the build output has to exist before the scenario starts. */
-const assertBuiltPreview = async (preview: boolean): Promise<void> => {
-  if (!preview) return;
-  const built = await readFile(builtFrontendConfig, 'utf8').catch(() => undefined);
+/** A `--built` run drives the built frontend, so the build output has to exist before the scenario starts. */
+const assertBuiltFrontend = async (built: boolean): Promise<void> => {
+  if (!built) return;
+  const config = await readFile(builtFrontendConfig, 'utf8').catch(() => undefined);
 
-  if (built === undefined) {
-    throw new SmokeFailure(`Missing ${builtFrontendConfig}. Run \`nub run build\` before --preview.`);
+  if (config === undefined) {
+    throw new SmokeFailure(`Missing ${builtFrontendConfig}. Run \`nub run build\` before --built.`);
   }
 };
 
@@ -131,7 +131,7 @@ const describeFailure = (cause: unknown): string => {
 };
 
 /** One fixture-backed run: temporary root, loopback provider, scenario, optional measurement, and full cleanup. */
-const runOnce = async (preview: boolean, measure: boolean, keep: boolean): Promise<void> => {
+const runOnce = async (built: boolean, measure: boolean, keep: boolean): Promise<void> => {
   const persistTo = await mkdtemp(join(tmpdir(), 'can-i-update-smoke-'));
   const port = await fixtureProviderPort();
   const provider = await startProviderFixture({ port });
@@ -140,7 +140,7 @@ const runOnce = async (preview: boolean, measure: boolean, keep: boolean): Promi
   let failure: unknown;
 
   try {
-    launcher = await runScenario(preview, persistTo, provider);
+    launcher = await runScenario(built, persistTo, provider);
     log('scenario: PASS (POST -> socket available -> restart -> D1 hit -> reconnect with no provider call)');
 
     if (measure) await runMeasurements(launcher, provider);
@@ -159,13 +159,13 @@ const runOnce = async (preview: boolean, measure: boolean, keep: boolean): Promi
 
 const main = async (): Promise<void> => {
   const argv = process.argv.slice(2);
-  const preview = argv.includes('--preview');
+  const built = argv.includes('--built');
   const measure = argv.includes('--measure');
   const keep = argv.includes('--keep');
-  await assertBuiltPreview(preview);
+  await assertBuiltFrontend(built);
 
   try {
-    await runOnce(preview, measure, keep);
+    await runOnce(built, measure, keep);
     log('scenario: DONE');
   } catch (failure) {
     log(`scenario: FAIL\n${describeFailure(failure)}`);

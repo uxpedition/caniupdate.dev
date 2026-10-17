@@ -516,12 +516,12 @@ describe('briefing submission endpoint', () => {
   });
 
   it('leaves the deployed service’s own hostname alone', async () => {
-    const deployed = `wss://can-i-update-preview-briefing.caniupdate-dev.workers.dev/api/briefings/${HASH}/events`;
+    const deployed = `wss://stage-briefing.caniupdate.dev/api/briefings/${HASH}/events`;
     submit.mockResolvedValue(nativeServiceResult({ ...pending(), eventsUrl: deployed }));
 
     const response = await handler(
       eventFor('1.0.0', '2.0.0', 'minimist', undefined, {
-        Origin: 'https://can-i-update-preview.caniupdate-dev.workers.dev',
+        Origin: 'https://stage.caniupdate.dev',
       }),
     );
 

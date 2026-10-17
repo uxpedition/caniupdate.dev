@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { useAppConfig } from '#imports';
+import { useAppConfig, useRuntimeConfig } from '#imports';
+import { isStableReleaseVersion } from '#shared/site/releaseIdentity';
+import { PRODUCTION_SITE_ORIGIN } from '#shared/site/siteUrl';
 
 const { buildIdentity } = useAppConfig();
+const runtimeConfig = useRuntimeConfig();
 
-const previewCommit =
+const productionRuntime = runtimeConfig.public.siteUrl === PRODUCTION_SITE_ORIGIN;
+const stageRuntime = runtimeConfig.public.siteUrl === 'https://stage.caniupdate.dev';
+const releaseVersion = runtimeConfig.public.releaseVersion;
+const productionVersion = productionRuntime && isStableReleaseVersion(releaseVersion) ? `v${releaseVersion}` : null;
+const commit =
   buildIdentity.commitSha === null
     ? null
     : {
@@ -23,14 +30,18 @@ const previewCommit =
         class="font-mono text-[10px] font-semibold tracking-[-0.04em] text-foreground hover:underline hover:underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring"
         >can i update<span class="text-change" aria-hidden="true">?</span></NuxtLink
       >
-      <a
-        v-if="previewCommit"
-        :href="previewCommit.url"
-        :aria-label="`View preview commit ${previewCommit.sha}`"
-        class="underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
-      >
-        Preview <span class="font-mono">{{ previewCommit.shortSha }}</span>
-      </a>
+      <span v-if="commit && (!productionRuntime || productionVersion)">
+        <span :class="{ 'font-mono': productionRuntime }">{{
+          productionVersion ?? (stageRuntime ? 'stage' : 'dev')
+        }}</span>
+        -
+        <a
+          :href="commit.url"
+          :aria-label="`View ${productionRuntime ? 'release' : stageRuntime ? 'stage' : 'dev'} commit ${commit.sha}`"
+          class="font-mono underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+          >{{ commit.shortSha }}</a
+        >
+      </span>
       <nav
         aria-label="Legal and contact"
         class="flex flex-wrap gap-x-6 gap-y-2 [&_a]:underline-offset-4 [&_a:hover]:underline [&_a:focus-visible]:outline-2 [&_a:focus-visible]:outline-offset-4 [&_a:focus-visible]:outline-ring"

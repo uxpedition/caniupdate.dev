@@ -42,7 +42,11 @@ Open <http://localhost:5173>, search for a package, and select the versions to c
 
 Local development requires no Cloudflare account or paid AI provider. The launcher starts the frontend and both backend Workers and applies local database migrations. It exposes the frontend and briefing socket on connected network interfaces.
 
-See [development](docs/engineering/ops/development.md) for configuration, checks, troubleshooting, and the local built preview.
+See [development](docs/engineering/ops/development.md) for configuration, checks, troubleshooting, and the local built dev runtime.
+
+## Release identity
+
+The stage footer displays `stage - <short-commit>`; local dev runs display `dev - <short-commit>`. Production displays `vMAJOR.MINOR.PATCH - <short-commit>` only with a stable runtime release version and a configured build identity. In each case the hash links to the full deployed commit. The production artifact must be built from the commit identified by its release tag; stage identifies the main commit used for its build, not the latest mutable branch tip. Shared schemas validate the stable version and release receipt shape. Receipt publication and production deployment remain unimplemented.
 
 ## Tech stack
 

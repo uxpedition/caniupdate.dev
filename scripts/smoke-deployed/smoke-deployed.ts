@@ -7,7 +7,7 @@ import { FetchHttpClient } from 'effect/http';
 
 import { runSmoke } from './_internals/workflow.ts';
 
-const OUTPUT_DIRECTORY = resolve(fileURLToPath(new URL('../..', import.meta.url)), '.data/preview-verification');
+const OUTPUT_DIRECTORY = resolve(fileURLToPath(new URL('../..', import.meta.url)), '.data/deployed-verification');
 
 const workflow = runSmoke(OUTPUT_DIRECTORY).pipe(
   Effect.provide(FetchHttpClient.layer),

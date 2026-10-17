@@ -20,13 +20,13 @@ type Step = { name: string; status: 'started' | 'passed' | 'failed'; versionId?:
 
 const targetArgument = process.argv.find((argument) => argument.startsWith('--target='));
 const targetValue = targetArgument?.slice('--target='.length);
-const wranglerEnvironment = 'preview';
+const wranglerEnvironment = 'stage';
 const workers = {
   evidence: 'can-i-update-preview-evidence',
   briefing: 'can-i-update-preview-briefing',
   frontend: 'can-i-update-preview',
 };
-const reportDirectory = '.data/preview-deployment';
+const reportDirectory = '.data/stage-deployment';
 const dryRun = process.argv.includes('--dry-run');
 
 function deployWorker(

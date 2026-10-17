@@ -27,9 +27,9 @@ export type Launcher = {
   readonly stop: () => Promise<void>;
 };
 
-const launcherArgs = (preview: boolean, persistTo: string): readonly string[] => [
+const launcherArgs = (built: boolean, persistTo: string): readonly string[] => [
   'scripts/dev/dev.ts',
-  ...(preview ? ['--preview'] : []),
+  ...(built ? ['--built'] : []),
   '--persist-to',
   persistTo,
   '--evidence-port',
@@ -53,8 +53,8 @@ const stopProcess = async (child: ChildProcess, exited: Promise<number>): Promis
 };
 
 /** Starts the launcher against this scenario's own persistence root and ports; never the normal `.wrangler/state`. */
-export const startLauncher = (preview: boolean, persistTo: string): Launcher => {
-  const child = spawn(process.execPath, launcherArgs(preview, persistTo), {
+export const startLauncher = (built: boolean, persistTo: string): Launcher => {
+  const child = spawn(process.execPath, launcherArgs(built, persistTo), {
     cwd: root,
     stdio: ['ignore', 'pipe', 'pipe'],
     // A private dev registry keeps this scenario's sessions (and their worker names) away from any live development
