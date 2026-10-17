@@ -281,23 +281,44 @@ const verifyBriefingResponse = (page: Page, config: SmokeConfig) =>
     }
   });
 
-const verifyBriefingRender = (page: Page): Effect.Effect<void, SmokeFailure> =>
+const verifyBriefingRender = (page: Page, fixtureBullet?: string): Effect.Effect<void, SmokeFailure> =>
   Effect.gen(function* () {
     const region = page.getByRole('region', { name: 'AI briefing', exact: true, includeHidden: true });
-    const bullet = region.getByText(FIXTURE_BULLET, { exact: true });
     const disclosure = page.locator('details').filter({ has: region });
 
-    yield* playwrightCall('briefing-render', () => bullet.waitFor({ state: 'attached' }));
+    if (fixtureBullet !== undefined) {
+      yield* playwrightCall('briefing-render', () =>
+        region.getByText(fixtureBullet, { exact: true }).waitFor({ state: 'attached' }),
+      );
+    }
 
     const open = yield* playwrightCall('briefing-render', () =>
       disclosure.evaluate((element) => element.matches('details[open]')),
     );
 
     if (!open) yield* playwrightCall('briefing-render', () => disclosure.locator('summary').click());
-    yield* playwrightCall('briefing-render', () => bullet.waitFor({ state: 'visible' }));
-    yield* playwrightCall('briefing-render', () =>
-      region.getByRole('link', { name: 'Jump to Smoke fixture evidence', exact: true }).waitFor({ state: 'visible' }),
-    );
+
+    if (fixtureBullet !== undefined) {
+      yield* playwrightCall('briefing-render', () =>
+        region.getByText(fixtureBullet, { exact: true }).waitFor({ state: 'visible' }),
+      );
+      yield* playwrightCall('briefing-render', () =>
+        region.getByRole('link', { name: 'Jump to Smoke fixture evidence', exact: true }).waitFor({ state: 'visible' }),
+      );
+    } else {
+      const availableBullet = region.locator('ol > li').first();
+
+      if ((yield* playwrightCall('briefing-render', () => availableBullet.count())) > 0) {
+        yield* playwrightCall('briefing-render', () => availableBullet.waitFor({ state: 'visible' }));
+      } else {
+        yield* playwrightCall('briefing-render', () =>
+          region.getByRole('status').filter({ hasText: 'Package facts remain available.' }).waitFor({
+            state: 'visible',
+          }),
+        );
+      }
+    }
+
     yield* waitForOpaqueSurface(page, '[aria-label="AI briefing"]');
   });
 
@@ -323,7 +344,7 @@ const compare = (page: Page, config: SmokeConfig): Effect.Effect<void, SmokeFail
     yield* Fiber.join(waitFiber);
 
     yield* waitForComparisonRender(page);
-    yield* verifyBriefingRender(page);
+    yield* verifyBriefingRender(page, FIXTURE_BULLET);
   });
 
 const waitForComparisonRender = (page: Page): Effect.Effect<void, SmokeFailure> =>
