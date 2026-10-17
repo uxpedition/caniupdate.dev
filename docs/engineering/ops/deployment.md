@@ -1,6 +1,6 @@
 # Deployment operations
 
-**Status: reviewed.** This document describes current stage and production deployment automation plus its external activation prerequisites. No production Worker, namespace, route, migration, or application release has been deployed.
+**Status: reviewed.** This guide describes stage and production automation and the external setup still needed to activate it. No production Worker, namespace, route, migration, or application release has been deployed.
 
 See [development](development.md) for local commands and [releases and recovery](releases-and-recovery.md) for promotion, verification, and migrations.
 
@@ -14,9 +14,11 @@ See [development](development.md) for local commands and [releases and recovery]
 | Official integration stage | Maintainer team                        | One persistent, restricted environment; maintainers deploy reviewed revisions                |
 | Production                 | Maintainer account at `caniupdate.dev` | Maintainer-controlled release; separate resources and credentials                            |
 
-The checked-in Wrangler files define local defaults plus the maintainer's remote `env.stage` and `env.production`. They contain account-specific names, IDs, and hostnames. **Do not deploy them unchanged into a contributor account, and never deploy their default local environment.** The production Worker names, bindings, origins, and routes are configured in source; they are not evidence of remote resources or domain attachment.
+The checked-in Wrangler files contain local defaults and the maintainer's remote `env.stage` and `env.production`. Their names, IDs, and hostnames are account-specific.
 
-Contributors can request an official stage in a PR without receiving deployment credentials. No automatic privileged fork-deployment workflow is established by this document. Unreviewed code can exfiltrate stage secrets even when production is isolated.
+**Do not deploy these files unchanged into a contributor account. Never deploy the default local environment.** Production names, bindings, origins, and routes in source do not prove that remote resources or domain attachments exist.
+
+Contributors can request an official stage in a PR without receiving deployment credentials. This guide establishes no automatic privileged fork-deployment workflow. Unreviewed code can steal stage secrets even when production is isolated.
 
 ## What does a complete deployment contain?
 
@@ -28,13 +30,13 @@ The system uses three Workers in the same account:
 | Evidence | None in the checked-in remote stage | SQLite-backed `PackageEvidence` Durable Objects; optional GitHub token                                                    |
 | Briefing | Read-only browser WebSocket route   | `BRIEFING_JOBS` Durable Objects, `BRIEFING_QUEUE`, `BRIEFINGS_DB`, provider configuration when real generation is enabled |
 
-Private submission and the public socket are different boundaries. The browser cannot submit generation directly to the briefing Worker's public route. Socket Origin allowlisting is not user authentication.
+Private submission and the public socket have separate roles. The browser cannot request generation directly through the briefing Worker's public route. Allowing a socket Origin does not authenticate a user.
 
 Sources: [frontend config](../../../wrangler.jsonc), [evidence config](../../../workers/evidence/wrangler.jsonc), [briefing config](../../../workers/briefing/wrangler.jsonc), and [briefing architecture](../briefing.md).
 
 ## How should an account-local configuration be prepared?
 
-Account-local configuration is an agreed requirement. The setup/generation workflow is not implemented yet. The inputs and consistency checks below define the deployment contract; they are not a claim that an account-local setup command exists.
+Account-local configuration is an agreed requirement, but its setup/generation workflow is not implemented. The inputs and checks below define what that workflow must support. No account-local setup command exists yet.
 
 For each remote target, explicitly select:
 
@@ -60,13 +62,23 @@ Keep linked values consistent:
 | `BRIEFING_PUBLIC_URL`          | Reachable `wss` socket origin for this target                 |
 | `BRIEFING_ALLOWED_ORIGIN`      | Derived from `NUXT_PUBLIC_SITE_URL`; no separate GitLab input |
 
-Preserve the configured SQLite Durable Object migrations. Repeat environment-specific bindings explicitly rather than assuming Wrangler inherits them. If configs are relocated, resolve `main`, schema, and migration paths relative to their new locations. The built frontend config must come from the account-local frontend configuration, not silently retain the maintainer's bindings.
+Keep the configured SQLite Durable Object migrations. Declare bindings explicitly for each environment; do not assume Wrangler inherits them.
 
-Do not commit operator keys or accidentally include account-specific changes in an unrelated contribution. Before publishing a fork deployment recipe, the account-local workflow must be exercised in an independent account. This document does not substitute guessed commands for that missing capability.
+If you move configs, resolve `main`, schema, and migration paths relative to their new locations. The built frontend config must use the account-local frontend configuration, not silently keep the maintainer's bindings.
+
+Do not commit operator keys or include account-specific changes in unrelated contributions. Before publishing a fork deployment recipe, exercise the workflow in an independent account. This guide does not fill that missing capability with guessed commands.
 
 ## Where do credentials and runtime settings go?
 
-GitLab owns every stage and production runtime setting. Create project environments `stage`, `production`, and `release-tag` under **Operate → Environments**. Scope runtime values and deployment credentials to their exact job environments—never `*`, `stage*`, or a broad wildcard. The origin-independent build has no GitLab environment. Protect `release-tag` and `production` for Maintainer/Owner access before activation; protected environments restrict both the manual release action and production deployment. The release API independently verifies the manual actor's project role. Protect every variable and turn **Expand variable reference** off (raw). Use **Visible** for public values and **Masked and hidden** for private settings and credentials. GitLab requires masked values to be single-line, at least eight characters, and contain no spaces; see [GitLab CI/CD variable visibility and masking](https://docs.gitlab.com/ci/variables/#mask-a-cicd-variable).
+GitLab owns all stage and production runtime settings. Before activation:
+
+1. Create project environments `stage`, `production`, and `release-tag` under **Operate → Environments**.
+2. Scope runtime values and deployment credentials to their exact job environment. Never use `*`, `stage*`, or another broad wildcard. The origin-independent build has no GitLab environment.
+3. Protect `release-tag` and `production` for Maintainer/Owner access. This restricts the manual release action and production deployment. The release API also checks the manual actor's project role.
+4. Protect every variable. Turn **Expand variable reference** off (raw).
+5. Use **Visible** for public values and **Masked and hidden** for private settings and credentials.
+
+Masked values must be single-line, at least eight characters, and contain no spaces. See [GitLab CI/CD variable visibility and masking](https://docs.gitlab.com/ci/variables/#mask-a-cicd-variable).
 
 | GitLab variable                    | Owner / exact environment scope                               | Stage / production value or requirement                                                                                                      | Variable settings                                                                                                           |
 | ---------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -88,67 +100,126 @@ GitLab owns every stage and production runtime setting. Create project environme
 | `GITLAB_RELEASE_TAG_SSH_KEY`       | Protected tag creation / `release-tag`                        | File variable containing the dedicated project deploy key's multiline private SSH key                                                        | Protected, Visible, Raw, File                                                                                               |
 | `GITLAB_RELEASE_TAG_DEPLOY_KEY_ID` | Protected tag creation / `release-tag`                        | Non-secret project deploy-key ID paired with the private-key file                                                                            | Protected, Visible, Raw                                                                                                     |
 
-The production variable names were checked without reading or printing their values. They include `BRIEFING_PUBLIC_URL`, configured for `wss://briefing.caniupdate.dev`. The current production `NUXT_PUBLIC_SITE_URL` value does not match `https://caniupdate.dev` and must be corrected before activation. No GitLab settings or variables were changed.
+The recorded production review checked variable names without reading or printing their values. It reports `BRIEFING_PUBLIC_URL` as `wss://briefing.caniupdate.dev`, but says production `NUXT_PUBLIC_SITE_URL` does not match `https://caniupdate.dev`. **Correct the site URL before activation.** No GitLab settings or variables were changed.
 
-`NUXT_PUBLIC_RELEASE_VERSION` is not a GitLab variable. Production derives it from the validated release receipt for the frontend runtime; stage receives no release-version override.
+`NUXT_PUBLIC_RELEASE_VERSION` is not a GitLab variable. Production derives it from the validated release receipt for the frontend runtime. Stage receives no release-version override.
 
-Enter `OTEL_EXPORTER_OTLP_HEADERS` as one-line JSON with string keys and string values—not OTLP shell syntax such as `Authorization=...` or comma-separated pairs. For a Basic authorization header, encode its required space as `\u0020`, for example `{"authorization":"Basic\u0020<base64>"}`; replace the placeholder with the generated credential value. GitLab's raw setting preserves the JSON escape, and JSON parsing restores the space. Never use **Visible** for an API key, Access credential, or authentication-header value.
+Enter `OTEL_EXPORTER_OTLP_HEADERS` as one-line JSON with string keys and values. Do not use OTLP shell syntax such as `Authorization=...` or comma-separated pairs.
 
-The shared OTLP pair is read and its headers are validated once as a JSON string-to-string map. CI maps it to the Frontend Worker's runtime names `NUXT_OTEL_ENDPOINT` and `NUXT_OTEL_HEADERS`, and to the Briefing Worker's existing names `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS`. It reaches only those two Worker secret allowlists—never the build, Evidence Worker, or browser. `NUXT_PUBLIC_TELEMETRY_ENABLED` remains required and controls the Frontend Worker only: `true` requires an endpoint, while the Briefing Worker exports whenever an endpoint is configured. There is no GitLab `BRIEFING_ALLOWED_ORIGIN` input; that runtime value is derived from `NUXT_PUBLIC_SITE_URL`.
+For Basic authentication, encode the required space as `\u0020`: `{"authorization":"Basic\u0020<base64>"}`. Replace the placeholder with the generated credential. GitLab's raw setting preserves the escape; JSON parsing restores the space. **Never use Visible for an API key, Access credential, or authentication-header value.**
 
-Configure `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` together as one shared pair; when OTLP is unused, omit both rather than entering blank or `{}` values. The deploy helper still sends every allowlisted key: absent OTLP inputs become endpoint `""` and headers `{}` for both Frontend and Briefing Workers, clearing previously managed values; an absent `GITHUB_TOKEN` becomes `""` for Evidence. Wrangler keeps secrets omitted from a `--secrets-file`, so the helper must send the complete allowlist. It creates the JSON files in an OS temporary directory with directory mode `700` and file mode `600`, and removes them in `finally`. CI deployment and Access credentials are used only by their jobs and are never copied into a Worker secrets file or forwarded to the build. Encrypting a public setting as a Worker secret does not make a `NUXT_PUBLIC_*` value private.
+CI reads the shared OTLP pair and validates its header map once. It supplies only:
+
+- Frontend: `NUXT_OTEL_ENDPOINT` and `NUXT_OTEL_HEADERS`.
+- Briefing: `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS`.
+
+The pair never reaches the build, Evidence Worker, or browser. Required `NUXT_PUBLIC_TELEMETRY_ENABLED` controls frontend export only. `true` requires an endpoint; briefing exports whenever its endpoint is configured.
+
+There is no GitLab `BRIEFING_ALLOWED_ORIGIN` input. CI derives it from `NUXT_PUBLIC_SITE_URL`.
+
+Configure both OTLP inputs together. When unused, omit both rather than entering blank or `{}` values. The helper still sends every allowed key:
+
+- Missing OTLP inputs become endpoint `""` and headers `{}` for frontend and briefing, clearing old managed values.
+- Missing `GITHUB_TOKEN` becomes `""` for evidence.
+
+Wrangler retains secrets omitted from `--secrets-file`, so sending the complete list is necessary. The helper writes temporary JSON files under an OS directory with mode `700`; files use mode `600`. It removes them in `finally`.
+
+CI deployment and Access credentials stay in their jobs. They never enter Worker secret files or the build. Encrypting a public setting as a Worker secret does not make a `NUXT_PUBLIC_*` value private.
 
 ### Migrating logical environment selectors and GitLab scopes
 
 Before the first new stage pipeline:
 
-1. Stop starting pipelines that can still run the old `build:preview` / `deploy:preview` jobs. Wait until every queued or running `deploy:preview` has finished before starting a protected-main pipeline that runs `build-smoke` and `stage:delivery`. The old `preview` resource-group lock and new `stage` lock are distinct and do not coordinate; deployments can otherwise overlap against the same remote Workers and database.
-2. Create the GitLab environment `stage` if needed. Set `NUXT_PUBLIC_SITE_URL` to `https://stage.caniupdate.dev` under the exact `stage` scope. Remove its obsolete `stage-build`-scoped copy and the unused `stage-build` environment after old builds finish; the shared build uses no environment scope.
-3. Move the remaining runtime variables and credentials to the exact `stage` scope in the matrix. Remove any old `preview`-scoped copies; all current runtime values and deployment credentials belong only to `stage`.
-4. Delete the obsolete GitLab variables `BRIEFING_ALLOWED_ORIGIN`, `NUXT_OTEL_ENDPOINT`, and `NUXT_OTEL_HEADERS`. Keep only the shared OTLP input pair under `stage`; use the site URL to supply the briefing Origin and use the documented mappings for the two Worker runtime names.
-5. Review the final variable list against the matrix: no obsolete environment scopes, wildcard, or `stage*` scopes remain for current variables. Use Wrangler `env.stage` and `--env stage` in all three configs, config readers, and deployment/migration invocations. Preserve the explicit Cloudflare Worker names (`can-i-update-preview`, `can-i-update-preview-evidence`, `can-i-update-preview-briefing`), Queue and D1 names/IDs, Durable Object namespaces, and bindings byte-for-byte. Renaming the logical environment key does not rename or recreate these physical resources or reset their data.
+1. Stop starting pipelines that can run old `build:preview` / `deploy:preview` jobs. Wait for every queued or running `deploy:preview` to finish before starting a protected-main pipeline with `build-smoke` and `stage:delivery`. The old `preview` lock and new `stage` lock do not coordinate; otherwise they can deploy to the same Workers and database at once.
+2. Create GitLab environment `stage` if needed. Set `NUXT_PUBLIC_SITE_URL` to `https://stage.caniupdate.dev` with exact scope `stage`. After old builds finish, remove its obsolete `stage-build` copy and the unused `stage-build` environment. The shared build has no environment scope.
+3. Move remaining runtime variables and credentials to exact scope `stage`, as listed in the matrix. Remove old `preview` copies.
+4. Delete obsolete variables `BRIEFING_ALLOWED_ORIGIN`, `NUXT_OTEL_ENDPOINT`, and `NUXT_OTEL_HEADERS`. Keep only the shared OTLP input pair under `stage`. Derive briefing Origin from the site URL and use the documented Worker runtime mappings.
+5. Compare the final list with the matrix. Remove obsolete, wildcard, and `stage*` scopes for current variables. Use Wrangler `env.stage` and `--env stage` in all three configs, config readers, and deployment/migration calls.
 
-Use `nub run dev` for local HMR, `nub run dev:built` (`node scripts/dev/dev.ts --built`) for built local dev, and `nub run smoke:built` (`node scripts/smoke/smoke.ts --built`) for built smoke; the CI job is also `smoke:built`. There are no old command or flag aliases. This is an operator procedure only; no live GitLab or Cloudflare migration, resource recreation, deployment, or other remote mutation was performed by this repository update.
+   Preserve Worker names (`can-i-update-preview`, `can-i-update-preview-evidence`, `can-i-update-preview-briefing`), Queue and D1 names/IDs, Durable Object namespaces, and bindings byte-for-byte. Renaming the logical environment does not rename/recreate physical resources or reset data.
 
-The credential-free `build-smoke` job has no GitLab environment and receives build identity values, not `NUXT_PUBLIC_SITE_URL` or stage/production runtime settings. Site and runtime values belong to their exact `stage` or `production` scope and are passed only to their owning Worker; no runtime values remain in `env.stage.vars` or `env.production.vars`. Rate-limit inputs configure binding policies through the temporary deployment config, not Worker variables or secrets.
+Local commands are `nub run dev` for HMR, `nub run dev:built` (`node scripts/dev/dev.ts --built`) for built dev, and `nub run smoke:built` (`node scripts/smoke/smoke.ts --built`) for built smoke. The CI job is also `smoke:built`. No old command or flag aliases remain.
 
-Use a fresh CI-only Cloudflare API token with **Workers Scripts: Edit**, **D1: Edit**, and **Queues: Edit** for the account. Add **Zone → Zone: Read** and **Zone → Workers Routes: Edit**, each scoped only to the active `caniupdate.dev` zone, for custom-domain reconciliation. Do not grant DNS Edit or Account Settings Read. Cloudflare's newer [Workers roles and permissions](https://developers.cloudflare.com/workers/authorization/workers/) page calls the route action `Workers Routes: Write`; select the `Edit` permission in the API-token editor when that is the displayed label. Pre-creating the custom domains in the dashboard does not bypass Wrangler's route reconciliation on later deployments. See [Workers secrets](https://developers.cloudflare.com/workers/configuration/secrets/) and [local ownership](development.md#where-does-configuration-belong). These account-scoped deployment permissions apply to existing resources in the account, not only the stage resource names. Contributors use their own credentials, never the maintainers' token.
+This is an operator procedure only. The repository update performed no live GitLab or Cloudflare migration, resource recreation, deployment, or other remote change.
 
-Production is intended to use OpenRouter at `https://openrouter.ai/api/v1/chat/completions`, with a dedicated key and an operator-configured spend limit. Budget amounts and reset intervals are operator choices, not prescribed here. Stage real-provider checks use a separate key. Default contributor checks remain fixture-only. The official integration stage is a hosted integration target and requires its separate real-provider configuration; deployed smoke checks that exercise fresh generation can incur inference charges.
+The credential-free `build-smoke` job has no GitLab environment. It receives build identity, not `NUXT_PUBLIC_SITE_URL` or stage/production runtime settings.
 
-Self-hosters may choose another provider implementing the supported OpenAI-compatible Chat Completions contract. HTTPS is required except for loopback fixtures. Endpoint query parameters are rejected. Model output must satisfy the application's strict JSON/citation contract; API compatibility does not guarantee every model produces valid output. See [provider behavior](../briefing.md#result-storage-and-generation-failures).
+Site and runtime values use exact `stage` or `production` scopes and reach only their owning Worker. No runtime values remain in `env.stage.vars` or `env.production.vars`. Rate limits configure bindings through temporary deployment config, not Worker variables or secrets.
 
-A spend cap does not protect Cloudflare quotas or guarantee fair access. Cached briefing success does not prove a valid provider key or a working new-generation path.
+Use a fresh CI-only Cloudflare API token with these permissions:
+
+- Account: **Workers Scripts: Edit**, **D1: Edit**, and **Queues: Edit**.
+- Active `caniupdate.dev` zone only: **Zone → Zone: Read** and **Zone → Workers Routes: Edit**, for reconciling custom domains.
+
+**Do not grant DNS Edit or Account Settings Read.** The newer [Workers roles and permissions](https://developers.cloudflare.com/workers/authorization/workers/) page calls the route action `Workers Routes: Write`. Choose `Edit` if that is the API-token editor's label. Creating domains in the dashboard does not bypass Wrangler's route reconciliation on later deployments.
+
+These account permissions cover existing account resources, not just stage names. Contributors use their own credentials, never the maintainer token. See [Workers secrets](https://developers.cloudflare.com/workers/configuration/secrets/) and [local ownership](development.md#where-does-configuration-belong).
+
+Production is intended to use OpenRouter at `https://openrouter.ai/api/v1/chat/completions`, with a dedicated key and operator-set spend limit. Operators choose budget amounts and reset intervals.
+
+Stage real-provider checks need a separate key. The official stage requires its own real-provider configuration; checks that generate fresh briefings can incur charges. Default contributor checks use fixtures only.
+
+Self-hosters can use another provider supporting the OpenAI-compatible Chat Completions contract. HTTPS is required except for loopback fixtures. Endpoint query parameters are rejected.
+
+Model output must meet the strict JSON/citation contract. API compatibility alone does not guarantee valid output. See [provider behavior](../briefing.md#result-storage-and-generation-failures).
+
+A spend cap does not protect Cloudflare quotas or guarantee fair access. A cached briefing does not prove the provider key or new-generation path works.
 
 ### Rate-limit configuration
 
-The bindings use [Cloudflare's built-in Rate Limiting API](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/), not application counters. Local Wrangler configuration owns local defaults: `PUBLIC_RATE_LIMITER` uses namespace `1001` at 60/60 seconds; `BRIEFING_GENERATION_LIMITER` uses `1002` at 3/60 seconds. Hosted stage uses `2001` and `2002`; production uses `3001` and `3002`. Wrangler bindings are non-inheritable, so each environment declares them explicitly; see [Wrangler environments](https://developers.cloudflare.com/workers/wrangler/environments/). Namespace IDs are account-unique positive integers; sharing one across Workers/environments shares counters. Verify the production IDs are unused in the maintainer account before deployment. Fork operators must choose unused IDs in their own account.
+The bindings use [Cloudflare's built-in Rate Limiting API](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/), not application counters.
 
-GitLab owns remote overrides through the two optional environment-scoped variables in the table. Deployment validates them before mutation and writes a temporary Wrangler config for the selected target (`stage` for stage, `production` for production) with the selected binding's `simple.limit`; `simple.period` stays 60. It preserves runtime/asset/migration paths, keeps the build artifact unchanged and removes the config in `finally`. These inputs are deployment configuration, not browser runtime config or Worker secrets. An omitted value uses the documented default on the next authorized deployment. Changing GitLab alone does not alter a running Worker; the binding policy is applied with a deployment.
+| Environment | Public namespace / limit            | New-generation namespace / limit      |
+| ----------- | ----------------------------------- | ------------------------------------- |
+| Local       | `1001` / 60 requests per 60 seconds | `1002` / 3 generations per 60 seconds |
+| Stage       | `2001` / default 60 per 60 seconds  | `2002` / default 3 per 60 seconds     |
+| Production  | `3001` / default 60 per 60 seconds  | `3002` / default 3 per 60 seconds     |
 
-The [runtime-settings schema](../../../scripts/deploy/runtimeSettings.ts) decodes canonical positive base-10 integer strings into safe integer limits. Leading zeroes, whitespace, signs, fractions and exponent notation are rejected; defaults apply only when a variable is omitted.
+Local Wrangler config owns `PUBLIC_RATE_LIMITER` and `BRIEFING_GENERATION_LIMITER` defaults. Bindings are not inherited, so declare them in each environment. See [Wrangler environments](https://developers.cloudflare.com/workers/wrangler/environments/).
 
-Sixty general requests leaves room for package typing, metadata and the independent comparison tiers without allowing sustained unrestricted evidence work. Three new generations permits a small browsing burst while making automated cold-hash generation harder. Both are conservative starting policies, not measured traffic capacity; review false-positive 429s and provider usage before increasing them. No accounts exist, so shared-IP users share quotas. The general limit also applies to requests that ultimately reuse stored/pending work, but those requests never consume the stricter new-generation quota.
+Namespace IDs must be account-unique positive integers. Reusing an ID across Workers/environments shares counters. **Check that production IDs are unused before deploying.** Fork operators must choose unused IDs in their own account.
 
-Counters are approximate and per Cloudflare location, not a global monetary cap or exact daily accounting. Rotating IPs/locations can evade them. Keep the provider's separate key spend limit; one accepted generation may make the existing bounded second call for invalid output. Missing/failing bindings fail closed; no process-local or D1 counter fallback exists. `Retry-After: 60` is advice, not an exact platform reset timestamp. No emergency pause control is implemented.
+GitLab's two optional environment-scoped variables override remote limits. Deployment validates them before changing state, then writes a temporary config for the selected `stage` or `production` target. It changes the binding's `simple.limit`; `simple.period` stays 60.
+
+The helper preserves runtime/asset/migration paths, leaves the build artifact unchanged, and removes the config in `finally`. These are deployment settings, not browser runtime config or Worker secrets. Omission uses the documented default on the next authorized deployment. Changing GitLab alone does not change a running Worker.
+
+The [runtime-settings schema](../../../scripts/deploy/runtimeSettings.ts) accepts positive base-10 integer strings that fit a safe integer. It rejects leading zeroes, whitespace, signs, fractions, and exponent notation. Defaults apply only to omitted variables.
+
+The starting limits allow package typing, metadata, independent comparison tiers, and a small generation burst while restricting sustained evidence work and automated generation for new evidence hashes. They are conservative policies, not measured capacity. Review false-positive 429s and provider use before raising them.
+
+There are no user accounts, so users sharing an IP share quotas. The general limit also covers stored-result reuse and pending-job joins. Those requests do not consume the stricter new-generation quota.
+
+**Limits are approximate and per Cloudflare location, not global spend caps or exact daily accounting.** Rotating IPs/locations can evade them. Keep a separate provider-key spend limit. One accepted generation may make the bounded second call for invalid output.
+
+Missing or failing bindings refuse requests; there is no process-local or D1 fallback counter. `Retry-After: 60` is advice, not an exact reset timestamp. No emergency pause control is implemented.
 
 ## How do I get the Grafana Cloud values?
 
-1. Sign in to the Grafana Cloud Portal, select your organization, then open **Security → Access Policies → Create access policy**. Set its realm to the target stack—not the whole organization—and grant only `logs:write` and `traces:write`; this application exports logs and traces, not metrics. See Grafana's [policy creation procedure](https://grafana.com/docs/grafana-cloud/platform/security-and-account-management/security-and-access/authentication-and-permissions/access-policies/create-access-policies/).
-2. Select the policy, choose **Add token**, set an expiration, create it, and copy the token into a secure credential store; Grafana shows it only once. This Cloud Access Policy token is the Basic-auth password; do not use a Grafana service-account or dashboard API token. Rotate it by creating a replacement token on the same policy, updating the protected GitLab header variable, applying it through the next authorized stage deployment, then revoking the old token. Do not share a production token with stage. See [token creation guidance](https://grafana.com/docs/grafana-cloud/platform/security-and-account-management/security-and-access/authentication-and-permissions/access-policies/create-access-policies/#create-tokens-for-an-access-policy).
-3. In the [Grafana Cloud Portal](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/), open the target stack and choose **Configure** on its **OpenTelemetry** tile. Copy the OTLP base endpoint and OTLP instance ID (Basic-auth username). Form the Basic-auth payload by Base64-encoding exactly `OTLP-instance-ID:policy-token` as UTF-8 with no trailing newline, using the token from step 2. Do not use a Loki/Tempo instance ID or accidentally generate a second token with broader permissions. If you already have the tile's generated authentication header, check its token's policy scopes and stack realm before reusing it.
-4. Store the endpoint from the OpenTelemetry tile as `OTEL_EXPORTER_OTLP_ENDPOINT`. Use its base URL (normally ending in `/otlp`); do not append `/v1/logs` or `/v1/traces`, or substitute the Grafana UI URL or a Loki-/Tempo-specific URL. The OTLP base endpoint adds per-signal paths itself; see Grafana's [endpoint path guidance](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/#configure-the-otlp-endpoint-path-for-each-signal).
-5. Store the authentication header in `OTEL_EXPORTER_OTLP_HEADERS` as a one-line JSON object, e.g. `{"authorization":"Basic\u0020<base64>"}` with the actual generated payload replacing the placeholder. If the portal displays `Authorization=Basic%20...`, remove the `Authorization=` prefix and represent `%20` as JSON `\u0020`; do not paste shell `KEY=VALUE` or comma/equal-form OTLP headers into the JSON variable. Set both GitLab variables protected, masked and hidden, raw, and scoped exactly to either `stage` or `production`; keep separate credentials per environment. Keep the endpoint HTTPS-only and free of URL credentials, queries, and fragments.
+1. In Grafana Cloud Portal, select your organization. Open **Security → Access Policies → Create access policy**. Set the realm to the target stack, not the whole organization. Grant only `logs:write` and `traces:write`; this app exports no metrics. See the [policy creation procedure](https://grafana.com/docs/grafana-cloud/platform/security-and-account-management/security-and-access/authentication-and-permissions/access-policies/create-access-policies/).
+2. Select the policy, choose **Add token**, set an expiration, and create it. Save the token in a secure credential store; Grafana shows it once. This Cloud Access Policy token is the Basic-auth password, not a Grafana service-account or dashboard API token.
+
+   To rotate it, create a replacement on the same policy, update the protected GitLab header variable, apply it in the next authorized stage deployment, then revoke the old token. Never share a production token with stage. See [token creation guidance](https://grafana.com/docs/grafana-cloud/platform/security-and-account-management/security-and-access/authentication-and-permissions/access-policies/create-access-policies/#create-tokens-for-an-access-policy).
+
+3. In the [Grafana Cloud Portal](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/), open the target stack. Choose **Configure** on its **OpenTelemetry** tile. Copy the OTLP base endpoint and OTLP instance ID, which is the Basic-auth username.
+
+   Base64-encode exactly `OTLP-instance-ID:policy-token` as UTF-8, with no trailing newline, using step 2's token. Do not use a Loki/Tempo instance ID or generate another token with broader permissions. If reusing a generated authentication header, first check its token's policy scopes and stack realm.
+
+4. Set `OTEL_EXPORTER_OTLP_ENDPOINT` to the tile's base URL, normally ending in `/otlp`. Do not append `/v1/logs` or `/v1/traces`, or substitute a Grafana UI or Loki-/Tempo-specific URL. Signal paths are added automatically. See [endpoint path guidance](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/#configure-the-otlp-endpoint-path-for-each-signal).
+5. Set `OTEL_EXPORTER_OTLP_HEADERS` to one-line JSON: `{"authorization":"Basic\u0020<base64>"}`, replacing the placeholder with the generated payload.
+
+   If the portal shows `Authorization=Basic%20...`, remove `Authorization=` and replace `%20` with JSON `\u0020`. Do not paste shell `KEY=VALUE` or comma/equal-form OTLP headers.
+
+   Make both GitLab variables protected, masked and hidden, raw, and scoped exactly to `stage` or `production`. Use separate credentials per environment. The endpoint must use HTTPS with no URL credentials, query, or fragment.
 
 ## How do I create the GitHub token?
 
-The evidence Worker uses the optional token only for public GitHub REST API GETs to repository releases and changelog contents ([client](../../../server/httpDependencies/github/client.ts)). GitLab does not provide a GitHub Actions `GITHUB_TOKEN`; without a token, these public requests still work at GitHub's unauthenticated rate limit.
+The evidence Worker uses this optional token only for public GitHub REST API GETs for releases and changelog contents ([client](../../../server/httpDependencies/github/client.ts)). GitLab supplies no GitHub Actions `GITHUB_TOKEN`. Without a token, public requests still work at GitHub's unauthenticated rate limit.
 
 1. In GitHub, open **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.
-2. Name it for the stage or production evidence Worker, select an expiration you can maintain, and set **Resource owner** to your personal account. Set **Repository access** to **Public repositories (read-only)**. GitHub says fine-grained PATs always have read-only access to public repositories; do not select private repositories, or grant additional account, organization, or repository permissions.
-3. Generate the token and add it as `GITHUB_TOKEN` in GitLab with **Protected**, **Masked and hidden**, and **Raw** enabled and exact environment scope `stage` or `production`. It is optional and belongs only to that environment's Evidence Worker. Do not create a classic `repo`/`public_repo` token or paste the secret into commands, logs, or documentation.
+2. Name it for the stage or production evidence Worker. Choose an expiration you can maintain. Set **Resource owner** to your personal account and **Repository access** to **Public repositories (read-only)**. Fine-grained PATs always have read-only public-repository access. Do not select private repositories or grant extra account, organization, or repository permissions.
+3. Add the generated token as GitLab `GITHUB_TOKEN`, with **Protected**, **Masked and hidden**, **Raw**, and exact scope `stage` or `production`. It belongs only to that environment's Evidence Worker. Do not create a classic `repo`/`public_repo` token or put the secret in commands, logs, or documentation.
 
-See GitHub's [fine-grained token guidance](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token). GitHub documents 60 unauthenticated REST requests per hour versus 5,000 authenticated requests per hour for a personal access token; see [REST API rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+See GitHub's [fine-grained token guidance](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token). GitHub documents 60 unauthenticated REST requests/hour and 5,000 authenticated requests/hour for a personal access token. See [REST API rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
 
 ## How are resources provisioned and code deployed?
 
@@ -156,7 +227,7 @@ Separate first-time bootstrap from ordinary redeployment.
 
 ### First-time bootstrap
 
-This procedure is for a new, independent account-local target only. The official stage already has its persistent Workers and bound D1, Queue, and Durable Object resources; do not apply bootstrap creation steps to it.
+Use this procedure only for a new, independent account-local target. **Do not bootstrap the official stage.** It already has persistent Workers, D1, Queue, and Durable Object resources.
 
 1. Verify the selected account, environment, resource names, and origins.
 2. Create this target's D1 database and record its returned ID in the binding.
@@ -166,107 +237,235 @@ This procedure is for a new, independent account-local target only. The official
 6. Deploy evidence, briefing, and built frontend in that order. The configured Durable Object class migrations are part of Worker deployment.
 7. Verify the deployed surface and record evidence.
 
-Do not put Queue creation into every redeployment sequence or interpret a failed provisioning command as permission to continue. An existing queue/database must be positively identified as belonging to the intended target.
+Do not create a Queue on every redeployment or continue after failed provisioning. Positively identify any existing Queue/database as belonging to the intended target.
 
 ### Deploying the existing maintainer stage
 
-There is no workstation-driven redeploy recipe for the official integration stage. Use only the protected-main GitLab pipeline in [Automatic main-to-stage deployment](#automatic-main-to-stage-deployment), after reviewing the selected revision and migration compatibility. The credential-free `build-smoke` job builds the artifact without a GitLab environment or stage runtime settings. It records the CI commit and pipeline identity and includes the frontend, evidence, and briefing Worker bundles in one `.output/` artifact. The deploy job uses GitLab environment `stage`, while its parent `stage:delivery` holds resource group `stage` across deployment and browser verification. Before any migration or deployment, `deploy:stage` verifies the artifact identity and content hashes; all three Workers deploy from those exact bundles without rebuilding. Deployment then runs the existing D1 migrations and uses Wrangler `--env stage`. The GitLab package command is `nub run deploy:stage`, backed by `scripts/deploy/deploy.ts`. Changes to GitLab runtime variables take effect on the next authorized stage deployment. See [release checks](releases-and-recovery.md#verification-and-release-evidence).
+**Use only the protected-main GitLab pipeline**, after reviewing the revision and migration compatibility. There is no workstation redeploy recipe. See [Automatic main-to-stage deployment](#automatic-main-to-stage-deployment).
 
-Do not copy an operator credential file into a workstation build or bypass the allowlisted secrets-file path. The stage already has its Workers, D1 database, Queue, Durable Object namespaces, IDs, and migration history; changing the stage hostnames or runtime secrets does not recreate or rename those resources or reset their data. Configure Cloudflare Access before the first deployment that attaches the custom domains, as described in [official stage access](#how-is-the-official-stage-restricted).
+The stage flow is:
+
+1. Credential-free `build-smoke` builds without a GitLab environment or stage runtime settings. It records the CI commit/pipeline identity and puts all three Worker bundles in one `.output/` artifact.
+2. Parent `stage:delivery` holds resource group `stage` through deployment and browser verification. The deploy job uses GitLab environment `stage`.
+3. Before any migration or deployment, `deploy:stage` checks artifact identity and content hashes.
+4. It applies existing D1 migrations and deploys all three exact bundles without rebuilding, using Wrangler `--env stage`.
+
+GitLab runs `nub run deploy:stage`, backed by `scripts/deploy/deploy.ts`. Changed GitLab runtime values take effect on the next authorized stage deployment. See [release checks](releases-and-recovery.md#verification-and-release-evidence).
+
+Do not copy operator credentials into a workstation build or bypass the allowed secrets-file path. Changing stage hostnames or runtime secrets does not rename/recreate Workers, D1, Queue, Durable Object namespaces, IDs, or migration history, and does not reset data.
+
+Configure Cloudflare Access before the first deployment attaches custom domains. See [official stage access](#how-is-the-official-stage-restricted).
 
 ### Hosted frontend HTML caching
 
-The homepage is rendered by Nitro at runtime so its canonical and social URLs use this environment's `NUXT_PUBLIC_SITE_URL`, not a build-time origin. Its one-year edge TTL and browser revalidation come from the same response policy as `/privacy` and `/about`; no static homepage `_headers` rule is needed. Local requests can verify response headers, but only authenticated hosted requests can verify an edge `HIT`.
+Nitro renders the homepage at runtime. Canonical and social URLs use the environment's `NUXT_PUBLIC_SITE_URL`, not a build-time origin. The homepage shares `/privacy` and `/about` response policy; it needs no static `_headers` rule.
 
-The frontend's [`env.stage.cache.enabled` and `env.production.cache.enabled`](../../../wrangler.jsonc) enable Cloudflare Workers Cache for hosted stage and production. [`responseCache.ts`](../../../server/plugins/responseCache.ts) assigns a one-year edge TTL to successful homepage, `/privacy`, and `/about` HTML, and a 12-hour TTL to comparison HTML only when SSR has a validated stored briefing and successful measurements. Both use `Cache-Control: no-cache` for browser revalidation and `Cloudflare-CDN-Cache-Control` for edge freshness with `must-revalidate`, so expired pages are not served stale. Missing/pending/failed briefings, evidence or storage errors, APIs, other dynamic pages, and non-HTML responses receive `no-store`.
+Hosted stage and production enable Workers Cache through [`env.stage.cache.enabled` and `env.production.cache.enabled`](../../../wrangler.jsonc). [`responseCache.ts`](../../../server/plugins/responseCache.ts) sets these edge-cache lifetimes (TTLs):
 
-Workers Cache is checked before the frontend Worker's entrypoint for each HTTP request, not only requests that the app later marks cacheable. `no-store` prevents a response from being stored, but does not skip the cache lookup. Under Cloudflare's current [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/), cache-served requests are billed at the same request rate as Worker invocations, including static assets that otherwise have separate free treatment; CPU is billed only when the Worker runs. Include this cost/latency behavior in both hosted environments. Cached pages contain the same public content for every visitor; stage is gated by Cloudflare Access, while production is public. Do not cache personalized content without a separate reviewed cache key and authorization design.
+- Successful homepage, `/privacy`, and `/about` HTML: one year.
+- Comparison HTML: 12 hours, only when server-side rendering (SSR) has a validated stored briefing and successful measurements.
+- Missing/pending/failed briefings, evidence or storage errors, APIs, other dynamic pages, and non-HTML responses: `no-store`.
 
-`cross_version_cache` is explicitly `false` in both hosted environments, so the Worker version is part of the cache key and each deployment starts cold. Cloudflare may evict entries before their TTL, so the one-year home, privacy, and about TTLs are not persistence guarantees. The local root Worker config and built dev do not enable this cache. See Cloudflare's [Workers Cache configuration](https://developers.cloudflare.com/workers/cache/configuration/) and [cache examples](https://developers.cloudflare.com/workers/cache/examples/).
+Cacheable pages use `Cache-Control: no-cache` for browser revalidation and `Cloudflare-CDN-Cache-Control` with `must-revalidate` for edge freshness. Expired pages are not served stale.
+
+Local requests can verify headers. An authenticated hosted request is needed to verify an edge `HIT`. Local root config and built dev do not enable this cache.
+
+Workers Cache checks every HTTP request before the frontend entrypoint, even if the response later uses `no-store`. That directive prevents storage, not lookup.
+
+Under current [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/), cache-served requests cost the same per request as Worker invocations. This includes static assets that otherwise receive separate free treatment. CPU is billed only when the Worker runs. Account for these cost and latency effects in both hosted environments.
+
+Cached pages have the same public content for everyone. Stage is behind Cloudflare Access; production is public. **Personalized caching requires a separately reviewed cache-key and authorization design.**
+
+Both hosted environments set `cross_version_cache` to `false`. The Worker version is part of the cache key, so every deployment starts cold. Cloudflare may evict entries before their TTL; one-year TTLs do not guarantee persistence. See [Workers Cache configuration](https://developers.cloudflare.com/workers/cache/configuration/) and [cache examples](https://developers.cloudflare.com/workers/cache/examples/).
 
 ### Automatic main-to-stage deployment
 
-[GitLab CI](../../../.gitlab-ci.yml) validates merge requests and main pushes. Only a **protected `main` push** can start `stage:delivery` after required validation; no MR or tag deploys. `stage:delivery` starts the [delivery child pipeline](../../../scripts/deploy/ci-stage.yml), which separates `deploy:stage` from the Chromium and Firefox `verify:stage` jobs. `build-smoke` has no GitLab environment or stage runtime values and receives no Cloudflare, Access, provider, or telemetry credentials. It retains `.output` for seven days, accessible to Maintainers, and embeds the full source SHA and repository URL for the footer. `smoke:built` validates a separate copy before deployment; `deploy:stage` consumes the same build artifact, and all three Workers deploy the verified bundles with `--no-bundle`. Browser smoke checks compare the rendered commit link directly with the expected CI SHA; no build-metadata endpoint is exposed.
+[GitLab CI](../../../.gitlab-ci.yml) validates MRs and main pushes. Only a **protected `main` push**, after required validation, can start `stage:delivery`. No MR or tag deploys stage.
 
-The parent `stage:delivery` holds the `stage` resource-group lock until the entire child pipeline finishes, using GitLab's [resource-group downstream pipeline pattern](https://docs.gitlab.com/ci/resource_groups/#pipeline-level-concurrency-control-with-cross-projectparent-child-pipelines) with `strategy: mirror`. No child job acquires that lock. This prevents a newer deployment from replacing the site during verification while allowing both browsers to run concurrently. `deploy:stage` uses GitLab deployment environment `stage`, is non-interruptible, and stops on any failure; browser jobs start only after it succeeds. It reads only `stage`-scoped runtime values and emits each complete allowlist to the owning Worker through the temporary secrets-file path. The frontend, evidence, and briefing Workers keep their existing names, IDs, and Wrangler `env.stage`; the deploy command continues to use `--env stage`. [The runner](../../../scripts/deploy/deploy.ts) checks artifact SHA/pipeline identity and the current remote `main` immediately before the first mutation. A superseded or unverifiable revision fails without migrating/deploying. Newer commits arriving during a deployment wait for the same lock; these deployments are not atomic and failures never trigger automatic rollback.
+`stage:delivery` starts the [delivery child pipeline](../../../scripts/deploy/ci-stage.yml): `deploy:stage`, then separate Chromium and Firefox `verify:stage` jobs.
 
-Create variables from the matrix with exact permitted scopes. Stage runtime settings and deployment credentials belong to `stage`; production runtime settings and the Cloudflare token belong to `production`; release API and SSH credentials belong only to the named release jobs. Bootstrap rejects private values outside their dedicated environment before dependency installation. `NUXT_PUBLIC_SITE_URL` is runtime-only; build identity is supplied separately. Worker settings go only to owning secret files, never the build or another Worker.
+`build-smoke` has no GitLab environment or stage runtime values. It receives no Cloudflare, Access, provider, or telemetry credentials. It retains `.output` for seven days with Maintainer access and embeds the full source SHA and repository URL for the footer.
 
-Allow the CI-only Access service token through a **Service Auth** policy on both browser-facing hosts, alongside human Allow policies. Configure hostname-based protection for the socket. Keep resource provisioning and Access policy changes outside ordinary redeployments. Protect `main`, preserve fork-variable restrictions, and restrict stage deployment access to Maintainers where GitLab protected environments are available.
+`smoke:built` checks a separate copy. `deploy:stage` uses the original artifact and deploys all three verified bundles with `--no-bundle`. Browser smoke compares the rendered commit link with the expected CI SHA. There is no build-metadata endpoint.
 
-Each `verify:stage` matrix job installs its selected pinned Playwright runtime and runs the deployed smoke with `SMOKE_BROWSER=chromium` or `SMOKE_BROWSER=firefox`. The jobs use environment `stage` with action `verify`, not a new deployment. Each shard checks access and health, exercises package search, version selection, declarations/measurements, rendered facts, direct reload, and the stage commit link. The submission POST is intercepted before it reaches the server, so these browser checks never trigger paid generation. Browser failures fail the child and parent pipelines; retrying verification does not redeploy.
+The parent holds the `stage` resource-group lock until the whole child pipeline finishes. This uses GitLab's [resource-group downstream pipeline pattern](https://docs.gitlab.com/ci/resource_groups/#pipeline-level-concurrency-control-with-cross-projectparent-child-pipelines) with `strategy: mirror`. No child job acquires the lock. Both browsers can run together without a newer deployment replacing the site.
 
-Stage smoke checks unauthorized frontend/socket rejection, authenticated health, artifact SHA, and socket-host admission with an unassigned sentinel job (expected application 404, not a subscription). Chromium and Firefox verify hydrated search, version selection, comparison APIs, rendered facts, reload, and the footer's full-SHA commit link. The production smoke checks the public socket route and exact package-version footer, and intercepts the briefing POST before dispatch with a schema-valid synthetic available fixture. Neither deployed smoke forces a provider call or proves fresh generation, provider integration, or rate-limit behavior.
+`deploy:stage` is non-interruptible and stops on any failure. Browser checks start only after it succeeds. It reads only `stage`-scoped runtime values and sends each complete allowed list through the owning Worker's temporary secrets file.
 
-The browser smoke HTTP proxy requests only gzip, deflate, or Brotli responses because its Playwright fetch/fulfillment path does not decode Zstandard correctly for Firefox. Native WebSocket handshakes remain unproxied.
+Workers retain their names, IDs, and Wrangler `env.stage`; deployment still uses `--env stage`. Immediately before the first state change, [the runner](../../../scripts/deploy/deploy.ts) checks artifact SHA/pipeline identity and the current remote `main`. A superseded or unverifiable revision fails before migration/deployment.
 
-Local checks and dry-runs do not activate hosted automation. No production deployment or GitLab settings change was made by this worktree change. Authorized operators must complete the external credential, protected-environment, protected-tag, Cloudflare Worker/DO/domain, and production-origin prerequisites below before enabling a live release.
+Newer deployments wait for the same lock. **Deployment is not atomic: completed steps stay applied if a later step fails. There is no automatic rollback.**
+
+Use the variable matrix's exact scopes. Stage settings and credentials belong to `stage`; production settings and Cloudflare token to `production`; release API and SSH credentials only to their named release jobs.
+
+Bootstrap rejects private values outside their dedicated environment before installing dependencies. `NUXT_PUBLIC_SITE_URL` is runtime-only; build identity is separate. Worker settings go only to their owning secret files, never the build or another Worker.
+
+Allow the CI-only Access token through a **Service Auth** policy on both browser-facing hosts, alongside human Allow policies. Protect the socket by hostname. Keep provisioning and Access policy changes outside normal redeployments.
+
+Protect `main`, retain fork-variable restrictions, and restrict stage deployment to Maintainers where GitLab protected environments are available.
+
+Each `verify:stage` job installs its selected pinned Playwright runtime and uses `SMOKE_BROWSER=chromium` or `SMOKE_BROWSER=firefox`. Its environment action is `verify`, not a new deployment. Each browser checks access, health, search, version selection, declarations/measurements, rendered facts, direct reload, and the stage commit link.
+
+The submission POST is intercepted before it reaches the server, so these checks never trigger paid generation. A browser failure fails both child and parent pipelines. Retrying verification does not redeploy.
+
+Stage smoke also checks unauthorized frontend/socket rejection, authenticated health, artifact SHA, and socket-host admission. It uses an unassigned sentinel job and expects application 404; this is not a subscription.
+
+Production smoke checks the public socket route and exact package-version footer. It intercepts briefing POST before dispatch and supplies a schema-valid synthetic available fixture. Neither deployed smoke proves fresh generation, provider integration, or rate-limit behavior.
+
+The HTTP proxy requests gzip, deflate, or Brotli only. Its Playwright fetch/fulfillment path cannot correctly decode Zstandard for Firefox. Native WebSocket handshakes bypass the proxy.
+
+Local checks and dry-runs do not activate hosted automation. This worktree change made no production deployment or GitLab settings change. Before enabling a live release, authorized operators must complete the credential, protected-environment/tag, Cloudflare Worker/DO/domain, and production-origin prerequisites below.
 
 ### Effect runtime for deployment scripts
 
-The deployment TypeScript entrypoints compose build identity hashing and verification, runtime-setting and release-receipt decoding, temporary Wrangler configuration, Git checks, Wrangler subprocesses, and sanitized deployment reports as Effect computations with typed failures. The CLI provides the pinned Effect 4.0.0 Node services at its runtime entrypoint; pure bundle-path and deploy-argument helpers remain synchronous. See the [deployment orchestrator](../../../scripts/deploy/deploy.ts), [artifact identity](../../../scripts/deploy/buildArtifact.ts), [runtime settings](../../../scripts/deploy/runtimeSettings.ts), [rate-limit configuration](../../../scripts/deploy/rateLimitConfig.ts), and [Worker secret handling](../../../scripts/deploy/workerSecrets.ts).
+Deployment TypeScript entrypoints use Effect computations with typed failures for build hashing/verification, settings and receipt decoding, temporary Wrangler configs, Git checks, subprocesses, and sanitized reports.
 
-Release build identity and production receipt JSON are decoded directly with Effect 4.0.0's [`Schema.fromJsonString` and `Schema.decodeUnknownEffect`](https://github.com/Effect-TS/effect/blob/effect%404.0.0/packages/effect/src/Schema.ts). Malformed JSON and invalid identity fields retain the same sanitized domain failure; GitLab response decoding also stays in the Effect error channel.
+The CLI supplies pinned Effect 4.0.0 Node services at its runtime entrypoint. Pure bundle-path and deploy-argument helpers stay synchronous. See the [deployment orchestrator](../../../scripts/deploy/deploy.ts), [artifact identity](../../../scripts/deploy/buildArtifact.ts), [runtime settings](../../../scripts/deploy/runtimeSettings.ts), [rate-limit configuration](../../../scripts/deploy/rateLimitConfig.ts), and [Worker secret handling](../../../scripts/deploy/workerSecrets.ts).
 
-Worker secrets and generated Wrangler configs are written beneath owner-only OS temporary directories, with JSON files mode `600`. The Effect filesystem scopes own those directories through the associated Wrangler command and remove them when the command succeeds, fails, or is interrupted. This uses Effect's [filesystem service](https://effect.website/docs/v4/platform/file-system) and [scope resource lifetime](https://effect.website/docs/v4/resource-management/scope); subprocesses use Effect's [child-process commands](https://effect.website/docs/v4/api/effect/process/ChildProcess).
+Build identity and production receipt JSON use Effect 4.0.0's [`Schema.fromJsonString` and `Schema.decodeUnknownEffect`](https://github.com/Effect-TS/effect/blob/effect%404.0.0/packages/effect/src/Schema.ts). Malformed JSON and invalid fields keep the same sanitized domain failure. GitLab response decoding also uses Effect's error channel.
 
-The orchestration retains evidence → briefing → frontend deployment ordering, rechecks the protected `main` tip before state changes, and records completed and failed steps without attempting rollback. Dry-runs still skip remote D1 migrations and pass Wrangler's `--dry-run` flag; they write the sanitized report and do not require the Cloudflare deployment token.
+Secrets and generated Wrangler configs live in owner-only OS temporary directories; JSON files use mode `600`. Effect filesystem scopes retain the directories for the Wrangler command, then remove them on success, failure, or interruption.
+
+This uses Effect's [filesystem service](https://effect.website/docs/v4/platform/file-system) and [scope resource lifetime](https://effect.website/docs/v4/resource-management/scope). Subprocesses use [child-process commands](https://effect.website/docs/v4/api/effect/process/ChildProcess).
+
+The scripts preserve evidence → briefing → frontend order, recheck the protected `main` tip before state changes, and report completed/failed steps without rollback.
+
+Dry-runs skip remote D1 migrations and pass Wrangler `--dry-run`. They write a sanitized report and need no Cloudflare deployment token.
 
 ### Manual protected-main release
 
-Every protected `main` push runs the required validation and build gates, then the serialized stage child pipeline. Stage deploys and verifies the exact frontend build in Chromium and Firefox; its footer retains the full source commit link. The blocking manual `release:tag` job becomes eligible only after `build-smoke` and the complete stage child succeed. A Maintainer or Owner selects a required stable `MAJOR.MINOR.PATCH` value in GitLab's native job-input form ([job inputs](https://docs.gitlab.com/ci/jobs/job_inputs/)); no release branch, version commit, merge request, package version change, or auto-merge is created. GitLab requires a job-input default; the empty default is deliberately not a release version and the release CLI refuses it before publication.
+Every protected `main` push runs validation and build gates, then the stage child pipeline under its deployment lock. Stage deploys the exact frontend build and checks it in Chromium and Firefox. Its footer keeps the full source commit link.
 
-Before writing a tag, the release job uses its read-only GitLab API token to verify that the manual job belongs to this exact `push` pipeline on protected `main`, its SHA is still the protected branch tip, all required parent checks/build/smoke jobs succeeded, and the successful stage bridge led to a successful `parent_pipeline` with matching `main` SHA and successful stage deployment plus Chromium and Firefox jobs. It checks the manual job's API user has Maintainer or Owner project access. GitLab environment protection is an additional gate, not a substitute for these checks.
+Only after `build-smoke` and the complete stage child pass does blocking manual `release:tag` become available. A Maintainer or Owner must select a stable `MAJOR.MINOR.PATCH` version in GitLab's native [job inputs](https://docs.gitlab.com/ci/jobs/job_inputs/) form. The required default is empty, not a release version; the CLI rejects it before publication.
 
-The job accepts only stable SemVer newer than the latest stable release tag. It checks existing tags and the protected-tag rules before publication: a matching existing tag is reusable only when its protected annotated-tag commit and version/tag/commit/pipeline metadata exactly match this pipeline; any conflicting, moved, or superseded tag is rejected and never overwritten. Configure one protected `v*` rule that permits creation only by the dedicated project deploy key, with no overlapping matching rule or user/group/role grants. The release job writes the immutable receipt `.data/production-release/tag.json` containing exactly `version`, `tag`, `commitSha`, and `pipelineId`.
+This creates no release branch, version commit, MR, package version change, or auto-merge.
 
-`production:delivery` is blocked on successful completion of `release:tag`; it cannot run from a branch, title, MR, or an arbitrary tag. The production child fetches both the receipt and the original `build-smoke` `.output/` artifact. It checks the receipt against the build's commit/pipeline identity and the immutable protected tag, verifies hashes for the complete built output and all three worker bundles, and deploys those exact frontend/evidence/briefing bundles with Wrangler `--no-bundle`—production does not rebuild. It passes the receipt version as frontend runtime `NUXT_PUBLIC_RELEASE_VERSION`; stage has no release-version override and continues to display its stage commit identity.
+Before writing a tag, the read-only GitLab API token verifies:
 
-The production child holds resource group `production` through migration, deployment, and verification, just as the parent `stage:delivery` holds `stage`. It applies current D1 migrations and deploys evidence, briefing, then frontend. Chromium and Firefox smoke the live health/search/comparison surface and require the receipt-derived `vX.Y.Z - <short-commit>` footer with the linked artifact commit. Smoke intercepts the briefing-submission POST and responds with a schema-valid fixture before dispatch, so it makes no paid generation call; it does not prove provider integration or rate limiting. Reports retain partial step status; Workers/database deployment is non-atomic and failures do not trigger automatic rollback.
+- The manual job belongs to this exact protected-main `push` pipeline.
+- Its SHA is still the protected branch tip.
+- Required parent checks, build, and smoke jobs succeeded.
+- The successful stage bridge led to a successful `parent_pipeline` with the same `main` SHA, successful deployment, and passing Chromium/Firefox jobs.
+- The manual job's API user has Maintainer or Owner project access.
 
-Before activation, create and protect exact GitLab environments `release-tag` and `production` for Maintainer/Owner access, and configure the table's variables with exact scopes. `GITLAB_RELEASE_TAG_API_TOKEN` is read-only Reporter-level access with `read_api` and `read_repository` permissions for pipeline, job, membership, bridge, tag, and protected-tag evidence; it cannot create tags or change `main`. `GITLAB_RELEASE_TAG_SSH_KEY` must be the file-valued private key for the only deploy key allowed by the protected `v*` rule; `GITLAB_RELEASE_TAG_DEPLOY_KEY_ID` must identify that key. Use a protected, active key with tag-push permission, and keep the main branch protected against direct/force pushes. Project access tokens require GitLab Premium/Ultimate; otherwise use a scoped expiring read-only PAT for a dedicated Reporter account. Protected environments require Premium/Ultimate. If the project cannot restrict `release-tag` and `production` to Maintainers/Owners, keep the workflow inactive until an equivalent access boundary exists. See GitLab's [project access tokens](https://docs.gitlab.com/user/project/settings/project_access_tokens/), [CI/CD variable security](https://docs.gitlab.com/ci/variables/), [protected-tag settings](https://docs.gitlab.com/user/project/protected_tags/), [Protected Tags API](https://docs.gitlab.com/api/protected_tags/), and [deploy keys](https://docs.gitlab.com/user/project/deploy_keys/).
+Protected environments add a gate; they do not replace these checks.
 
-Cloudflare still requires the production-scoped token to have only Workers Scripts, D1, and Queue edit access for the account plus Zone Read and Workers Routes edit for the active `caniupdate.dev` zone. Production D1 `can-i-update-production-briefings` (ID `465d4fc6-35ed-4ef6-842f-e67f3a919b87`) and Queue `can-i-update-production-briefings` already exist and are empty. Production Workers/DO namespaces and domain attachments do not exist yet; the configured production `NUXT_PUBLIC_SITE_URL` must first be corrected to `https://caniupdate.dev`. `BRIEFING_PUBLIC_URL` is already the intended `wss://briefing.caniupdate.dev`.
+The version must be stable SemVer and newer than the latest stable release tag. An existing tag is reusable only if its protected annotated-tag commit and version/tag/commit/pipeline metadata exactly match this pipeline. Conflicting, moved, or superseded tags are rejected, never overwritten.
 
-If deployment or browser verification fails while the release SHA remains the current protected `main` tip, inspect the partial deployment report and retry only that same pipeline/receipt; the tag job reuses only its exact immutable tag. If `main` has advanced, the old SHA is deliberately rejected and its tag is never replaced. Recovery requires a new protected-main push with passing checks and stage browsers, then a higher stable version selected in that pipeline's manual `release:tag` job and a forward production deployment that accounts for already completed Worker/migration steps. Never make a production branch deployment, hand-edit `package.json`, manually push a release tag, or assume a failed step rolled back.
+Configure one protected `v*` rule allowing creation only by the dedicated project deploy key. Allow no overlapping matching rule or user/group/role grants. The job writes immutable receipt `.data/production-release/tag.json` with exactly `version`, `tag`, `commitSha`, and `pipelineId`.
+
+`production:delivery` requires successful `release:tag`. It cannot start from a branch, title, MR, or arbitrary tag. The child fetches the receipt and original `build-smoke` `.output/` artifact, then checks:
+
+- Receipt commit/pipeline identity against the build and immutable protected tag.
+- Hashes of the complete output and all three Worker bundles.
+
+It deploys those exact bundles with Wrangler `--no-bundle`; production never rebuilds. The receipt version becomes frontend runtime `NUXT_PUBLIC_RELEASE_VERSION`. Stage has no override and keeps its stage commit identity.
+
+The production child holds resource group `production` through migration, deployment, and verification. It applies current D1 migrations, then deploys evidence, briefing, and frontend.
+
+Chromium and Firefox check live health, search, comparison, and the receipt-derived `vX.Y.Z - <short-commit>` footer linked to the artifact commit. Smoke intercepts briefing POST before dispatch and returns a schema-valid fixture. It makes no paid call and proves neither provider integration nor rate limiting.
+
+Reports retain partial step status. **Worker/database deployment is non-atomic; failure does not trigger rollback.**
+
+Before activation:
+
+- Create exact GitLab environments `release-tag` and `production`, protected for Maintainer/Owner access. Apply the variable matrix's exact scopes.
+- Give `GITLAB_RELEASE_TAG_API_TOKEN` read-only Reporter-level access with `read_api` and `read_repository` for pipeline, job, membership, bridge, tag, and protected-tag evidence. It cannot create tags or change `main`.
+- Set file-valued `GITLAB_RELEASE_TAG_SSH_KEY` to the private key for the only deploy key permitted by `v*`. Set `GITLAB_RELEASE_TAG_DEPLOY_KEY_ID` to that key's ID. The key must be protected, active, and allowed to push tags.
+- Keep `main` protected against direct and force pushes.
+
+Project access tokens require GitLab Premium/Ultimate. Otherwise use a scoped, expiring, read-only PAT for a dedicated Reporter account. Protected environments also require Premium/Ultimate. **Keep the workflow inactive if equivalent Maintainer/Owner restrictions cannot be enforced for `release-tag` and `production`.**
+
+See [project access tokens](https://docs.gitlab.com/user/project/settings/project_access_tokens/), [CI/CD variable security](https://docs.gitlab.com/ci/variables/), [protected-tag settings](https://docs.gitlab.com/user/project/protected_tags/), [Protected Tags API](https://docs.gitlab.com/api/protected_tags/), and [deploy keys](https://docs.gitlab.com/user/project/deploy_keys/).
+
+The production Cloudflare token needs only account Workers Scripts, D1, and Queue edit permissions, plus Zone Read and Workers Routes edit for the active `caniupdate.dev` zone.
+
+Production D1 `can-i-update-production-briefings` (ID `465d4fc6-35ed-4ef6-842f-e67f3a919b87`) and Queue `can-i-update-production-briefings` already exist and are empty. Production Workers, DO namespaces, and domain attachments do not exist yet.
+
+Correct production `NUXT_PUBLIC_SITE_URL` to `https://caniupdate.dev` before activation. `BRIEFING_PUBLIC_URL` already matches `wss://briefing.caniupdate.dev`.
+
+If deployment or browser verification fails:
+
+1. Inspect the partial deployment report.
+2. If the release SHA is still the protected `main` tip, retry only that pipeline/receipt. The tag job reuses only its exact immutable tag.
+3. If `main` advanced, the old SHA is rejected and its tag is never replaced. Use a new protected-main push with passing checks and stage browsers, then select a higher stable version in that pipeline's manual `release:tag`.
+4. Deploy forward, accounting for Worker/migration steps already completed.
+
+Never deploy a production branch, hand-edit `package.json`, manually push a release tag, or assume failure rolled back completed work.
 
 ## How is the official stage restricted?
 
-The official stage is restricted to authorized maintainers and approved automation; do not share one person's Access credential. Create the Access application **before the first deployment attaches either custom domain**, so a hostname cannot become reachable without its gate:
+The official stage admits authorized maintainers and approved automation only. Do not share a person's Access credential. **Create Access protection before the first deployment attaches either custom domain.**
 
-1. In Cloudflare Zero Trust, configure hostname-based **Self-hosted** Access protection for both `stage.caniupdate.dev` and `stage-briefing.caniupdate.dev` in the already-active `caniupdate.dev` zone. A single multi-domain application is preferred; if that is unavailable, create a separate application for each hostname. Both host protections and policies must be complete before the protected deployment attaches public routes. Keep any existing Access protection on the old Worker development hostnames until `workers_dev` and `preview_urls` are disabled by deployment and those endpoints are no longer reachable; only then may the old hostname protection be retired.
-2. For each Access application, add a human **Allow** policy for the authorized maintainer group(s) and a separate **Service Auth** policy for the CI service token. In a single multi-domain application, ensure both policies cover both hostnames; with separate applications, configure both policies on each. Configure `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` as protected project variables scoped exactly to `stage` as shown in the table above.
-3. Only after the Access application and policies exist, deploy the reviewed configuration through the protected `main` pipeline. Its Wrangler `env.stage` attaches `stage.caniupdate.dev` to existing Worker `can-i-update-preview` and `stage-briefing.caniupdate.dev` to existing Worker `can-i-update-preview-briefing`, with `custom_domain: true`; both `workers_dev` and `preview_urls` are disabled. Preserve evidence Worker `can-i-update-preview-evidence` as a private service target with no custom/public hostname. Keep all existing Worker names, resource IDs, bindings, D1, Queue, Durable Object namespaces, and migration history. Do not create or rename Workers, recreate resources, reset databases, or add a public hostname for the evidence Worker. Cloudflare Custom Domains creates the required DNS record and certificate; do not add a separate DNS route. See [Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) and the checked-in [frontend](../../../wrangler.jsonc) and [briefing](../../../workers/briefing/wrangler.jsonc) configurations.
-4. Verify human browser admission separately from CI's Service Auth smoke: sign in through Access at `https://stage.caniupdate.dev`, start a cold comparison that produces a pending briefing, and confirm the browser's native read-only WebSocket connects to `wss://stage-briefing.caniupdate.dev` without an Access login redirect and receives the job events. A multi-domain Access application is preferred, but do not assume or claim cross-host cookie sharing without this observed flow. The CI service-token smoke proves only the Service Auth path, not human cookie admission. A cold generation can incur provider charges; a cached result does not satisfy this check. An authenticated frontend-only check is insufficient.
+1. In Cloudflare Zero Trust, add hostname-based **Self-hosted** Access protection for `stage.caniupdate.dev` and `stage-briefing.caniupdate.dev` in the active `caniupdate.dev` zone. Prefer one multi-domain application; otherwise use one per hostname.
 
-Cloudflare documents that Worker-level Access does not support WebSockets, so the briefing socket needs hostname-based protection. The briefing Worker's exact Origin check remains a separate control and does not replace Access. Keep resource provisioning and Access policy changes outside ordinary redeployments. See [Workers Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) and [Access cookies](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/).
+   Complete both hosts' protection and policies before attaching public routes. Retain old Worker-development-hostname protection until deployment disables `workers_dev` and `preview_urls` and those endpoints are unreachable. Only then retire the old protection.
 
-The hostname declarations and this runbook do not establish remote activation. No authorization to mutate Cloudflare was provided for this repository update, and no dashboard or hosted resource was changed; treat the new Access application, route attachment, and cross-host browser verification as unverified until an authorized deployment and check are recorded.
+2. Add a human **Allow** policy for authorized maintainer groups and a separate **Service Auth** policy for the CI token. Both policies must cover both hosts, whether in one application or two.
+
+   Set `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` as protected GitLab variables with exact scope `stage`, as in the matrix.
+
+3. Only after protection exists, deploy the reviewed configuration through protected `main`. Wrangler `env.stage` attaches `stage.caniupdate.dev` to existing `can-i-update-preview` and `stage-briefing.caniupdate.dev` to existing `can-i-update-preview-briefing`, using `custom_domain: true`. It disables `workers_dev` and `preview_urls`.
+
+   Keep `can-i-update-preview-evidence` private, with no public/custom hostname. Preserve all Worker names, resource IDs, bindings, D1, Queue, DO namespaces, and migration history. Do not create/rename Workers, recreate resources, or reset databases.
+
+   Cloudflare Custom Domains creates the DNS record and certificate; add no separate DNS route. See [Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) and the [frontend](../../../wrangler.jsonc) / [briefing](../../../workers/briefing/wrangler.jsonc) configs.
+
+4. Check human admission separately from CI Service Auth. Sign in through Access at `https://stage.caniupdate.dev`. Start a cold comparison that produces a pending briefing. Confirm its native read-only WebSocket connects to `wss://stage-briefing.caniupdate.dev` without an Access login redirect and receives job events.
+
+   Do not assume cross-host cookie sharing, even with a multi-domain application. Observe this flow. CI proves only Service Auth, not human cookies. **Cold generation can incur provider charges.** A cached result or authenticated frontend-only check does not satisfy this step.
+
+Worker-level Access does not support WebSockets, so the socket needs hostname-based protection. The briefing Worker's exact Origin check is separate and does not replace Access. Keep provisioning and Access policy changes outside ordinary redeployments. See [Workers Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) and [Access cookies](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/).
+
+Config declarations and this guide do not prove activation. This repository update had no authorization to change Cloudflare and changed no dashboard or hosted resource. Treat the new Access application, route attachment, and cross-host browser flow as unverified until an authorized deployment and check are recorded.
 
 ## What remains necessary for production?
 
-Production at `https://caniupdate.dev` remains a launch target, not a public deployment. The three Wrangler configs now define an isolated `production` environment: `can-i-update-production`, `can-i-update-production-evidence`, and `can-i-update-production-briefing`. The frontend's evidence and briefing bindings target only those production Workers. The briefing Worker binds D1 database `can-i-update-production-briefings` (`465d4fc6-35ed-4ef6-842f-e67f3a919b87`) and Queue `can-i-update-production-briefings`; these storage resources were provisioned empty, without copying stage data or applying D1 migrations.
+Production at `https://caniupdate.dev` is still a launch target, not a public deployment. The three configs define isolated production Workers:
 
-Production frontend and briefing configs declare custom-domain routes for `caniupdate.dev` and `briefing.caniupdate.dev`; evidence remains private. No Workers, Durable Object namespaces, routes, domains, or production rate-limit bindings have been deployed or attached. The first separately authorized production pipeline applies the current D1 migrations, deploys the evidence Worker, briefing Worker, then frontend, and performs Chromium and Firefox checks. It uses production-scoped settings and the existing D1/Queue; migration history and Durable Object state are not copied from stage.
+- `can-i-update-production`
+- `can-i-update-production-evidence`
+- `can-i-update-production-briefing`
 
-The production Frontend Worker must receive `NUXT_PUBLIC_SITE_URL=https://caniupdate.dev`, and the briefing socket must use `BRIEFING_PUBLIC_URL=wss://briefing.caniupdate.dev`. Builds are origin-independent. The current production `NUXT_PUBLIC_SITE_URL` GitLab variable does not match the required origin and must be corrected before activation; the configured socket URL matches. Do not reuse stage databases, job state, queues, provider keys, or deployment credentials. Managed request and generation limits are implemented in source, but production enforcement remains unverified until the authorized deployment.
+Frontend bindings target only those production Workers. Briefing binds D1 `can-i-update-production-briefings` (`465d4fc6-35ed-4ef6-842f-e67f3a919b87`) and Queue `can-i-update-production-briefings`. Both were provisioned empty, with no stage data copied or D1 migrations applied.
 
-Cloudflare documents Free support for Workers, SQLite Durable Objects, D1, and Queues. Availability is not proof of this application's sustained suitability. Ordinary Worker CPU and separate request/storage/Queue quotas need representative deployed checks. Queues Free currently includes 10,000 operations/day and 24-hour retention; a successful small message normally uses three operations. Check current [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [DO pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/), [D1 limits](https://developers.cloudflare.com/d1/platform/limits/), and [Queue pricing](https://developers.cloudflare.com/queues/platform/pricing/) before release.
+Frontend and briefing declare custom domains `caniupdate.dev` and `briefing.caniupdate.dev`; evidence stays private. No production Workers, DO namespaces, routes, domains, or rate-limit bindings have been deployed or attached.
 
-Paid is a compatible target if observed requirements exceed Free. A successful smoke response or client latency sample is not Cloudflare CPU accounting.
+The first separately authorized production pipeline applies current D1 migrations, deploys evidence → briefing → frontend, then checks Chromium and Firefox. It uses production settings and the existing D1/Queue. It copies neither migration history nor DO state from stage.
+
+Required runtime values are `NUXT_PUBLIC_SITE_URL=https://caniupdate.dev` for frontend and `BRIEFING_PUBLIC_URL=wss://briefing.caniupdate.dev` for the socket. Builds are origin-independent. The recorded GitLab production site URL is wrong and must be corrected; the socket URL matches.
+
+**Never reuse stage databases, job state, queues, provider keys, or deployment credentials.** Request and generation limits exist in source; production enforcement is unverified until authorized deployment.
+
+Cloudflare documents Free support for Workers, SQLite Durable Objects, D1, and Queues. This does not establish sustained suitability for this app. Measure deployed Worker CPU and separate request/storage/Queue quotas under representative workloads.
+
+Queues Free currently includes 10,000 operations/day and 24-hour retention. A successful small message normally uses three operations. Before release, check current [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [DO pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/), [D1 limits](https://developers.cloudflare.com/d1/platform/limits/), and [Queue pricing](https://developers.cloudflare.com/queues/platform/pricing/).
+
+Paid is compatible if measured needs exceed Free. A smoke response or client latency sample is not Cloudflare CPU accounting.
 
 ### Remaining performance work
 
-Separate from platform quota verification, the open performance work is to reduce comparison-page SSR work and measure its CPU separately; assess whether per-file SHA-256 values are still needed before removing that inspection cost, while preserving whole-archive integrity verification; and investigate filtering redundant Effect HTTP response-header trace attributes without dropping business headers, spans, or propagation. These are investigation targets, not established causes or quantified savings. Representative deployed checks still need to include cold and warm work, SSR CPU, concurrency/memory pressure, and relevant quotas.
+The remaining investigations are:
 
-Cloudflare branch Previews are not a drop-in isolated three-Worker deployment: service bindings target production deployments and branch Previews cannot consume Queues. Use separately deployed resources for this topology unless deliberately redesigning it. See [Preview resource limitations](https://developers.cloudflare.com/workers/previews/resources/).
+- Reduce comparison-page SSR work and measure its CPU separately.
+- Assess whether per-file SHA-256 values are still needed before removing that inspection cost. Keep whole-archive integrity verification.
+- Investigate filtering redundant Effect HTTP response-header trace attributes without losing business headers, spans, or propagation.
+
+These are investigation targets, not proven causes or quantified savings. Deployed checks still need cold/warm work, SSR CPU, concurrency/memory pressure, and relevant quotas.
+
+Cloudflare branch Previews do not provide an isolated three-Worker deployment for this design. Service bindings target production deployments, and branch Previews cannot consume Queues. Use separately deployed resources unless deliberately redesigning the topology. See [Preview resource limitations](https://developers.cloudflare.com/workers/previews/resources/).
 
 ## Agreed requirements not yet implemented
 
 - Portable account-local configuration and an exercised self-hosting workflow.
-- First authorized production deployment, domain/socket activation, and hosted verification remain outstanding; the isolated production routes and release automation exist in source, but no production Workers or Durable Object namespaces are deployed and no domain is attached.
-- Production telemetry destination and hosted verification remain unverified. Stage can export sanitized OTLP directly to the destination selected in GitLab, with frontend/briefing endpoints and authentication provisioned separately as Worker secrets; no endpoint is selected by checked-in stage vars, and no hosted Collector is required. Gateway acceptance and browser intake do not establish Loki/Tempo query visibility or platform-crash export coverage. Gateway authentication belongs to frontend/briefing Worker secret configuration and is never browser-visible or public. The [platform's Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/) capture stays enabled as the independent net for escaped exceptions, with per-request invocation logs disabled because their request metadata includes client IPs; only exception and console records remain, and no outstanding platform setting may reintroduce request-level IP records.
-- Managed public request limiting and stricter new-generation admission are implemented in source. Production defaults are 60 requests and 3 new generations per 60 seconds; optional environment-scoped overrides are supported. Production enforcement, hosted rate-limit behavior, and browser recovery remain unverified until an authorized deployment.
-- Production release automation and footer version identity are implemented in source; the hosted version rendering and full production workflow remain unverified until a release.
+- First authorized production deployment, domain/socket activation, and hosted verification. Routes and release automation exist in source, but no production Workers or DO namespaces are deployed and no domain is attached.
+- Production telemetry destination and hosted verification. Stage can export sanitized OTLP directly to GitLab's selected destination. Frontend/briefing endpoints and authentication become separate Worker secrets; checked-in stage vars select no endpoint, and no hosted Collector is required.
 
-These remaining release requirements are not claims of production readiness. The implemented rate-limit behavior is described above; hosted enforcement still requires an authorized deployment and verification.
+  Gateway acceptance and browser intake do not prove Loki/Tempo query visibility or export of platform crashes. Gateway authentication belongs only in frontend/briefing Worker secrets, never browser-visible or public configuration.
+
+  [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/) remains enabled as an independent safeguard for escaped exceptions. Per-request invocation logs stay disabled because their metadata includes client IPs. Only exception and console records remain. No outstanding platform setting may reintroduce request-level IP records.
+
+- Hosted rate-limit behavior and browser recovery. Public-request and stricter new-generation limits are implemented in source. Production defaults are 60 requests and 3 new generations per 60 seconds, with optional environment-scoped overrides. Enforcement remains unverified until authorized deployment.
+- Hosted production release flow and footer rendering. Both are implemented in source but remain unverified until a release.
+
+These outstanding requirements are not claims of production readiness. Implemented limits still need authorized deployment and hosted verification.

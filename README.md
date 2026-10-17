@@ -1,29 +1,36 @@
 # Can I update?
 
-> Notice consequential npm package changes before updating.
+> See important npm package changes before you update.
 
 - [Check it out](https://caniupdate.dev)
 - [Understand the results](docs/product/meaning-and-limitations.md)
 
 ## Vision
 
-Updating a dependency should not mean hunting through package metadata, release notes, and advisory databases to find what matters.
+Updating a dependency should not mean searching package metadata, release notes, and security databases for what matters.
 
-Can I update? compares two versions of one public npm package and brings consequential differences into one view. It helps you review an update; it does not decide whether that update is safe for your project.
+Can I update? compares two versions of one public npm package in one view.
+
+It helps you review an update. It cannot tell you whether the update is safe for your project.
 
 ## Features
 
-- **Dependency changes** — Compare declared runtime, optional, and peer dependency requirements.
-- **Node requirements** — Spot changes to the package's declared runtime support.
-- **Bundle estimates** — Compare standalone package estimates from Bundlephobia, with incomplete builds clearly identified.
-- **Security advisories** — Compare OSV matches for the selected versions, preserving missing or incomplete coverage.
-- **Package declarations** — Review exports, module format, TypeScript metadata, licenses, and install scripts.
-- **Evidence-backed AI notes** — Supplement structured results with cited explanations grounded in collected package and maintainer evidence.
-- **Progressive results** — Read declarations while measurements and AI notes load.
+- **Dependency changes** — See changes to required, optional, and peer dependencies.
+- **Node requirements** — See changes to the Node versions the package says it supports.
+- **Bundle estimates** — Compare Bundlephobia's estimates for the package on its own. Incomplete builds are clearly marked.
+- **Security advisories** — Compare known issues found by OSV, a security advisory database, including gaps in its results.
+- **Package declarations** — Review import paths, module format, TypeScript settings, licenses, and install scripts.
+- **AI notes with sources** — Read extra explanations based on the collected package data and maintainer notes.
+- **Results as they arrive** — Read package declarations while measurements and AI notes load.
 - **Shareable comparisons** — Link directly to a version pair and its details.
 - **Light and dark themes** — Use the presentation that suits your environment.
 
-Bundle estimates are not your application bundle. Advisory results are not a project-wide security audit. AI notes can be wrong. Missing evidence means uncertainty, not “nothing changed.”
+These results have limits:
+
+- Bundle estimates are not your application's bundle size.
+- Advisory results are not a security audit of your project.
+- AI notes can be wrong.
+- Missing evidence means uncertainty, not “nothing changed.”
 
 See [product meaning and limitations](docs/product/meaning-and-limitations.md) for the full interpretation guide.
 
@@ -40,13 +47,25 @@ nub run dev
 
 Open <http://localhost:5173>, search for a package, and select the versions to compare.
 
-Local development requires no Cloudflare account or paid AI provider. The launcher starts the frontend and both backend Workers and applies local database migrations. It exposes the frontend and briefing socket on connected network interfaces.
+Local development needs no Cloudflare account or paid AI provider. The launcher applies local database migrations, then starts both backend Workers and the frontend.
+
+**The frontend and briefing socket are reachable from other devices on connected networks.**
 
 See [development](docs/engineering/ops/development.md) for configuration, checks, troubleshooting, and the local built dev runtime.
 
 ## Release identity
 
-The stage footer displays `stage - <short-commit>`; local dev runs display `dev - <short-commit>`. Production displays `vMAJOR.MINOR.PATCH - <short-commit>` only with a stable runtime release version and a configured build identity. In each case the hash links to the full deployed commit. The production artifact must be built from the commit identified by its release tag; stage identifies the main commit used for its build, not the latest mutable branch tip. Shared schemas validate the stable version and release receipt shape. Receipt publication and production deployment remain unimplemented.
+The footer identifies the build:
+
+- Stage: `stage - <short-commit>`.
+- Local development: `dev - <short-commit>`.
+- Production: `vMAJOR.MINOR.PATCH - <short-commit>`, using a validated release receipt and build identity.
+
+The commit hash links to the full source commit. Stage identifies the commit used for its build, not the latest commit on the branch.
+
+The release flow is implemented, but its external setup and first production deployment remain outstanding.[^release-process]
+
+For setup and recovery, see [deployment operations](docs/engineering/ops/deployment.md#manual-protected-main-release) and [release recovery](docs/engineering/ops/releases-and-recovery.md).
 
 ## Tech stack
 
@@ -55,10 +74,6 @@ The stage footer displays `stage - <short-commit>`; local dev runs display `dev 
 - [Tailwind CSS](https://tailwindcss.com/) and [Reka UI](https://reka-ui.com/)
 - [Cloudflare Workers](https://developers.cloudflare.com/workers/), Durable Objects, D1, and Queues
 - Public npm registry, OSV, Bundlephobia, and GitHub evidence
-
-## Release identity
-
-Stage identifies the deployed source commit in the footer. Production displays `vX.Y.Z` from the protected release receipt, not `package.json`. A Maintainer selects the version in the manual `release:tag` job only after protected-main checks and stage Chromium/Firefox verification pass; this does not create a version branch/MR or change the package manifest. Production promotes the exact verified frontend and backend bundles without rebuilding. See [deployment operations](docs/engineering/ops/deployment.md#manual-protected-main-release) and [release recovery](docs/engineering/ops/releases-and-recovery.md).
 
 ## Contributing
 
@@ -79,3 +94,5 @@ Start with the [development guide](docs/engineering/ops/development.md). Local v
 ## License
 
 Published under the [MIT License](LICENSE).
+
+[^release-process]: A Maintainer chooses the production version in the manual `release:tag` job after main-branch checks and stage browser checks pass. Production uses those exact checked bundles without rebuilding. This does not change `package.json` or create a release branch or merge request.

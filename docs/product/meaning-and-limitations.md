@@ -2,56 +2,78 @@
 
 ## What the product is for
 
-**Can I update? makes consequential, easily missed differences between two versions of one public npm package easy to notice.**
+**Can I update? helps you notice important changes between two versions of one public npm package.**
 
-It is a package comparison, not a project assessment. Its core purpose is to show useful facts quickly, not issue an upgrade approval or safety score.
+It compares packages, not your project. It shows facts to help you review an update; it does not approve the update or give it a safety score.
 
 ## Read the comparison at a glance
 
 The header highlights three categories:
 
-- **Dependencies:** Changes to declared runtime and optional dependency requirements.
-- **Gzip estimate:** Changes to Bundlephobia's standalone package bundle estimate.
-- **Security:** Known advisories matched to the selected versions by OSV.
+- **Dependencies:** Changes to the required and optional dependencies listed by the package.
+- **Gzip estimate:** Changes to Bundlephobia's estimate of the compressed bundle size for the package on its own.
+- **Security:** Known security issues that OSV, an advisory database, matches to the selected versions.
 
-A separate warning surfaces changes to the declared Node requirement. A raised minimum matters to consumers running an older runtime; it does not mean every consumer needs a Node upgrade.
+A separate warning shows changes to the package's stated Node requirements. If the minimum rises, people using older Node versions may need to upgrade. Not everyone will.
 
-The header tiles link to the corresponding comparison-table details. The table provides additional package declarations and measurement evidence beyond those headline categories.
+Select a header tile to open its details in the comparison table. The table also shows other package declarations and measurements.
 
 ## What AI adds
 
-AI notes are supplementary. The structured comparison remains useful when AI notes are unavailable.
+AI notes add context. You can still use the factual comparison when the notes are unavailable.
 
 AI can:
 
-- Explain a finding already highlighted in the header.
-- Surface consequential details from gathered release notes or other supplied evidence.
-- Explain conditional implications of supplied facts, such as changes to declared export paths.
+- Explain a finding shown in the header.
+- Highlight important details from collected release notes or other supplied evidence.
+- Explain what a fact might mean, such as how a changed import path could affect users.
 
-AI must ground its claims in collected evidence and cite the relevant comparison data or source material. It must not introduce package facts from its general knowledge. Maintainer statements and inferred consequences are distinct from directly computed facts.
+AI must use only the collected evidence and cite the relevant data or source. It must not add package facts from its general knowledge.
 
-These are the intended rules for the briefing, not a guarantee that every generated explanation is correct.
+A maintainer's statement, an AI interpretation, and a directly measured fact are different kinds of evidence. The notes should make that difference clear.
+
+These are the rules for generating notes, not a guarantee that every explanation is correct.
 
 ## What the results establish
 
-| Result                         | Meaning                                                      | Limit                                                                                                                                                             |
-| ------------------------------ | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Node requirement change        | The package's declared supported range changed.              | Does not identify the user's runtime or prove behavior outside the declared range.                                                                                |
-| Dependency change              | A declared requirement changed.                              | Does not predict the user's resolved dependency tree.                                                                                                             |
-| Bundle estimate change         | The provider's standalone estimate differs between versions. | Not the user's application bundle or proof that an environment's size limit will be exceeded. Incomplete builds are not comparable.                               |
-| Advisory difference            | OSV matches differ between the selected versions.            | Not independent security analysis, project-wide scanning, or proof of safety. A target-only match does not by itself prove the target introduced a vulnerability. |
-| Release-note finding           | Collected maintainer evidence describes a relevant change.   | Not exhaustive discovery of every behavioral change.                                                                                                              |
-| Export/type declaration change | Published metadata changed.                                  | Not exhaustive semantic API or implementation-code analysis.                                                                                                      |
+### Node requirements and dependencies
 
-**Unavailable or incomplete evidence means uncertainty, not "nothing changed."** In particular, incomplete advisory coverage cannot establish that an issue was fixed.
+A changed Node requirement means the package lists a different supported range. It does not tell us your Node version or prove how the package behaves outside that range.
+
+A dependency change means a listed requirement changed. It does not tell us which dependency versions your project will install.
+
+### Bundle estimates
+
+A bundle estimate compares the package on its own, not inside your application. It cannot prove that your application will exceed a size limit. Incomplete builds cannot be compared.
+
+### Security advisories
+
+An advisory difference means OSV found different matches for the two versions. This is not an independent security review or a scan of your project.
+
+An issue matched only to the target version does not, by itself, prove that version introduced it. **Missing or incomplete coverage cannot prove that an issue was fixed or that a package is safe.**
+
+### Release notes, exports, and types
+
+A release-note finding reports a relevant change described by the maintainer. The collected notes may not cover every behavior change.
+
+An export or type declaration change means the published metadata changed. We do not fully analyze the package's API behavior or implementation.
+
+**Missing or incomplete evidence means uncertainty, not “nothing changed.”**
 
 ## Scope
 
-The current product compares two versions of one public npm package. It does not inspect the user's project, accept private-registry credentials, modify dependencies, apply migrations, or guarantee compatibility.
+The product compares two versions of one public npm package. It does not:
+
+- Inspect your project.
+- Accept private-registry credentials.
+- Change your dependencies or apply migration steps.
+- Guarantee compatibility.
 
 ## Evidence and provenance
 
-The purpose and priority above were agreed during the product-documentation review on 2026-10-02. Implementation references support the described presentation and evidence boundaries; they do not prove that every generated AI claim is correct.
+The product's purpose and priorities were agreed during the documentation review on 2026-10-02.
+
+The source links below support the described interface and evidence limits. They do not prove that every AI explanation is correct.
 
 - [Current header and navigation](../../app/components/comparison/ComparisonDetails.vue).
 - [Result explanations and limitations](../../app/pages/[packageName]/comparisonView.ts).

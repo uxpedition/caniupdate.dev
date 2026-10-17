@@ -1,42 +1,62 @@
 # Releases and recovery
 
-**Status: reviewed.** This document records the agreed maintainer release and recovery policy, with current capabilities and missing prerequisites identified explicitly. It neither authorizes a release nor asserts a current remote environment state.
+**Status: reviewed.** This guide records the agreed maintainer release and recovery policy. It separates current capabilities from missing prerequisites. It does not authorize a release or establish the current state of a remote environment.
 
 See [development](development.md) for local checks and [deployment](deployment.md) for environment ownership, credentials, and deploy order.
 
 ## Who releases, and what is released?
 
-Maintainers select a reviewed revision for release. Contributor PRs and contributor-owned demos do not grant production deployment authority. The official integration stage is one persistent, restricted environment; its Cloudflare Workers continue using Wrangler environment `stage`, and its deployed revision must be recorded so reviewers know what they are testing.
+Maintainers select a reviewed revision for release. A contributor PR or demo does not grant production deployment authority.
 
-A release identifies the source revision, frontend build, three Worker deployments, target configuration, and migration state. Deployment order is evidence Worker, briefing Worker, then frontend, after required provisioning and reviewed D1 migrations. This is an order for dependencies, not an atomic transaction across Workers and databases.
+The official integration stage is one persistent, restricted environment using Wrangler `stage`. Record its deployed revision so reviewers know what they are testing.
 
-Do not assume a failed step undoes earlier successful steps. Record partial deployments and assess compatibility before continuing or restoring code. Stage and production retain separate state and credentials.
+A release identifies the source revision, frontend build, three Worker deployments, target configuration, and migration state. After required provisioning and reviewed D1 migrations, deploy evidence → briefing → frontend.
+
+**This order handles dependencies; it is not an atomic transaction.** A failed step does not undo successful earlier steps. Record partial deployments and check compatibility before continuing or restoring code. Stage and production keep separate state and credentials.
 
 ## Release identity
 
-The release receipt `.data/production-release/tag.json` is authoritative and contains exactly `version`, `tag`, `commitSha`, and `pipelineId`. It binds the immutable protected tag to the verified protected-main pipeline and artifact; production promotes the same hashed bundles with `--no-bundle`, without rebuilding.
+The authoritative release receipt is `.data/production-release/tag.json`. It contains exactly `version`, `tag`, `commitSha`, and `pipelineId`.
+
+The receipt ties an immutable protected tag to the verified protected-main pipeline and build artifact. Production promotes the same hashed bundles with `--no-bundle`, without rebuilding.
 
 - Production displays `vMAJOR.MINOR.PATCH - <short-commit>` from validated `NUXT_PUBLIC_RELEASE_VERSION` runtime identity and the promoted artifact's build identity, never `package.json`. The hash links to the full commit that the release tag identifies.
 - Stage displays `stage - <short-commit>` for the main commit used to build the deployed artifact. Local dev runs display `dev - <short-commit>`. Both hashes link to the full commit on the actual repository host.
 - Metadata describes the built artifact, not a developer's current working tree or a mutable branch tip.
 
-Stage selection requires the exact configured site origin `https://stage.caniupdate.dev`; other non-production origins use the `dev` fallback. Visible footer labels and accessible commit-link names use the same environment terminology.
+The `stage` label requires exact site origin `https://stage.caniupdate.dev`. Other non-production origins use `dev`. Visible labels and accessible commit-link names use the same environment terms.
 
-The footer uses a short hash prefix. The exact abbreviation length is a presentation detail, not a database or deployment identity; records and commit links retain the full hash. A release tag names a commit; production promotion must verify that the tag, receipt, and artifact identify that same commit.
+The footer abbreviates the hash for display only. Records and links keep the full hash. Promotion must verify that tag, receipt, and artifact all identify the same commit.
 
-The shared release schema accepts stable `MAJOR.MINOR.PATCH` versions only and validates a receipt's matching `v<version>` tag, lowercase full commit SHA, and positive decimal pipeline ID. At the production origin, the footer renders version and commit together only when the runtime version is valid and build identity is present; invalid production versions do not fall back to a stage or dev label. The release version is a runtime setting, not part of the build identity. No build-metadata endpoint is exposed.
+The shared release schema accepts stable `MAJOR.MINOR.PATCH` versions only. A receipt must have a matching `v<version>` tag, lowercase full commit SHA, and positive decimal pipeline ID.
 
-Stage and dev identity is implemented in [`SiteFooter.vue`](../../../app/components/SiteFooter.vue). Browser smoke checks compare its rendered commit link directly with the expected CI SHA. The validated SHA/repository URL pair is compiled into Nuxt app config, not runtime configuration; builds without metadata omit the link. No build-metadata endpoint is exposed.
+At the production origin, version and commit render together only with a valid runtime version and build identity. An invalid version does not fall back to stage or dev. The release version is a runtime setting, not part of build identity.
 
-Production identity is implemented in [`SiteFooter.vue`](../../../app/components/SiteFooter.vue): a valid receipt-derived version and the promoted build identity display `vX.Y.Z - <short-commit>`, linked to the tag commit. GitLab smoke checks both the expected version and full commit link in Chromium and Firefox. A missing or invalid production version does not fall back to a stage or dev label.
+[`SiteFooter.vue`](../../../app/components/SiteFooter.vue) implements stage/dev identity. Browser smoke compares its rendered commit link with the expected CI SHA. Nuxt app config contains the compiled, validated SHA/repository URL pair—not runtime configuration. Builds without metadata omit the link.
+
+[`SiteFooter.vue`](../../../app/components/SiteFooter.vue) also implements production identity. A valid receipt version and promoted build identity display `vX.Y.Z - <short-commit>`, linked to the tag commit. GitLab smoke checks the expected version and full commit link in Chromium and Firefox. There is no build-metadata endpoint.
 
 ### Manual protected-main release
 
-Every protected-main push runs required checks, builds the exact deployable frontend and backend artifacts, and delivers stage. Only after stage deployment and both Chromium/Firefox checks pass can a Maintainer/Owner use the blocking manual `release:tag` input to select a stable SemVer version. The job verifies its protected-main push pipeline, required job/bridge evidence, current branch SHA, manual actor role, version progression, and the protected-tag rules through the read-only GitLab API; it then writes the tag and receipt. It never opens/merges a version MR or changes `package.json`. Ordinary main pushes cannot deploy production.
+Every protected-main push runs required checks, builds the exact frontend/backend artifacts, and delivers stage. Only after stage deployment and both browser checks pass can a Maintainer/Owner select a stable SemVer version through blocking manual `release:tag`.
 
-`production:delivery` requires that receipt and consumes the same `build-smoke` artifact, verifies the tag/version/commit/pipeline identity and all artifact hashes, then promotes those exact bundles. The production child verifies the immutable annotated tag and current protected-main SHA before migrating/deploying. It deploys evidence → briefing → frontend and checks the public surface and receipt version footer in both browsers. Its smoke intercepts the briefing POST before dispatch and returns a schema-valid synthetic fixture; it does not prove paid-provider integration or rate limiting. Deployment is non-atomic, failed partial state is reported, and there is no automatic rollback.
+Using the read-only GitLab API, the job checks its protected-main push pipeline, required job/bridge evidence, current branch SHA, manual actor role, version progression, and protected-tag rules. It then writes the tag and receipt. It never opens or merges a version MR or changes `package.json`. Ordinary main pushes cannot deploy production.
 
-If deployment fails while its commit is still the current protected-main SHA, inspect the report and retry only that pipeline with the same exact immutable receipt. A conflicting or moved tag cannot be reused. Once `main` advances, stale production jobs are rejected; recovery requires a newer protected-main revision with all checks and stage browser verification, then a higher version selected in that pipeline's manual release job and a forward deployment accounting for partial Worker/migration changes. This workflow is implemented locally but has not deployed production.
+`production:delivery` requires the receipt and original `build-smoke` artifact. It verifies tag/version/commit/pipeline identity and all artifact hashes. Before migration/deployment, the child checks the immutable annotated tag and current protected-main SHA.
+
+It promotes the exact bundles in evidence → briefing → frontend order. Both browsers check the public surface and receipt-version footer. Smoke intercepts briefing POST before dispatch and returns a schema-valid synthetic fixture. It proves neither paid-provider integration nor rate limiting.
+
+**Deployment is non-atomic, reports partial failures, and has no automatic rollback.**
+
+If deployment fails while its commit is still protected `main`:
+
+1. Inspect the report.
+2. Retry only that pipeline with the same exact immutable receipt.
+3. Do not reuse a conflicting or moved tag.
+
+Once `main` advances, stale production jobs are rejected. Recovery needs a newer protected-main revision with passing checks and stage browsers, then a higher version selected in that pipeline's manual release job. Deploy forward, accounting for partial Worker/migration changes.
+
+This workflow is implemented locally but has not deployed production.
 
 ## Verification and release evidence
 
@@ -65,11 +85,15 @@ Exercise the actual public surface, not only bundle compilation:
 | Managed rate limiting         | General API/SSR 429 with retry guidance; new-generation refusal before acceptance; D1 hits and pending joins exempt from that allowance; explicit retries count again; browser manual recovery without automatic 429 resubmission |
 | Capacity                      | Workload, duration, cache state, concurrency, generator locations, deployed CPU/limits and observed failures                                                                                                                      |
 
-For frontend/build configuration changes, exercise both Firefox and Chromium. The [entry-import-map decision](../adrs/firefox-entry-import-map.md) records the historical Firefox failure, retained startup workaround, and limits of the observation.
+For frontend/build configuration changes, exercise Firefox and Chromium. The [entry-import-map decision](../adrs/firefox-entry-import-map.md) records the historical Firefox failure, retained startup workaround, and limits of that observation.
 
-Routine contribution checks and the [local smoke](development.md#exercise-the-asynchronous-briefing-without-paid-inference) use a fixture. The deployed browser smoke intercepts the briefing POST before dispatch, validates the response envelope, and verifies fixture text and its citation render both after comparison and after reload. It does not exercise provider generation, durable briefing reuse, or subscription completion. A separate, intentionally authorized stage provider check may use that environment's dedicated key; it is not part of the default smoke and can incur charges. This does not authorize production provider calls or reuse of production keys.
+Routine contribution checks and [local smoke](development.md#exercise-the-asynchronous-briefing-without-paid-inference) use a fixture. Deployed browser smoke intercepts briefing POST before dispatch, validates the response envelope, and checks fixture text and citation rendering after comparison and reload.
 
-The deployed smoke uses Effect's HTTP, configuration, and filesystem services. HTTP admission probes do not follow redirects; the health deadline covers response-body decoding as well as transport. Each run attempts to write its owner-only `.data/deployed-verification/report.json` on success, failure, defects, or graceful cancellation. A report-write failure fails the command; forced process termination cannot guarantee a report.
+That deployed smoke does not exercise provider generation, durable briefing reuse, or subscription completion. A separate, intentionally authorized stage provider check can use the stage key and incur charges. It is not part of default smoke. It authorizes neither production calls nor production-key reuse.
+
+Deployed smoke uses Effect HTTP, configuration, and filesystem services. HTTP admission probes do not follow redirects. The health deadline includes response-body decoding, not just transport.
+
+Each run attempts to write owner-only `.data/deployed-verification/report.json` on success, failure, defects, or graceful cancellation. Failure to write the report fails the command. Forced process termination cannot guarantee a report.
 
 Label these outcomes separately:
 
@@ -78,11 +102,11 @@ Label these outcomes separately:
 - **Real generation:** deliberately exercised a provider call and checked its durable result.
 - **Not exercised:** no evidence for the path in this release.
 
-Do not silently retry failed paid checks or infer exactly-once billing. The application can retry invalid model output once, and a later explicit submission can start another generation. See [generation failure semantics](../briefing.md#result-storage-and-generation-failures).
+Do not silently retry failed paid checks or assume exactly-once billing. The app can retry invalid model output once. A later explicit submission can start another generation. See [generation failure semantics](../briefing.md#result-storage-and-generation-failures).
 
 ### Individual release record
 
-Keep reproducible procedures here and deployment-specific observations with the individual release. A record should contain:
+Keep reusable procedures here and deployment observations with the individual release. Each record should include:
 
 - Operator and timestamp, target environment, full source revision, and production package version when applicable.
 - Frontend build origin and all three deployed Worker version IDs.
@@ -92,49 +116,70 @@ Keep reproducible procedures here and deployment-specific observations with the 
 - Partial-deployment status, compatible recovery revision, and migration constraints.
 - Links to retained artifacts and incidents.
 
-Never include tokens, keys, raw private configuration, or provider request bodies. An ignored local artifact is not reproducible evidence available to another clone; say where evidence is retained and who can access it. No automated release-record publisher is established by this document.
+**Exclude tokens, keys, raw private configuration, and provider request bodies.** An ignored local artifact is not evidence another clone can access. State where evidence is retained and who can read it. This guide establishes no automated release-record publisher.
 
 ## Database and stored-data changes
 
-Database changes must be discussed during review. D1 is a SQLite-backed database; the current application migration creates `package_briefings`. Job state also lives in SQLite-backed Durable Objects. D1 migrations do not migrate that separate job state automatically.
+Discuss database changes during review. D1 is SQLite-backed; the current application migration creates `package_briefings`.
 
-Adopt these rules:
+Job state lives separately in SQLite-backed Durable Objects. D1 migrations do not migrate that job state.
 
-1. Generate a new migration for each schema change with `nub run db:generate`, commit generator SQL/snapshots and the byte-identical flat Wrangler mirror, and run `nub run db:check`. Do not hand-edit or rewrite already-applied history. Wrangler is the sole D1 migration applier.
-2. Review old/new code compatibility, scan or rewrite cost, deployment sequence, and recovery before applying it remotely.
-3. Prefer additive changes that preserve a compatible rollback target. Add structures first, deploy compatible code, backfill deliberately, and remove obsolete structures only through a separately reviewed change.
-4. Rehearse data-heavy or destructive changes against representative data, and validate the intended backup/restoration procedure before production execution.
-5. Review stored JSON contract changes even when no SQL schema changes. Existing `response_json` must remain readable, be deliberately migrated, or have an explicitly approved disposition. Do not discard paid results merely to satisfy a new decoder.
-6. Use D1-specific migration and foreign-key procedures. Generic SQLite administrative recipes are not automatically supported by D1.
+Follow these rules:
 
-There is no rule requiring a new table for every attribute. Normalize around entities, relationships, and query needs. Extra tables introduce joins, indexes, and consistency work.
+1. For each schema change, generate a new migration with `nub run db:generate`. Commit generator SQL/snapshots and the byte-identical flat Wrangler mirror. Run `nub run db:check`. Never hand-edit or rewrite applied history. Only Wrangler applies D1 migrations.
+2. Before remote application, review old/new code compatibility, scan or rewrite cost, deployment order, and recovery.
+3. Prefer additions that preserve a compatible rollback target. Add structures, deploy compatible code, then backfill deliberately. Remove old structures only in a separately reviewed change.
+4. Rehearse data-heavy or destructive changes on representative data. Validate backup and restoration before production execution.
+5. Review stored JSON contract changes even without SQL changes. Existing `response_json` must stay readable, be deliberately migrated, or have an explicitly approved disposition. Do not discard paid results just to satisfy a new decoder.
+6. Follow D1-specific migration and foreign-key procedures. Generic SQLite administration commands may not work in D1.
 
-[SQLite documents](https://www.sqlite.org/lang_altertable.html) that simple nullable-column additions and renames do not rewrite existing table contents. Constraint validation can scan rows; column removal rewrites contents. Table rebuilds, backfills, and index creation can scale with existing data. A new column is therefore not inherently an expensive rewrite, but each actual migration needs review.
+A new attribute does not always need a table. Design tables around entities, relationships, and queries. Each extra table adds joins, indexes, and consistency work.
 
-[D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/) are ordered SQL files tracked in the database. Local validation does not apply them remotely. Remote commands must select the explicit account, config, environment, and database. A migration that succeeds is not automatically reversed by a Worker rollback.
+[SQLite documents](https://www.sqlite.org/lang_altertable.html) that simple nullable-column additions and renames do not rewrite table contents. Constraint validation can scan rows; column removal rewrites contents. Rebuilds, backfills, and index creation can grow with data size.
+
+A new column is not inherently an expensive rewrite. Review the actual migration.
+
+[D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/) are ordered SQL files tracked in the database. Local validation does not apply them remotely. Remote commands must select the explicit account, config, environment, and database. Rolling back a Worker does not automatically reverse a successful migration.
 
 ### Evidence Durable Object schema changes
 
-Evidence table/index changes use `nub run db:generate:evidence`, with committed `workers/evidence/drizzle/` SQL/snapshots and `workers/evidence/migrations.generated.json`. `nub run db:check` verifies both DO and D1 artifacts. Pending evidence history is applied synchronously by the public Drizzle DO migrator when an object constructs its cache; Wrangler D1 commands do not apply it. The initial bundled bootstrap alone is idempotent to adopt pre-existing tables without changing rows/chunks/expiry metadata. Subsequent history is strict and append-only.
+For evidence table/index changes, use `nub run db:generate:evidence`. Commit `workers/evidence/drizzle/` SQL/snapshots and `workers/evidence/migrations.generated.json`. `nub run db:check` checks both DO and D1 artifacts.
 
-Rehearse adoption, persisted reopen, rollback and subsequent migrations in disposable actual-workerd state. Do not reset DOs or add a new class migration tag to avoid a table collision. A migration failure retains its initialize error/cause and leaves storage unavailable; do not delete data or substitute a miss. The pinned ORM package patch preserves original SQL failure causes while `transactionSync` rolls back. A Worker rollback does not reverse applied DO schema changes: choose code compatible with both histories or a reviewed forward migration, never rewrite ledger rows or applied SQL.
+When an object constructs its cache, the public Drizzle DO migrator applies pending history synchronously. Wrangler D1 commands do not apply it.
+
+Only the initial bundled bootstrap is safe to repeat. It adopts existing tables without changing rows, chunks, or expiry metadata. Later history is strict and append-only.
+
+Rehearse adoption, reopening persisted state, rollback, and later migrations in disposable real-workerd state. Do not reset DOs or add a class migration tag to avoid a table collision.
+
+**Migration failure leaves storage unavailable with its initialization error/cause.** Do not delete data or turn the failure into a cache miss. The pinned ORM patch preserves original SQL errors while `transactionSync` rolls back.
+
+A Worker rollback does not reverse DO schema changes. Use code compatible with both histories or a reviewed forward migration. Never rewrite ledger rows or applied SQL.
 
 ### One-time Drizzle adoption cutover
 
-This separately approved, destructive data cutover is **not part of the stage hostname or GitLab runtime-settings change**. No database, Queue, or Durable Object is recreated or reset by a stage redeployment; existing data and history remain intact. Do not execute the cutover below as part of routine staging, a custom-domain attachment, or this task.
+**This separately approved destructive cutover is not part of the stage hostname or GitLab runtime-settings change.** Routine stage deployments preserve databases, Queues, Durable Objects, and their history. Do not run this cutover for routine staging, domain attachment, or this task.
 
-The [accepted Drizzle ADR](../adrs/drizzle-database-layer.md) authorizes replacing the old initial D1 schema/history **once, for local and the existing maintainer stage only**. On 2026-10-05 the user explicitly amended retention: **discard old briefing rows, without restoration**. Retained jobs can reference discarded results; those old references are not preserved. Production is excluded. Do not delete/recreate databases or reset Durable Object/Queue state. Subsequent migrations remain append-only.
+The [accepted Drizzle ADR](../adrs/drizzle-database-layer.md) authorizes replacing the old initial D1 schema/history once, for **local and the existing maintainer stage only**. On 2026-10-05, the user explicitly changed retention to **discard old briefing rows without restoration**.
 
-Use the verified source checkout and installed `nub exec wrangler`. `LOCAL_PERSIST_TO` must be the **actual original checkout's absolute persistence path**, not the worktree's empty state. Set `CUTOVER_DIR` to a new ignored `.data` backup directory with mode `700` and `umask 077`, without overwriting an earlier backup.
+Retained jobs can refer to discarded results; those old references are not preserved. Production is excluded. Do not delete/recreate databases or reset DO/Queue state. Later migrations remain append-only.
+
+Use the verified checkout and installed `nub exec wrangler`. Before starting:
+
+- Set `LOCAL_PERSIST_TO` to the **actual original checkout's absolute persistence path**, not an empty worktree directory.
+- Set `CUTOVER_DIR` to a new ignored `.data` backup directory, with mode `700` and `umask 077`.
+- Do not overwrite an earlier backup.
 
 Before destruction:
 
-1. Verify config/account/binding/database identity. Local is `can-i-update-local-briefings`, ID `00000000-0000-0000-0000-000000000001`; stage account is `8a0be24aad326a55ba610b94b106be81`, database `can-i-update-preview-briefings`, ID `351da802-5296-4e6a-a186-f9d1e99036b6`, briefing config `--env stage`.
-2. Stop the actual local launcher and its children; do not bypass its live lock. For stage, block acceptance through the **frontend** Access controls and prove accepted work has settled. Socket denial alone does not block the private submission binding. A zero Queue backlog or fixed sleep does not establish terminal Durable Object KV job state. Stop if maintenance/quiescence cannot be proved; do not add a pause/admin subsystem as incidental migration work.
-3. Inspect table/index inventory and migration records. The reset SQL below is valid only when `package_briefings` is the sole application table and `d1_migrations` belongs entirely to its replaced history. Unexpected tables/history require reassessment. If the migration table does not exist, omit the `DELETE` rather than suppressing unrelated SQL errors.
-4. Retain a full D1 backup for recovery. Do not perform row-only export, retention validation, or row restoration for this explicitly approved empty cutover. Generated initial and subsequent migrations have already been rehearsed in disposable state.
+1. Verify config, account, binding, and database identity. Local: `can-i-update-local-briefings`, ID `00000000-0000-0000-0000-000000000001`. Stage: account `8a0be24aad326a55ba610b94b106be81`, database `can-i-update-preview-briefings`, ID `351da802-5296-4e6a-a186-f9d1e99036b6`, briefing config `--env stage`.
+2. Stop the actual local launcher and children; never bypass its live lock. For stage, block acceptance through **frontend** Access controls and prove accepted work has finished.
 
-For local, execute sequentially and stop on failure:
+   Blocking sockets alone does not block the private submission binding. Zero Queue backlog or a fixed sleep does not prove terminal Durable Object KV job state. Stop if maintenance and settled work cannot be proved. Do not add a pause/admin subsystem as incidental migration work.
+
+3. Inspect tables, indexes, and migration records. The reset SQL below is valid only if `package_briefings` is the sole application table and `d1_migrations` belongs entirely to the replaced history. Reassess unexpected tables/history. If the migration table is absent, omit `DELETE`; do not suppress unrelated SQL errors.
+4. Keep a full D1 backup for recovery. Do not perform row-only export, retention validation, or row restoration for this approved empty cutover. Generated initial and later migrations have already been rehearsed in disposable state.
+
+For local, run sequentially and stop on failure:
 
 ```bash
 cp -a "$LOCAL_PERSIST_TO/v3/d1" "$CUTOVER_DIR/local-d1"
@@ -145,7 +190,9 @@ nub exec wrangler d1 migrations apply can-i-update-local-briefings --local \
   --config workers/briefing/wrangler.jsonc --persist-to "$LOCAL_PERSIST_TO"
 ```
 
-The remote reset commands below are retained for the separately approved one-time cutover, but this hostname/runtime-settings change does not authorize them. No protected operator path for this destructive cutover is established here; do not run these commands until a separate authorization and secure execution path are in place. Never load a local dotenv file or copy GitLab credentials to a workstation. Ordinary stage deployments use the protected GitLab procedure only.
+**Do not run the remote reset commands below without separate authorization and a secure execution path.** They are retained for the one-time cutover, not authorized by the hostname/runtime-settings change. This guide establishes no protected operator path for destructive cutover.
+
+Never load a local dotenv file or copy GitLab credentials to a workstation. Ordinary stage deployments use only protected GitLab.
 
 ```bash
 nub exec wrangler d1 info can-i-update-preview-briefings \
@@ -157,9 +204,19 @@ nub exec wrangler d1 execute can-i-update-preview-briefings --remote \
   --command 'DROP TABLE IF EXISTS package_briefings; DELETE FROM d1_migrations;'
 ```
 
-Check zero stored rows, table nullability/defaults/indexes, exact applied migration filenames, and no pending migrations. Restart local with the verified checkout and `--persist-to "$LOCAL_PERSIST_TO"`; never restart an old checkout on the reset history. For an independently authorized stage cutover, do not manually run `wrangler d1 migrations apply` or `wrangler deploy`: after database verification, use the protected GitLab procedure in [deployment](deployment.md#deploying-the-existing-maintainer-stage), which supplies `https://stage.caniupdate.dev` at runtime, deploys with `--env stage`, and applies the checked-in migration history. Verify deployed health and migration state without generating a new paid result; a new paid call requires separate approval.
+After reset, check zero stored rows, table nullability/defaults/indexes, exact applied migration filenames, and no pending migrations.
 
-If any step fails, keep the launcher stopped or stage in maintenance. Restore the verified D1 backup with reviewed compatible code; do not reset DOs/Queues, replay jobs, regenerate SQL to conceal failure, or restore migration records without matching schema/data. Record source revision, operator/time, target IDs, filenames, backup access/location, checks and unexercised paths. Only then restore access. Approval and execution evidence are distinct; see the ADR rollout status.
+Restart local from the verified checkout with `--persist-to "$LOCAL_PERSIST_TO"`. Never start an old checkout on reset history.
+
+For a separately authorized stage cutover, do not manually run `wrangler d1 migrations apply` or `wrangler deploy`. After database verification, use protected GitLab [deployment](deployment.md#deploying-the-existing-maintainer-stage). It supplies runtime `https://stage.caniupdate.dev`, deploys with `--env stage`, and applies checked-in migrations.
+
+Check deployed health and migration state without generating a paid result. A new paid call needs separate approval.
+
+If any step fails, keep the launcher stopped or stage in maintenance. Restore the verified D1 backup with reviewed compatible code.
+
+Do not reset DOs/Queues, replay jobs, regenerate SQL to hide failure, or restore migration records without matching schema/data. Record revision, operator/time, target IDs, filenames, backup location/access, checks, and unexercised paths. Only then restore access.
+
+Approval is not proof of execution. See the ADR rollout status.
 
 ## Diagnose before changing state
 
@@ -172,32 +229,46 @@ If any step fails, keep the launcher stopped or stage in maintenance. Restore th
 | Result no longer decodes            | Stored-data compatibility; not automatically a cache miss                                                                           |
 | Requests fail under load            | Deployed CPU and independent resource quotas, rate-limit evidence, upstream failures; client latency alone cannot isolate the cause |
 
-The frontend logs sanitized submission error names and recognized reasons, not evidence packets or credentials. Observability configuration does not prove logs are being ingested; verify actual diagnostic access in the target environment.
+Frontend logs include sanitized submission error names and recognized reasons, not evidence packets or credentials. Configuration alone does not prove log ingestion. Verify actual diagnostic access in the target environment.
 
 ## State-preserving recovery
 
 ### Contain the incident
 
-Pause acceptance of new generation while investigating a spending or generation incident. **A dedicated pause control is not implemented yet.** Use an explicitly reviewed containment action, such as temporarily blocking the public submission route through the target's access rules. Record the scope and consequences rather than claiming an unavailable toggle exists.
+Contain a spending or generation incident by pausing new-generation acceptance. **No dedicated pause control is implemented.** Use an explicitly reviewed action, such as temporarily blocking the public submission route through target access rules. Record its scope and consequences; do not claim an unavailable toggle exists.
 
-Removing provider configuration can refuse new cold submissions and pending-job joins, but does not cancel an already-running call; queued jobs may settle unavailable when configuration is missing. Blocking all submissions also prevents frontend access to cached results through that route. Socket subscriptions are read-only and do not cancel accepted jobs. Key revocation is not a promise to reverse a charge already incurred.
+Understand what containment does not do:
+
+- Removing provider configuration can refuse cold submissions and pending-job joins. It does not cancel a running call. Queued jobs may finish as unavailable without configuration.
+- Blocking all submissions also blocks frontend access to cached results through that route.
+- Read-only socket subscriptions do not cancel accepted jobs.
+- Revoking a key does not guarantee reversal of an incurred charge.
 
 ### Recover code without silently rewinding data
 
-- Identify deployed versions and the point of failure, including partially completed deploys.
-- Restore a known-compatible reviewed revision only after checking schema, stored JSON, job-state, and queued-message compatibility.
-- Reuse the identified compatible artifact, or rebuild its reviewed revision; supply the target origin and environment-owned configuration at runtime, never stage credentials.
-- Re-exercise API/browser and storage behavior, then record the recovered versions and remaining limitations.
-- Prefer a forward fix where previous code is incompatible with the new state. Do not claim every release can be safely rolled back.
+- Identify deployed versions and the failure point, including partially completed deployments.
+- Restore a reviewed, known-compatible revision only after checking schema, stored JSON, job-state, and queued-message compatibility.
+- Reuse the compatible artifact or rebuild its reviewed revision. Supply target origin and environment-owned settings at runtime, never stage credentials.
+- Recheck API/browser and storage behavior. Record recovered versions and remaining limits.
+- Prefer a forward fix when previous code cannot read the new state. Not every release can safely roll back.
 
-D1 restoration, Durable Object state changes, Queue handling, and external billing are separate operations. A database rewind can erase successful paid results while jobs or queued messages still reference them. Any state restoration needs an incident-specific plan, operator approval, and post-restoration verification.
+D1 restoration, DO state changes, Queue handling, and external billing are separate operations. Rewinding a database can erase paid results still referenced by jobs or messages.
 
-Do not delete databases, object namespaces, or briefing rows as routine troubleshooting. Do not replay jobs indiscriminately; later accepted generations can spend again.
+Any state restoration needs an incident-specific plan, operator approval, and verification afterward.
+
+**Do not delete databases, object namespaces, or briefing rows as routine troubleshooting.** Do not replay jobs indiscriminately; later accepted generations can spend again.
 
 ## Stage lifetime and teardown
 
-Keep one persistent official integration stage initially. Maintain a record of the revision currently deployed. Separate official per-PR environments are not promised by this document.
+Keep one persistent official integration stage initially and record its deployed revision. This guide does not promise official per-PR environments.
 
-Contributor demos remain contributor-owned. Before teardown, identify the exact account, Worker names, Queue, D1 database, and associated Durable Object state. Decide whether any stored results must be retained and remove only resources belonging exclusively to that demo. Removing a public URL alone is not proof that all persistent resources or credentials were removed.
+Contributors own their demos. Before teardown:
 
-Revoke unused demo/provider/access credentials and account for retained state and pending work. Never provide a blanket deletion command targeting names copied from the maintainer configuration. Teardown is destructive and requires explicit operator intent.
+1. Identify the exact account, Workers, Queue, D1 database, and associated DO state.
+2. Decide whether stored results need retention.
+3. Remove only resources used exclusively by that demo.
+4. Revoke unused demo/provider/access credentials. Account for retained state and pending work.
+
+Removing a public URL does not prove all persistent resources or credentials are gone. Never provide a blanket deletion command using names copied from maintainer config.
+
+**Teardown is destructive and requires explicit operator intent.**

@@ -1,80 +1,91 @@
 # Code conventions
 
-Judgment-based conventions for implementing and reviewing **Can I update?** Runtime ownership and product meaning guide design and review decisions.
+Use these conventions when writing or reviewing **Can I update?** They cover decisions that need judgment: module boundaries, data contracts, state ownership, and verification.
 
-Read this document when reviewing code or choosing module boundaries, contracts, state ownership, or verification scope. Formatting, import sorting, type-safety restrictions, and size limits belong to the existing tooling configuration. Check commands live in `package.json`; operational recipes live in [development operations](docs/engineering/ops/development.md).
+Tool configuration owns formatting, import order, type-safety rules, and size limits. Find check commands in `package.json` and procedures in [development operations](docs/engineering/ops/development.md).
 
 ## Cohesion before abstraction
 
-- Start with the smallest design that solves the current requirement. Introduce an abstraction for an actual shared responsibility, runtime boundary, or testing seam—not hypothetical replacement or scale.
-- Keep files that change for the same reason together. Extract shared logic when consumers share meaning, not merely similar syntax. A generic helper should have a clearer contract than the code it replaces.
-- Split modules around responsibilities and invariants. A file below the linter's size limit can still mix unrelated concerns; splitting solely to satisfy a line count can hide the flow.
-- Give each module a clear public surface. Export what callers need; use the existing direct-import conventions rather than adding barrel files by default.
-- Name domain operations by intent. Keep provider-specific names in adapters where they explain the dependency; domain logic should describe comparison, collection, or generation rather than a vendor.
-- Comments explain a constraint, ordering requirement, or tradeoff that names and types cannot express. Keep the explanation beside the code it constrains.
+- Start with the smallest design that meets the need. Add an abstraction for a real shared responsibility, runtime boundary, or test seam—not a possible future replacement.
+- Keep files together when they change for the same reason. Share logic when callers share its meaning, not just similar syntax.
+- Split modules by responsibility and the rules they must preserve. A short file can still mix unrelated concerns. Splitting only to meet a line limit can make the flow harder to follow.
+- Export what callers need. Use direct imports rather than adding files that only re-export other modules.
+- Name operations for what they do: compare, collect, or generate. Keep vendor-specific names in provider adapters.
+- Use comments for constraints, ordering, or tradeoffs that names and types cannot explain. Put them beside the affected code.
 
 ## Ownership and dependencies
 
-- Keep public handlers thin: decode the request, invoke the owning workflow, and translate its result. Keep provider I/O in adapters and normalization, comparison, and presentation independently testable.
-- Inject narrow services at I/O seams. Effect workflows own resource lifetimes, concurrency, deadlines, and typed failures; runtime entrypoints execute them. A wrapper earns its place by owning policy or a contract, not merely forwarding calls.
-- Share cross-runtime contracts without importing server or database implementation into the browser. Route-local helpers stay with their route; domain logic stays with its domain.
-- Preserve the separate Nuxt, evidence, and briefing responsibilities. A fallback must not silently move collection, generation, or durable ownership into another runtime.
+- Keep public handlers small: decode the request, call the workflow, and translate its result. Put provider I/O in adapters. Keep normalization, comparison, and presentation separately testable.
+- Inject small services where I/O happens. Effect workflows own resource cleanup, concurrency, deadlines, and typed failures; runtime entrypoints run them.
+- Add a wrapper only if it owns a policy or contract, not just to forward a call.
+- Share cross-runtime contracts, but keep server and database implementations out of the browser. Keep route helpers with their route and domain logic with its domain.
+- Keep Nuxt, evidence, and briefing responsibilities separate. A fallback must not silently move work or durable ownership to another runtime.
 
 For ownership changes, trace the affected callers against the [architecture overview](docs/engineering/overview.md). For collection or job changes, consult [evidence](docs/engineering/evidence.md) or [briefing](docs/engineering/briefing.md) respectively.
 
 ## Contracts preserve meaning
 
-- Derive types from shared Effect schemas where data crosses a trust boundary. Static types describe decoded data; they do not validate network, storage, RPC, Queue, or socket payloads.
-- Keep raw `unknown` local to parsing and error inspection; the owning operation returns decoded values. Compose JSON text with its domain schema when that preserves error classification and transport bounds. A schema used only for a type alias, or an unrelated serializer generic, does not establish validation.
-- Distinguish a shallow object-category gate from domain validation. `Predicate.isObjectOrArray` retains arrays and rejects primitives and functions; `Schema.is(Schema.Struct({}))` does not establish that category. Use the owning schema for actual boundary decoding.
-- Model meaningful states as discriminated unions. Each variant should carry the evidence or reason its consumer needs, rather than requiring combinations of booleans to reconstruct state.
-- Choose absence semantics per contract. Missing declarations, explicit `null`, empty collections, and unavailable evidence can mean different things. Preserve those distinctions through normalization, persistence, and rendering.
-- Normalize only what the domain permits. Conditional export and `typesVersions` order affects precedence; sorting it for convenience changes meaning.
-- Treat contract changes as cross-file changes: update producers, decoders, persistence, and consumers together. Adopt a compatibility path only when a real deployed boundary requires it, with an explicit retirement condition.
+- Derive types from shared Effect schemas at trust boundaries. TypeScript types describe decoded data; they do not validate network, storage, RPC, Queue, or socket payloads.
+- Keep raw `unknown` values inside parsing and error inspection. Return decoded values from the owning operation.
+- Combine JSON parsing with its domain schema when that preserves error categories and transport limits. A schema used only as a type alias, or an unrelated serializer generic, does not validate data.
+- Separate object-category checks from domain validation. `Predicate.isObjectOrArray` accepts objects and arrays, not primitives or functions. `Schema.is(Schema.Struct({}))` does not prove that category. Use the owning schema to decode boundary data.
+- Model states as discriminated unions: each named variant carries the evidence or reason its caller needs. Avoid combinations of booleans that callers must interpret.
+- Preserve differences between a missing declaration, explicit `null`, an empty collection, and unavailable evidence through normalization, storage, and rendering.
+- Normalize only where meaning stays the same. Conditional exports and `typesVersions` use order to decide precedence; sorting changes their meaning.
+- When a contract changes, update producers, decoders, storage, and consumers together. Keep compatibility code only for a real deployed boundary, with a clear removal condition.
 
 ## Uncertainty is a result
 
-- Degrade within the affected evidence tier, retaining unrelated facts. Partial or unavailable evidence should remain visible as uncertainty—not become zero advisories, an unchanged result, or upgrade approval.
-- Distinguish expected provider unavailability from infrastructure or protocol failure. Storage corruption is not a cache miss; malformed private-service data is not an empty successful response.
-- Give users actionable feedback for invalid input and honest availability states for system failures. Public errors remain sanitized; internal diagnosis retains useful context without exposing secrets or raw payloads.
-- Catch errors where the code can classify, recover, or add useful context. Recovery must preserve the contract's meaning and identify what remains unknown.
-- Keep AI notes supplementary and evidence-backed. Facts render independently; copy distinguishes declarations, measurements, and inference. Package-level evidence does not establish compatibility with a consumer project.
+- Keep unrelated facts when one evidence tier fails. Show partial or unavailable evidence as uncertainty, not zero advisories, “unchanged,” or approval to upgrade.
+- Separate expected provider unavailability from infrastructure and protocol failures. Storage corruption is not a cache miss. Malformed service data is not an empty success.
+- Explain how to fix invalid input. For system failures, state honestly what is unavailable. Keep public errors sanitized and useful diagnostic context private.
+- Catch errors where code can classify them, recover, or add useful context. Recovery must preserve the contract and say what remains unknown.
+- Keep AI notes optional and based on evidence. Render facts independently. Distinguish declarations, measurements, and interpretations; package facts do not prove compatibility with a user's project.
 
 Review conclusions against [product meaning and limitations](docs/product/meaning-and-limitations.md), especially for advisory coverage, compatibility claims, and legal interpretation.
 
 ## State has one owner
 
-- Vue Query owns server data and its lifecycle; local interaction belongs in `ref`, derived state in `computed`, and shared form/UI state in keyed Nuxt `useState`. Share subtree-only ephemeral state through a scoped provider when needed.
-- Query identity must describe the selected comparison and evidence tier. Keep hydration, route changes, cancellation, and stale-data rendering consistent with that identity instead of mirroring query data into another store.
-- Components own rendering and interaction; composables own reusable reactive orchestration. Domain-unaware UI primitives remain independent of API clients and comparison state. Reuse existing tokens and variants before adding visual exceptions.
-- Independent evidence tiers load and fail independently. Factual rendering must remain usable without a successful briefing.
-- Worker correctness state is durable. In-memory coalescing is an optimization, not ownership of a job or result. Review retries, restarts, late completions, and concurrent writers against generation IDs, revisions, fencing, and first-writer-wins success.
-- Read-only subscription and reconnect observe existing jobs; they do not initiate generation. A browser leaving a page does not imply cancellation of shared durable work.
+- Let Vue Query own server data and its lifecycle. Use `ref` for local interaction, `computed` for derived state, and keyed Nuxt `useState` for shared form/UI state. Use a scoped provider for temporary state shared only within a subtree.
+- Make query identity describe the comparison and evidence tier. Use it consistently for hydration, route changes, cancellation, and stale data. Do not mirror query data in another store.
+- Let components own rendering and interaction, and composables coordinate reusable reactive work. Keep general UI primitives independent of API clients and comparison state. Reuse tokens and variants before adding exceptions.
+- Let independent evidence tiers load and fail separately. Facts must remain usable without an AI briefing.
+- Store Worker correctness state durably. Sharing in-flight work in memory is an optimization, not ownership of a job or result.
+- Check retries, restarts, late completions, and concurrent writes against generation IDs, revisions, fencing, and first-writer-wins success.
+- Keep subscriptions and reconnects read-only. Leaving a page does not cancel shared durable work.
 
 ## Bounded and diagnosable I/O
 
-- Treat provider locations, package selectors, and archive contents as untrusted. Preserve fixed-origin requests, exact-once scoped-name encoding, archive integrity checks, and download/deadline limits.
-- Put admission, cancellation, and resource cleanup at the owner that can enforce them. Explain whether a bound applies to one request, one object, or the whole service; do not present a local limit as an account-wide guarantee.
-- Keep credentials, prompts, evidence packets, archive inventories, and raw provider errors within their private boundaries. Diagnostic logs should use bounded metadata and existing job/request identities rather than dumping payloads.
-- Preserve enough context to distinguish provider failure, invalid data, storage failure, and stale work. New observability should answer a concrete diagnostic question, not introduce a tracing platform by convention.
+- Treat provider URLs, package selectors, and archives as untrusted. Keep requests on fixed origins, encode scoped package names exactly once, verify archive integrity, and enforce download limits and deadlines.
+- Enforce capacity limits, cancellation, and cleanup where the work is owned. Say whether a limit covers a request, an object, or the service. A local limit is not an account-wide guarantee.
+- Keep credentials, prompts, evidence packets, archive inventories, and raw provider errors private. Log bounded metadata and existing job/request identities, not payloads.
+- Keep enough diagnostic context to tell provider failure, invalid data, storage failure, and stale work apart. Add instrumentation to answer a specific question, not just to introduce a tracing system.
 
 ## Persistence and operations
 
-- Use reviewed, versioned migrations for both D1 and Durable Object SQLite. Treat generated history and its runtime artifacts as one change; preserve applied history and validate stored data when reading it.
-- Design recovery around the actual durable owner, not assumptions about a long-lived process. Persistence changes need evidence for restart behavior, concurrent writes, and reuse of existing results where affected.
-- Keep configuration ownership explicit across the three runtimes. Verification uses isolated state and fixture credentials; routine QA must not mutate shared environments or user-owned secrets.
-- Infrastructure changes document the authorized environment and recovery implications. Local builds and built dev runs are verification, not deployment authorization.
+- Use reviewed, versioned migrations for D1 and Durable Object SQLite. Change generated history and its runtime files together. Preserve applied history and validate data when reading it.
+- Recover through the actual durable owner; do not assume a process stays alive. For affected storage paths, verify restart behavior, concurrent writes, and reuse of existing results.
+- Make configuration ownership clear across the three runtimes. Verify with isolated state and fixture credentials. Routine checks must not change shared environments or user-owned secrets.
+- Document the authorized environment and recovery effects of infrastructure changes. Local builds and built dev runs verify behavior; they do not authorize deployment.
 
 For database changes, read the [database ADR](docs/engineering/adrs/drizzle-database-layer.md). For deployment or recovery changes, read [deployment operations](docs/engineering/ops/deployment.md) and [release/recovery operations](docs/engineering/ops/releases-and-recovery.md).
 
 ## Evidence-driven review
 
-- Keep a change focused on one outcome. Include the reason and material tradeoffs; record durable architecture decisions in the existing ADR structure rather than relying only on a chat or PR.
-- Match verification to the risk. Pure comparisons need behavioral checks; persistence, queues, alarms, and sockets need real runtime evidence where their semantics matter. Stub external providers, not the platform behavior under examination.
-- Review lint remediation against the original contract, not just the remaining warning count. Partial assertion and match patterns are not constructed tagged values; naming an exact anonymous contract improves ownership, not runtime evidence. Diagnostics should distinguish those cases and give behavior-preserving help. Local rules use a concise problem headline, followed by unindented `help:` lines with concrete remedies and `note:` lines only for relevant semantics or limitations. Describe what the detector establishes, not an inferred defect; keep rule descriptions focused on purpose and verify library-specific remedies against the pinned API.
-- Transformation cleanup preserves callback ordering, indexes, sparse-array behavior, and property presence. A fused pass can interleave callbacks that previously ran in separate phases; verify equivalence before optimizing.
-- Permanent tests protect consumer-visible behavior, boundaries, precedence, uncertainty, cancellation, and recovery. Prefer deterministic, isolated tests over assertions tied to private structure or mock forwarding.
-- UI verification exercises the rendered surface, including hydration and navigation. A successful API request or SSR HTML response is not evidence that controls work; frontend/framework changes need Chromium and Firefox checks.
-- For every acceptance criterion, the reviewer identifies exercised evidence, a concrete defect, or an explicit verification gap. Claims about behavior follow traced execution or observed results, not naming or code shape alone.
-- Review all affected owners and callers in a migration. Additional review or verification should resolve a named risk rather than repeat the same checks without a question.
-- Classify recurring findings: fixed syntactic or filesystem patterns belong in deterministic checks; cross-file consistency and domain tradeoffs belong here. Keep automated policy authoritative instead of duplicating its rules in prose.
+- Keep each change focused on one outcome. Explain the reason and important tradeoffs. Record lasting architecture decisions in ADRs, not only in chat or a pull request.
+- Match verification to risk. Check pure comparisons through behavior. Use real runtimes for storage, queues, alarms, and sockets when platform behavior matters. Stub external providers, not the platform being checked.
+- Judge lint fixes against the original contract, not just the warning count. See [Lint diagnostic detail](#lint-diagnostic-detail) for local rule wording and limits.
+- Preserve callback order, indexes, sparse-array behavior, and property presence when simplifying transformations. Combining passes can interleave callbacks that previously ran separately. Verify equivalence before optimizing.
+- Keep permanent tests focused on behavior users can observe: boundaries, precedence, uncertainty, cancellation, and recovery. Prefer deterministic, isolated tests over checks of private structure or mocked forwarding.
+- Verify UI behavior in the rendered interface, including hydration and navigation. Successful API requests or server-rendered HTML do not prove that controls work. Check frontend/framework changes in Chromium and Firefox.
+- For each acceptance criterion, identify exercised evidence, a concrete defect, or an explicit verification gap. Base claims on traced execution or observed results, not names or code shape alone.
+- Review every affected owner and caller during a migration. Extra review or checks should resolve a named risk, not repeat work without a question.
+- Put recurring syntax and filesystem checks in tools. Keep cross-file consistency and domain tradeoffs here. Tooling owns automated policy; do not repeat its rules in prose.
+
+### Lint diagnostic detail
+
+Partial assertion and match patterns are not constructed tagged values. Naming an exact anonymous contract clarifies ownership; it does not add runtime evidence. Diagnostics must distinguish these cases and suggest fixes that preserve behavior.
+
+Use a short problem headline, then unindented `help:` lines with concrete fixes. Add `note:` lines only for relevant meaning or limitations.
+
+Describe what the detector proves, not a defect inferred from it. Keep rule descriptions focused on purpose. Check library-specific fixes against the pinned API.

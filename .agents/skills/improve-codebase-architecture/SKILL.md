@@ -60,7 +60,7 @@ Do not propose detailed interfaces yet. Ask: "Which of these would you like to e
 Load `grill-with-artifacts` and its selected output guidance. Carry forward the candidate, evidence, glossary terms, ADR constraints, and unknowns into a brief:
 
 - **Topic**: the selected deepening question.
-- **Output**: usually explanation or design, following user intent; not automatically an RFC or ADR.
+- **Output**: usually explanation or design, following user intent; not automatically a published artifact or ADR.
 - **Boundary**: included concerns and explicitly deferred work.
 - **Endpoint**: enough understanding or decisions to produce that output; selecting a winner is not always required.
 

@@ -1,69 +1,156 @@
 # Evidence collection and storage
 
-This document follows the current package-evidence path from the server binding to provider results and cache rows. The [architecture overview](overview.md) owns the wider ownership and request sequence; the [briefing document](briefing.md) owns job submission and generation. Product meaning and result limits are in [meaning and limitations](../product/meaning-and-limitations.md).
+This guide explains how the server collects package evidence and stores it for reuse. Evidence includes package metadata, archive contents, advisories, size estimates, and release notes.
+
+The [architecture overview](overview.md) explains the wider system and request sequence. The [briefing guide](briefing.md) explains job submission and AI generation. See [meaning and limitations](../product/meaning-and-limitations.md) for what results do—and do not—mean.
 
 ## Identity, request boundary, and payloads
 
-The server selects a Durable Object by calling `PACKAGE_EVIDENCE.idFromName(packageName)`. The name is the validated package name, not the version pair: requests for different versions of one package therefore address the same `PackageEvidence` object and its SQLite storage. The object has two internal POST paths, `/measurements` and `/briefing-evidence`; its ordinary Worker `fetch` handler returns 404. See the [evidence client](../../server/api/package/[packageName]/compare/_internals/evidenceClient.ts), [object implementation](../../workers/evidence/index.ts), and [package-name schema](../../shared/comparison/package/package.defs.ts).
+A **Durable Object** is a Cloudflare service with its own stored state. The server selects one with `PACKAGE_EVIDENCE.idFromName(packageName)`. Its identity is the validated package name, not the version pair. All versions of one package therefore share a `PackageEvidence` object and its SQLite storage.
 
-The object accepts a JSON body with `packageName`, `from`, and `to`. Package names use the shared npm-name schema; each version/tag is trimmed and limited to 1–256 characters. The object rejects unsupported methods or paths with 404, a present content type not beginning with `application/json` with 415, bodies over 16 KiB (declared or measured UTF-8 size) with 413, and malformed JSON or decoded requests with 400. Request admission is taken before this handling, so it also covers requests that later fail validation.
+The object has two internal POST paths: `/measurements` and `/briefing-evidence`. The Worker's ordinary `fetch` handler returns 404. See the [evidence client](../../server/api/package/[packageName]/compare/_internals/evidenceClient.ts), [object implementation](../../workers/evidence/index.ts), and [package-name schema](../../shared/comparison/package/package.defs.ts).
 
-These paths return different products:
+Both paths accept JSON with `packageName`, `from`, and `to`. The shared npm-name schema validates the package name. Each version/tag is trimmed and limited to 1–256 characters.
 
-- `/measurements` returns the browser-facing `PackageMeasurementsResponse`: provider and advisory comparisons plus a tarball summary (`status`, reasons, URL, file count, and changelog count). It intentionally strips archive file paths, hashes, link targets, and changelog bodies. The Nuxt [measurements route](../../server/api/package/[packageName]/compare/measurements/index.get.ts) calls the binding; the [response types](../../shared/comparison/comparison.defs.ts) and [comparison page](../../app/components/comparison/ComparisonDetails.vue) consume the compact result.
-- `/briefing-evidence` returns the full internal evidence packet, not the tarball object or a rendered browser response. `getComparisonFacts` supplies the packet builder with full tarball inventories and captured changelog text; the packet schema caps the serialized packet at 48 KiB and 64 sources. The packet may carry selected bounded changelog prose, but never the file inventory. The [packet builder](../../server/comparison/briefing/evidence/build.ts), [packer](../../server/comparison/briefing/evidence/packing.ts), and [shared packet schema](../../shared/comparison/briefing/briefing.defs.ts) define that boundary. The briefing service and any eventual cited source display are covered separately in [briefing](briefing.md).
+The object rejects:
 
-The evidence client rejects a missing binding, transport failure, upstream non-2xx response, or malformed response as a sanitized `PackageEvidenceClientError`; the public measurements handler maps that to a generic 503. It parses measurement JSON through the complete shared `PackageMeasurementsResponseSchema`, rejects excess fields (including archive inventories), and verifies package identity and exact requested versions when the request is an exact semver. Measurement types derive from those schemas, reusing the existing manifest and provider contracts. For briefing packets it parses JSON through the bounded packet schema and checks package/version identity. Briefing response bodies are byte-bounded at 48 KiB while read. Measurement response bodies have no equivalent client-side byte cap, although the client rejects inventory fields. See [client implementation](../../server/api/package/[packageName]/compare/_internals/evidenceClient.ts) and its [failure tests](../../server/api/package/[packageName]/compare/_internals/evidenceClient.unit.ts).
+- Unsupported methods or paths: 404.
+- A present content type not beginning with `application/json`: 415.
+- Bodies over 16 KiB, based on declared or measured UTF-8 size: 413.
+- Malformed JSON or requests that fail schema decoding: 400.
+
+The request-capacity check happens first, so it also covers requests that later fail validation.
+
+The two paths return different data:
+
+- `/measurements` returns the browser-facing `PackageMeasurementsResponse`: provider and advisory comparisons plus a tarball summary (`status`, reasons, URL, file count, and changelog count). A tarball is the package's compressed archive. File paths, hashes, link targets, and changelog bodies are removed. The Nuxt [measurements route](../../server/api/package/[packageName]/compare/measurements/index.get.ts) calls the binding; the [response types](../../shared/comparison/comparison.defs.ts) and [comparison page](../../app/components/comparison/ComparisonDetails.vue) use this compact result.
+- `/briefing-evidence` returns an internal evidence packet, not the tarball object or rendered browser data. `getComparisonFacts` gives the builder full archive inventories and captured changelog text. The resulting packet is limited to 48 KiB of serialized data and 64 sources. It may include selected, bounded changelog prose, but never the file inventory. See the [packet builder](../../server/comparison/briefing/evidence/build.ts), [packer](../../server/comparison/briefing/evidence/packing.ts), and [shared packet schema](../../shared/comparison/briefing/briefing.defs.ts). [Briefing](briefing.md) covers the service and display of cited sources.
+
+The client turns missing bindings, transport failures, upstream non-2xx responses, and malformed responses into a sanitized `PackageEvidenceClientError`. The public measurements handler returns a generic 503.
+
+Measurement JSON must pass the complete shared `PackageMeasurementsResponseSchema`. The client rejects extra fields, including archive inventories, and checks package identity. For exact semantic-version requests, it also checks the exact requested versions. Measurement types come from these schemas and reuse existing manifest/provider contracts.
+
+Briefing JSON must pass the bounded packet schema and package/version checks. The client enforces the 48 KiB body limit while reading. Measurement bodies have no equivalent client-side byte cap, although inventory fields are rejected. See [client implementation](../../server/api/package/[packageName]/compare/_internals/evidenceClient.ts) and [failure tests](../../server/api/package/[packageName]/compare/_internals/evidenceClient.unit.ts).
 
 ## Manifest sharing and collection fan-out
 
-The collector fetches each npm version manifest from the fixed `https://registry.npmjs.org` origin. Requested version/tag segments are URL-encoded; the request does not use registry credentials, proxy settings, or retries. A successful HTTP response must decode as a `RegistryVersionManifest`; transport, status, JSON, or schema failure is a `RegistryRequestError`, not an unavailable measurement. Without both manifests there is no comparison result. Registry requests have a five-minute timeout. See [registry transport](../../server/httpDependencies/npm/registry.ts) and [comparison facts](../../server/comparison/collect.ts).
+A **manifest** is the registry's metadata for one package version. The collector fetches each manifest from the fixed `https://registry.npmjs.org` origin. Version/tag URL segments are encoded. These requests use no registry credentials, proxy settings, or retries.
 
-Within one request, each side's manifest effect is memoized and shared by declaration comparison, measurement collection, and release-note collection. From and to manifests resolve concurrently. If both requested strings are exact semvers, OSV and Bundlephobia work can start from those values while manifest requests are still pending; otherwise both providers wait for manifest resolution and use the resolved `version` values. Tarball inspection always waits for its own manifest. For the measurement endpoint, the tarball, OSV, and Bundlephobia branches run concurrently; both tarballs and both per-version bundle calls have pairwise concurrency. The complete briefing-facts branch also runs declarations, measurements, and GitHub release evidence concurrently. These branches preserve a successful side or provider result when another independent provider reports unavailable evidence.
+Each successful HTTP response must decode as a `RegistryVersionManifest`. Transport, status, JSON, or schema failure becomes `RegistryRequestError`, not an unavailable measurement. Both manifests are required for a comparison. Registry requests have a five-minute timeout. See [registry transport](../../server/httpDependencies/npm/registry.ts) and [comparison facts](../../server/comparison/collect.ts).
 
-There are two comparison levels. `getComparisonMeasurements` returns compact measurement results for the page. `getComparisonFacts`, called only for the briefing pipeline, retains full archive inventories and changelog bodies and adds GitHub releases/changelog data before packet construction. See [collector assembly](../../server/comparison/collect.ts) plus [declaration](../../server/comparison/declarations/compare.ts) and [measurement](../../server/comparison/measurements/compare.ts) derivation.
+Within a request, each manifest is fetched once and shared across declarations, measurements, and release notes. The from/to manifests resolve concurrently.
+
+- If both requested strings are exact semantic versions, OSV and Bundlephobia can start before manifests finish. Otherwise they wait and use the resolved `version` values.
+- Each tarball inspection waits for its own manifest.
+- For measurements, tarball, OSV, and Bundlephobia branches run concurrently. The two tarballs run concurrently, as do the two per-version bundle calls.
+- Complete briefing facts also collect declarations, measurements, and GitHub release evidence concurrently.
+
+An independent provider's unavailable result does not discard another successful side or provider result.
+
+`getComparisonMeasurements` returns the page's compact results. Only the briefing pipeline calls `getComparisonFacts`, which keeps full inventories and changelog bodies and adds GitHub release/changelog data before packet construction.
+
+See [collector assembly](../../server/comparison/collect.ts), [declaration derivation](../../server/comparison/declarations/compare.ts), and [measurement derivation](../../server/comparison/measurements/compare.ts).
 
 ## Provider behavior and preservation boundaries
 
 ### npm archive inspection
 
-A tarball URL must parse to the public npm HTTPS registry origin and contain no user information or fragment; otherwise the result is immediately `unavailable` and no download occurs. Downloads use manual redirects (redirects are rejected), reject non-success or bodyless responses, and enforce a 10 MiB limit both from `Content-Length` and while reading the stream. The body is buffered only within that bound. Registry SRI, when present, is authoritative: the inspector tries supported algorithms in the order SHA-512, SHA-384, SHA-256 and requires a matching token; malformed/unsupported SRI or a mismatch does not fall back to SHA-1. SHA-1 is used only when SRI is absent and the registry shasum is a valid 40-hex digest. No bytes are inspected before integrity succeeds.
+The inspector downloads only tarball URLs on the public npm HTTPS registry origin, with no user information or fragment. An invalid URL immediately returns `unavailable` without a download.
 
-Gzip/tar processing has a 10-second end-to-end deadline and a 32 MiB decompressed-archive ceiling, enforced both at gunzip creation and while consuming output. Compressed input is fed in 64 KiB chunks; decompressed output is backpressured through a one-chunk queue. A complete archive must have valid tar structure and trailer. Malformed gzip/tar, checksums, truncated entries/archives, limits, timeout, and download errors fail the inspection and produce `unavailable` with an empty inventory/changelog list. External Effect interruption instead propagates an interrupted exit after cleanup; it does not return an unavailable tarball or a usable comparison. The timeout's abort signal is passed to the download and stream reader, and stream/parser tasks are torn down and joined on failure or interruption. See [tarball fetching and validation](../../server/httpDependencies/npm/tarball.ts) and [stream lifecycle](../../server/httpDependencies/npm/tarballStreaming.ts).
+Downloads reject redirects, non-success responses, and responses without a body. Compressed data is limited to 10 MiB, checked against both `Content-Length` and the bytes read. Buffering stays within that bound.
 
-Archive download and streaming adapters normalize caught failures to `Error` before entering the Effect error channel. Existing Error instances retain identity; non-Error rejections retain their original value in `.cause` and use `Tarball inspection failed` as the message. This preserves the unavailable-result fallback without exposing raw rejection values; interruption remains separate from typed failure.
+Before inspecting any bytes, the inspector verifies integrity: that the download matches the registry's expected digest.
 
-Each archive entry must be a file, directory, hard link, or symlink. The archive root must be `package`; paths must be unique, at most 4,096 characters, contain no empty, `.` or `..` component, control character, DEL, or backslash, and remain under that root. Link targets are at most 4,096 characters, non-absolute, and resolved (hard links from archive root, symlinks from their containing directory) within the root. Links are recorded, never followed; package scripts are never executed. Entry sizes must be nonnegative safe integers no larger than 32 MiB; non-file entries must have zero size. At most 10,000 entries are accepted. Regular-file contents are hashed with SHA-256; the inventory is path-sorted and includes type, size, digest, and any link target.
+- Registry SRI (Subresource Integrity), when present, is authoritative. Supported algorithms are tried in order: SHA-512, SHA-384, SHA-256. A token must match.
+- Malformed or unsupported SRI, or a mismatch, never falls back to SHA-1.
+- SHA-1 is used only when SRI is absent and the registry shasum is a valid 40-hex digest.
 
-Only file basenames matching `changelog`, `changes`, or `history` with no extension or `.md`, `.markdown`, `.txt`, or `.rst` are captured as shipped changelogs. Each capture is capped at 256 KiB and the total at 1 MiB; the entry itself is still consumed and hashed. Truncated text is retained with `truncated: true`; invalid UTF-8 text is omitted. Either condition adds a reason and makes the otherwise successful inventory `partial`; it does not discard the inventory. With no such reasons, the result is `available`. Any structural or integrity failure is `unavailable`, not a partial inventory. The branch coverage includes [archive tests](../../server/httpDependencies/npm/tarball.unit.ts), [stream lifecycle tests](../../server/httpDependencies/npm/tarballStreaming.unit.ts), and a [workerd parser smoke test](../../workers/evidence/tarballStreaming.workerd.unit.ts).
+Download and gzip/tar processing have a 10-second end-to-end deadline. The decompressed archive is limited to 32 MiB, checked at gunzip creation and while reading output. Compressed input uses 64 KiB chunks. A one-chunk output queue slows decompression when the reader falls behind.
 
-The comparison uses a valid nonnegative registry `dist.unpackedSize` when present. Otherwise it sums regular-file sizes from any available/partial inspected inventory; when inspection is unavailable, unpacked size is unavailable. This is package archive evidence, not an application bundle measurement. The measurements response exposes only the archive summary described above. The complete inventory and per-file hashes remain internal. Selected changelog paths can appear in briefing source labels, and bounded excerpts can reach the browser when cited; the [changelog source builder](../../server/comparison/briefing/evidence/changelog.ts), [briefing source selection](../../server/comparison/briefing/evidence/build.ts), and [source panel](../../app/components/comparison/EvidencePanel.vue) preserve and display those fields.
+A complete archive must have valid tar structure and trailer. Bad gzip/tar data, checksums, truncated entries/archives, exceeded limits, timeout, or download errors return `unavailable` with empty inventory/changelog lists.
+
+External Effect interruption is different: cleanup runs, then the interrupted exit propagates. It returns neither an unavailable tarball nor a usable comparison. The timeout's abort signal reaches the download and stream reader. On failure or interruption, stream/parser tasks are stopped and joined. See [tarball fetching and validation](../../server/httpDependencies/npm/tarball.ts) and [stream lifecycle](../../server/httpDependencies/npm/tarballStreaming.ts).
+
+Download and streaming adapters convert caught failures to `Error` before passing them to Effect's error channel. Existing Error objects keep their identity. Other rejected values are kept in `.cause`, with message `Tarball inspection failed`. The unavailable-result fallback does not expose those raw values. Interruption remains separate from typed failure.
+
+Archive entries must meet all these rules:
+
+- Types: file, directory, hard link, or symlink only.
+- Paths: unique, rooted under `package`, and at most 4,096 characters. No empty, `.` or `..` component, control character, DEL, or backslash.
+- Link targets: at most 4,096 characters, non-absolute, and resolving inside the root. Hard links resolve from the archive root; symlinks from their containing directory. Links are recorded, never followed.
+- Entry sizes: nonnegative safe integers, no larger than 32 MiB. Non-file entries must have zero size.
+- Entry count: at most 10,000.
+
+Package scripts are never executed. Regular-file contents are hashed with SHA-256. The path-sorted inventory records type, size, digest, and any link target.
+
+Shipped changelogs are captured only from file basenames `changelog`, `changes`, or `history`, with no extension or `.md`, `.markdown`, `.txt`, or `.rst`. Each capture is limited to 256 KiB; all captures together to 1 MiB. The full entry is still consumed and hashed.
+
+Truncated text is kept with `truncated: true`; invalid UTF-8 text is omitted. Either adds a reason and makes an otherwise successful inventory `partial`, without discarding it. With no such reasons, it is `available`. Structural or integrity failure is always `unavailable`, never a partial inventory.
+
+Coverage includes [archive tests](../../server/httpDependencies/npm/tarball.unit.ts), [stream lifecycle tests](../../server/httpDependencies/npm/tarballStreaming.unit.ts), and a [workerd parser smoke test](../../workers/evidence/tarballStreaming.workerd.unit.ts).
+
+For unpacked size, the comparison uses a valid nonnegative registry `dist.unpackedSize` first. Otherwise it sums regular-file sizes from an available/partial inventory. If inspection is unavailable, that fallback size is unavailable too. This measures the package archive, not an application bundle.
+
+Only the archive summary reaches the measurements response. Full inventories and per-file hashes stay internal. Selected changelog paths may appear as briefing source labels; bounded excerpts may reach the browser when cited. The [changelog source builder](../../server/comparison/briefing/evidence/changelog.ts), [briefing source selection](../../server/comparison/briefing/evidence/build.ts), and [source panel](../../app/components/comparison/EvidencePanel.vue) preserve and display those fields.
 
 ### OSV advisories
 
-The collector sends one OSV `/v1/querybatch` request for both resolved versions, then one detail request for each unique returned advisory ID across the pair. Detail requests run at concurrency five. Each OSV HTTP call has a five-second timeout, and one 30-second collection deadline covers the batch plus all details. There are no retries or follow-up pagination requests.
+OSV supplies security advisories. The collector sends one `/v1/querybatch` request for both resolved versions, then fetches details once per unique advisory ID across the pair. At most five detail requests run concurrently.
 
-A batch failure (including bad HTTP or schema response) makes both sides `unavailable` with `count: null`; it is not interpreted as zero findings. A missing batch result makes only that side unavailable; a present empty result is `available` with count zero. A `next_page_token` makes that side `partial` while retaining the IDs already returned. A failed or mismatched detail retains its ID with `detailsStatus: unavailable` and makes that side partial; the opposite clean side is preserved. Withdrawn details are omitted. If the overall 30-second deadline expires, the collector returns both sides unavailable, even if some details finished. Partial/unavailable OSV results are not persisted in the mutable cache. See [OSV collection](../../server/comparison/measurements/vulnerabilities.ts), [OSV transport](../../server/httpDependencies/osv/client.ts), and [branch tests](../../server/comparison/measurements/vulnerabilities.unit.ts).
+Each HTTP call has a five-second timeout. One 30-second deadline covers the batch and all details. There are no retries or follow-up pagination requests.
 
-Comparison groups use advisory identity/aliases and keep one-sided matches uncertain unless both sides have complete coverage; incomplete coverage is not proof that an advisory was fixed. See [comparison logic](../../server/comparison/measurements/compare.ts) and the product's [result limitations](../product/meaning-and-limitations.md).
+Results preserve the difference between no findings and missing evidence:
+
+- A batch failure, including bad HTTP or schema data, makes both sides `unavailable` with `count: null`, not zero.
+- A missing batch result makes only that side unavailable. A present empty result is `available` with count zero.
+- A `next_page_token` makes that side `partial`, keeping IDs already returned.
+- A failed or mismatched detail keeps its ID with `detailsStatus: unavailable` and makes that side partial. A clean opposite side stays intact.
+- Withdrawn details are omitted.
+- If the overall 30-second deadline expires, both sides become unavailable, even if some details finished.
+
+Partial/unavailable OSV results are not saved in the mutable cache. See [OSV collection](../../server/comparison/measurements/vulnerabilities.ts), [OSV transport](../../server/httpDependencies/osv/client.ts), and [branch tests](../../server/comparison/measurements/vulnerabilities.unit.ts).
+
+Comparison groups match advisory identities and aliases. A one-sided match stays uncertain unless both sides have complete coverage. Missing evidence does not prove an advisory was fixed. See [comparison logic](../../server/comparison/measurements/compare.ts) and [result limitations](../product/meaning-and-limitations.md).
 
 ### Bundlephobia
 
-Each resolved package version is requested separately from Bundlephobia, concurrently. The request and response decoding share a 30-second deadline; there are no retries. Network/status/decoding failure or a response whose name/version does not match the requested identity becomes `unavailable` (`size` and `gzip` null) for that side, without discarding the other side. Successful results carry the provider retrieval time and are cacheable. If either successful provider build reports ignored missing dependencies, the computed size comparison is marked partial/non-comparable rather than treating the estimates as like-for-like. See [Bundlephobia transport](../../server/httpDependencies/bundlephobia/client.ts), [per-version collector](../../server/comparison/measurements/bundleSize.ts), [comparison logic](../../server/comparison/measurements/compare.ts), and [tests](../../server/comparison/measurements/bundleSize.unit.ts).
+Bundlephobia supplies bundle-size estimates. Each resolved version is requested separately, with both requests running concurrently. Each request and its response decoding share a 30-second deadline. There are no retries.
+
+Network, status, or decoding failure makes that side `unavailable`, with `size` and `gzip` null. So does a response with the wrong package name/version. The other side is kept. Successful results record the provider retrieval time and can be cached.
+
+If either successful build reports ignored missing dependencies, the size comparison is partial/non-comparable. Those estimates are not treated as like-for-like.
+
+See [Bundlephobia transport](../../server/httpDependencies/bundlephobia/client.ts), [per-version collector](../../server/comparison/measurements/bundleSize.ts), [comparison logic](../../server/comparison/measurements/compare.ts), and [tests](../../server/comparison/measurements/bundleSize.unit.ts).
 
 ### GitHub release and changelog evidence
 
-GitHub is called for complete briefing facts, not for browser measurements. Optional npm repository metadata must resolve to the same supported GitHub repository and directory on both manifests. Unsupported hosts/types, malformed metadata, unsafe directories, or mismatched repos/directories yield unavailable release evidence without GitHub calls. An unsafe fallback ref prevents its Contents lookup, although the release listing is still needed to discover the ref. An optional GitHub token is used as a bearer token; redirects are not followed. Each API request has a five-second timeout and response bodies are capped at 1 MiB.
+GitHub is used for complete briefing facts, not browser measurements. Both manifests' optional npm repository metadata must point to the same supported GitHub repository and directory. Unsupported hosts/types, malformed metadata, unsafe directories, or mismatched repositories/directories return unavailable release evidence without GitHub calls.
 
-Release listings request 100 releases per page and stop after at most 10 pages. A failed first page is a failed listing; a later page failure or reaching the cap keeps already collected releases but marks pagination incomplete. Non-draft semver tags in `(from, to]` are retained (including prereleases); monorepos require package-specific tags. Missing release prose and no matching tags are reasons for partial evidence. A valid 40-hex npm `gitHead` starts a changelog lookup at that pinned commit concurrently with listing, independent of listing completion. Without `gitHead`, fallback requires a complete release listing and one safe, unambiguous tag for the exact target version; a repository-wide monorepo tag must also prove the package name/version from `package.json`. At the selected ref, one Contents API request lists the repository/package directory (it is not paginated here); the collector chooses one file by the configured changelog/changes/history name and extension priority, then fetches its body at that ref.
+An unsafe fallback ref (a commit or tag reference) prevents its Contents lookup. The release listing may still be needed to discover that ref. An optional GitHub token is sent as a bearer token. Redirects are not followed. Each API request has a five-second timeout and a 1 MiB response-body limit.
 
-Release and changelog failures are isolated from npm, OSV, bundle, and archive results. The release-note status is `available` only with no reasons, `partial` when at least one source exists but any reason remains, and `unavailable` when neither the listing nor changelog yielded evidence. In particular, a successful but empty/unmatched listing can be partial; a failed listing plus a usable pinned changelog is also partial. See [release-note policy](../../server/comparison/evidence/releaseNotes.ts), [GitHub transport and page bounds](../../server/httpDependencies/github/client.ts), and [release-note branch tests](../../server/comparison/evidence/releaseNotes.unit.ts).
+Release listings request 100 releases per page, up to 10 pages. A failed first page fails the listing. A later failure or reaching the cap keeps collected releases but marks pagination incomplete.
+
+The collector keeps non-draft semantic-version tags in `(from, to]`: after `from`, through and including `to`. Prereleases are included. Monorepos require package-specific tags. Missing release prose or no matching tags adds a partial-evidence reason.
+
+Changelog lookup uses these rules:
+
+- A valid 40-hex npm `gitHead` pins the commit. Lookup starts alongside the release listing and does not wait for it.
+- Without `gitHead`, fallback needs a complete release listing and one safe, unambiguous tag for the exact target version. A repository-wide monorepo tag must also prove the package name/version from `package.json`.
+- At the chosen ref, one Contents API request lists the repository/package directory; this lookup is not paginated. The collector selects one file using the configured changelog/changes/history name and extension priority, then fetches its body at that ref.
+
+Release/changelog failures do not discard npm, OSV, bundle, or archive results. Release-note status is:
+
+- `available`: no reasons remain.
+- `partial`: at least one source exists, but a reason remains.
+- `unavailable`: neither listing nor changelog yielded evidence.
+
+A successful but empty/unmatched listing can be partial. A failed listing with a usable pinned changelog is also partial. See [release-note policy](../../server/comparison/evidence/releaseNotes.ts), [GitHub transport and page bounds](../../server/httpDependencies/github/client.ts), and [release-note branch tests](../../server/comparison/evidence/releaseNotes.unit.ts).
 
 ## Cache keys, coalescing, expiry, and storage failures
 
-The [cache lifetime decision](adrs/evidence-cache-lifetimes.md) explains the freshness/reuse tradeoff and why TTL is not a storage cap.
+The [cache lifetime decision](adrs/evidence-cache-lifetimes.md) explains the freshness/reuse tradeoff. A time-to-live (TTL) controls expiry, not total storage size.
 
-The collector receives cache/admission services from the object; it has no process-global cache of its own. Cache keys are SHA-256 digests of JSON-serialized scope inputs. The SQLite cache belongs to one package object, so mutable provider results and immutable archive inspections are reused by that package's callers, not by a separate global cache.
+The object supplies cache and capacity-check services to the collector; the collector has no process-global cache. Keys are SHA-256 digests of JSON-serialized scope inputs. Each package object's SQLite cache reuses that package's provider results and archive inspections. It is not a separate global cache.
 
 | Evidence             | Key inputs                                                                                                 | Expiry and write rule                            |
 | -------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
@@ -73,40 +160,92 @@ The collector receives cache/admission services from the object; it has no proce
 | GitHub release notes | `comparison-evidence-v1`, package name and both full resolved manifests                                    | 300,000 ms; only `available`                     |
 | Inspected archive    | `archive-inspector-v2` and integrity policy (exact SRI string when present, otherwise SHA-1 shasum policy) | No expiry; `available` and `partial` only        |
 
-Mutable TTLs are five minutes; expired entries are deleted on cache access. Errors and non-cacheable partial/unavailable provider results are not saved, so a later request retries them instead of preserving a failed refresh. The archive key deliberately follows verified content identity rather than version or tarball URL. Equal integrity policies can reuse one successful/partial inspection and attach the caller's manifest URL to the returned value; a failed archive is retried. SRI and SHA-1 policies do not collide. The archive revision gives changed inspection semantics a new key. This is local evidence reuse/duplicate-work control, not a fixed monetary cap, a version-pair lifetime inference limit, or a substitute for the external provider budget. It does not imply cross-package-object sharing.
+Mutable entries expire after five minutes and are deleted on cache access. Errors and non-cacheable partial/unavailable results are not saved. Later requests retry them instead of keeping a failed refresh.
 
-There is no cache for a complete measurements response or briefing packet; those are assembled from the component caches. Coalescing exists at several scopes: the DO keeps a promise for an identical in-flight `(path, decoded request)` and removes it on either success or failure; the SQLite cache coalesces loads by evidence key; request-local manifest effects are shared across collector branches. A same-content archive therefore can be shared by matching versions within the package object, while unrelated request paths remain distinct.
+Archive keys follow verified content identity, not a version or tarball URL. Matching integrity policies can share a successful/partial inspection; the returned value gets the caller's manifest URL. Failed inspections are retried. SRI and SHA-1 policies cannot collide. A changed inspector revision creates a new key for changed inspection rules.
 
-SQLite uses the [declared `evidence_records` and `evidence_chunks` tables](../../shared/db/evidenceSchema.ts). The cache constructs its Drizzle client from the full real Durable Object `ctx.storage`; synchronous `get`/`all`/`run` queries and Drizzle transactions retain `transactionSync` replacement/deletion/cleanup boundaries. The evidence schema generates separate committed DO migration history, bundled into the Worker and applied synchronously by Drizzle during cache construction. Only the initial bootstrap is idempotent, preserving existing tables/data while adopting `__drizzle_migrations`; subsequent migrations are strict. No handwritten constructor DDL or DO reset is used, and Wrangler D1 history remains independent. Metadata and payload rows are replaced atomically in a synchronous transaction. JSON is split into UTF-8-safe chunks no larger than 128 KiB; stored byte length, chunk count, ordered indexes, JSON decoding, metadata, and each cache entry's value schema are checked when reading. A null expiry is the archive's indefinite lifetime. Expiry cleanup removes chunks and records together.
+This reduces duplicate evidence work. It is not a fixed spending cap, a lifetime inference limit per version pair, or a replacement for external provider budgets. It does not share data across package objects.
 
-Storage failures are not cache misses. Table/index initialization failure is saved by the DO constructor and valid object paths then return 503 `Evidence storage unavailable`; there is no uncached fallback. SQL cleanup/read/delete/write or serialization failures become `EvidenceStorageError`. Invalid metadata, absent/out-of-order chunks, wrong byte length, invalid JSON, or a value that fails its provider schema becomes `EvidenceStorageCorruptionError`. They reject the collection rather than silently refreshing or returning partial data. A failed cache write also prevents that request from returning the newly collected value. All non-capacity backend failures are exposed only as generic 503 `Evidence service unavailable`. See [SQLite implementation](../../workers/evidence/store.ts), [error types](../../server/comparison/evidence/errors.ts), [cache storage tests](../../workers/evidence/store.workerd.unit.ts), and [cache policy tests](../../server/comparison/collect.unit.ts).
+Complete measurement responses and briefing packets are not cached. They are assembled from component caches. **Coalescing** means callers share matching work already in progress:
+
+- The DO keeps one promise per identical `(path, decoded request)`, removing it after success or failure.
+- The SQLite cache shares loads by evidence key.
+- Collector branches share request-local manifest effects.
+
+Versions with matching archive content can share inspection within one package object. Unrelated request paths remain separate.
+
+SQLite uses the [declared `evidence_records` and `evidence_chunks` tables](../../shared/db/evidenceSchema.ts). Drizzle is the typed database layer. The cache builds its client from the full real Durable Object `ctx.storage`. Synchronous `get`/`all`/`run` queries and Drizzle transactions preserve `transactionSync` boundaries for replacement, deletion, and cleanup.
+
+The evidence schema has its own committed DO migration history. It is bundled into the Worker and applied synchronously by Drizzle when the cache is constructed. Only the initial bootstrap is safe to repeat: it preserves existing tables/data while adopting `__drizzle_migrations`. Later migrations are strict. There is no handwritten constructor DDL or DO reset. Wrangler's D1 history stays separate.
+
+Metadata and payload rows are replaced together in one synchronous transaction. JSON is split into UTF-8-safe chunks of at most 128 KiB. Reads check stored byte length, chunk count, index order, JSON decoding, metadata, and the provider's value schema. A null expiry means an archive has no expiry. Cleanup deletes expired records and chunks together.
+
+Storage failures are not cache misses:
+
+- The DO constructor remembers table/index initialization failure. Valid object paths then return 503 `Evidence storage unavailable`, with no uncached fallback.
+- SQL cleanup/read/delete/write or serialization failures become `EvidenceStorageError`.
+- Invalid metadata, missing/out-of-order chunks, wrong byte length, invalid JSON, or provider-schema failure become `EvidenceStorageCorruptionError`.
+
+These errors reject collection. They do not silently refresh data or return partial results. A failed write also prevents the request from returning the newly collected value. All non-capacity backend failures are exposed only as generic 503 `Evidence service unavailable`.
+
+See [SQLite implementation](../../workers/evidence/store.ts), [error types](../../server/comparison/evidence/errors.ts), [cache storage tests](../../workers/evidence/store.workerd.unit.ts), and [cache policy tests](../../server/comparison/collect.unit.ts).
 
 ## Admission, deadlines, and disconnect behavior
 
-Three reject-fast, isolate-scoped admissions bound work in the evidence Worker, rather than queueing callers:
+Three capacity checks reject excess work immediately rather than queueing callers:
 
-- Up to 16 active incoming object requests, including body read/validation; excess returns 503 with `Retry-After: 1`.
-- Up to 2 active distinct evidence response collections; identical requests already in flight coalesce before this permit is taken. Saturation returns the same temporary 503.
-- Up to 2 active archive inspections. A cache hit needs no inspection permit; a safe-URL cache miss does. Capacity failure propagates through the cache bridge and becomes temporary 503 with `Retry-After: 1`.
+- Up to 16 active incoming object requests, including body read/validation. Excess requests return 503 with `Retry-After: 1`.
+- Up to 2 active distinct evidence response collections. Identical in-flight requests share work before taking a permit. Saturation returns the same temporary 503.
+- Up to 2 active archive inspections. Cache hits need no permit; safe-URL cache misses do. Capacity failure propagates through the cache bridge as temporary 503 with `Retry-After: 1`.
 
-The limits are module-level worker values, not per-package quotas or fleet-wide guarantees. Permits are released on success, typed failure, defect, or effect interruption. See [admission implementation](../../workers/evidence/admission.ts) and [permit tests](../../workers/evidence/admission.unit.ts). Other backend failures return a generic 503 without the capacity retry header.
+These module-level limits apply within a Worker isolate, not per package or across the fleet. Permits are released on success, typed failure, defect, or Effect interruption. Other backend failures return generic 503 without the capacity retry header. See [admission implementation](../../workers/evidence/admission.ts) and [permit tests](../../workers/evidence/admission.unit.ts).
 
-There is no single evidence-request deadline. The code has child deadlines: npm manifest request 5 minutes; tarball download plus inspection 10 seconds; each Bundlephobia request 30 seconds; OSV each request 5 seconds and overall collection 30 seconds; each GitHub request 5 seconds. Neither the object handler nor the binding client wires the incoming caller's disconnect signal into a collection-wide interruption. The explicit abort path is the tarball's own timeout/interruption signal. Thus the code establishes provider deadlines and archive cleanup, but does not establish that a disconnected browser cancels in-flight evidence work; runtime behavior after disconnect is not specified by these handlers. The binding client cancels unread upstream response bodies on non-2xx/protocol-size rejection, not as a caller-disconnect policy.
+There is no deadline for the whole evidence request. Child deadlines are:
+
+| Work                                    | Deadline               |
+| --------------------------------------- | ---------------------- |
+| npm manifest request                    | 5 minutes              |
+| Tarball download and inspection         | 10 seconds             |
+| Each Bundlephobia request               | 30 seconds             |
+| Each OSV request / whole OSV collection | 5 seconds / 30 seconds |
+| Each GitHub request                     | 5 seconds              |
+
+Neither the object handler nor binding client connects the caller's disconnect signal to a collection-wide interruption. The explicit abort path is the tarball's own timeout/interruption signal.
+
+Provider deadlines and archive cleanup are defined. Cancellation of evidence work after a browser disconnect is not; these handlers do not specify that runtime behavior. The binding client cancels unread upstream bodies after non-2xx or protocol-size rejection, not as a caller-disconnect policy.
 
 ## Outcome diagnostics
 
-`evidence.admission.refused` is emitted by the refusing admission itself with `operation` `request`, `collection`, or `archive`, `outcome` `failure`, and `reason` `capacity`. Permits, 503 messages, and `Retry-After: 1` remain owned by the existing admissions.
+Diagnostics report outcomes without changing them. A refusing capacity check emits `evidence.admission.refused` with `operation` `request`, `collection`, or `archive`, `outcome` `failure`, and `reason` `capacity`. The existing checks still own permits, 503 messages, and `Retry-After: 1`.
 
-The owning evidence Worker exports as `can-i-update-evidence` only when its private `OTEL_EXPORTER_OTLP_ENDPOINT` is configured; `OTEL_EXPORTER_OTLP_HEADERS` stays in that Worker's configuration. The [public operation helper](../../server/api/package/[packageName]/compare/_internals/telemetry.ts) forwards only a formatted `traceparent` to the private evidence binding. External npm, OSV, Bundlephobia, archive, and GitHub requests receive no caller tracing headers.
+The evidence Worker exports as `can-i-update-evidence` only when its private `OTEL_EXPORTER_OTLP_ENDPOINT` is set. `OTEL_EXPORTER_OTLP_HEADERS` also stays in that Worker's configuration. The [public operation helper](../../server/api/package/[packageName]/compare/_internals/telemetry.ts) sends only a formatted `traceparent` to the private evidence binding. External npm, OSV, Bundlephobia, archive, and GitHub requests receive no caller tracing headers.
 
-Every handled object request emits one `evidence.request.completed` with a fixed outcome/reason, HTTP status class, and decimal-string duration, including malformed input and capacity or storage refusal. The request span follows a validated incoming `traceparent`; missing or malformed context starts a fresh root without changing the response. An in-flight collection has an independent `evidence.collection` root, not the first caller as parent. Initiators and joiners link to its trace/span, including failed work, through `linkedTraceId` / `linkedSpanId` and OTLP span links. A join emits `evidence.cache.decision` with `operation` `collection`, `outcome` `joined`, and `relationship` `shared-collection`. That descriptor is ephemeral and never persisted. Joining changes neither evidence values nor provider work.
+Every handled object request emits one `evidence.request.completed`, including malformed input and capacity/storage refusals. It records a fixed outcome/reason, HTTP status class, and decimal-string duration.
 
-Component-cache decisions use fixed provider names and `hit`, `miss`, or `coalesced` once per logical lookup, not per SQL row; a lookup that fails before deciding emits none. The [cache bridge](../../server/comparison/evidence/cacheLookup.ts) runs its loader in the caller's Effect context, so provider logs and spans reach the same runtime; without a cache the provider runs directly. [Archive ownership](../../server/comparison/evidence/tarball.ts) keeps integrity, admission, and immutable reuse separate from assembly.
+A **span** describes one timed operation; a trace links related spans. The request span follows a validated incoming `traceparent`. Missing or malformed context starts a new root without changing the response.
 
-Provider `evidence.collection.completed` records summarize existing states: all unavailable sides are `unavailable`, any other degradation is `partial`, and fully available sides emit no degradation. OSV, bundle, tarball, and release-note summaries are distinct from a request-wide collection failure. A collection `success` means facts were assembled, not that every provider was complete or an update is safe.
+Shared in-flight work has an independent `evidence.collection` root, not the first caller as parent. Initiators and joiners link to it, including failed work, through `linkedTraceId` / `linkedSpanId` and OTLP span links. A join emits `evidence.cache.decision` with `operation` `collection`, `outcome` `joined`, and `relationship` `shared-collection`. This descriptor is temporary and never saved. Joining changes neither evidence values nor provider work.
 
-`evidence.storage.failed` is reported by the cache bridge for storage errors it observes, with fixed initialize/read/write/delete/serialize/corruption reasons; expired-row cleanup is a delete. Corruption stays a failure, never a miss. No SQL, rows, keys, hashes, inventories, evidence, provider prose, or requested selectors enter these diagnostics. Observer exceptions cannot replace fresh, cached, or coalesced values or errors, and cannot poison shared work.
+Component caches report fixed provider names and `hit`, `miss`, or `coalesced` once per logical lookup, not per SQL row. A lookup that fails before deciding emits no decision.
+
+The [cache bridge](../../server/comparison/evidence/cacheLookup.ts) runs loaders in the caller's Effect context, so provider logs/spans reach the same runtime. Without a cache, the provider runs directly. [Archive ownership](../../server/comparison/evidence/tarball.ts) keeps integrity, capacity checks, and immutable reuse separate from assembly.
+
+Provider `evidence.collection.completed` records summarize degraded states: all sides unavailable means `unavailable`; any other degradation means `partial`. Fully available sides emit no degradation. OSV, bundle, tarball, and release-note summaries are separate from request-wide collection failures.
+
+Collection `success` means facts were assembled. It does not mean every provider was complete or that an update is safe.
+
+The cache bridge reports observed storage errors as `evidence.storage.failed`, using fixed initialize/read/write/delete/serialize/corruption reasons. Expired-row cleanup counts as delete. Corruption remains failure, never a miss.
+
+Diagnostics exclude SQL, rows, keys, hashes, inventories, evidence, provider prose, and requested selectors. Observer exceptions cannot replace fresh, cached, or shared values/errors, or poison shared work.
 
 ## Existing branch tests
 
-Current targeted tests cover collector manifests/cache keys and provider scheduling in [collect.unit.ts](../../server/comparison/collect.unit.ts); provider outcomes in [bundleSize.unit.ts](../../server/comparison/measurements/bundleSize.unit.ts), [vulnerabilities.unit.ts](../../server/comparison/measurements/vulnerabilities.unit.ts), and [releaseNotes.unit.ts](../../server/comparison/evidence/releaseNotes.unit.ts); archive validation and limits in [tarball.unit.ts](../../server/httpDependencies/npm/tarball.unit.ts) and [tarballStreaming.unit.ts](../../server/httpDependencies/npm/tarballStreaming.unit.ts); binding-client protocol/failure handling in [evidenceClient.unit.ts](../../server/api/package/[packageName]/compare/_internals/evidenceClient.unit.ts); and admission plus cache-storage failures in [admission.unit.ts](../../workers/evidence/admission.unit.ts) and [store.workerd.unit.ts](../../workers/evidence/store.workerd.unit.ts). The current tree has no direct `workers/evidence/index.ts` request-handler test; request size/status branches above are from the handler implementation, not claimed as covered by those helper tests.
+Targeted tests cover:
+
+- Manifests, cache keys, and provider scheduling: [collect.unit.ts](../../server/comparison/collect.unit.ts).
+- Provider outcomes: [bundleSize.unit.ts](../../server/comparison/measurements/bundleSize.unit.ts), [vulnerabilities.unit.ts](../../server/comparison/measurements/vulnerabilities.unit.ts), and [releaseNotes.unit.ts](../../server/comparison/evidence/releaseNotes.unit.ts).
+- Archive validation and limits: [tarball.unit.ts](../../server/httpDependencies/npm/tarball.unit.ts) and [tarballStreaming.unit.ts](../../server/httpDependencies/npm/tarballStreaming.unit.ts).
+- Binding protocol and failures: [evidenceClient.unit.ts](../../server/api/package/[packageName]/compare/_internals/evidenceClient.unit.ts).
+- Capacity and cache-storage failures: [admission.unit.ts](../../workers/evidence/admission.unit.ts) and [store.workerd.unit.ts](../../workers/evidence/store.workerd.unit.ts).
+
+There is no direct `workers/evidence/index.ts` request-handler test in the current tree. The request size/status branches described above come from the handler implementation; the helper tests are not claimed to cover them.

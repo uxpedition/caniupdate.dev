@@ -24,21 +24,23 @@ Document decisions and durable knowledge, not just code. The highest-value recor
 
 ### 1. Discover the repository's documentation model
 
-Before choosing a destination, inspect project instructions, the documentation index/map, existing ADRs/RFCs/runbooks, naming and numbering patterns, related product/API docs, and documentation-specific tooling or configuration. Follow the existing location, format, heading set, status vocabulary, and links. Do not create a second ADR folder, numbering scheme, glossary, or runbook convention. If the evidence conflicts, surface the conflict instead of silently imposing a new structure.
+Before choosing a destination, inspect project instructions, the documentation index/map, existing ADRs/runbooks, naming and numbering patterns, related product/API docs, and documentation-specific tooling or configuration. Follow the existing location, format, heading set, status vocabulary, and links. Do not create a second ADR folder, numbering scheme, glossary, or runbook convention. If the evidence conflicts, surface the conflict instead of silently imposing a new structure.
 
 Separate documents by the reader's question:
 
-| Document kind                      | Reader's question                                                  | Maintenance rule                                                                                     |
-| ---------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| README / getting started           | What is this and how can I try or contribute?                      | Keep an accurate entry point and quick start; derive commands from the current project.              |
-| Current-system documentation       | How does the implemented system work now?                          | Update behavior, ownership, contracts, and failure boundaries when implementation changes.           |
-| ADR (Architecture Decision Record) | What significant choice was made, why, and with what consequences? | Preserve rationale; mark changed decisions superseded rather than rewriting history.                 |
-| RFC or proposal                    | What change is proposed, and what is still undecided?              | Keep review state, alternatives, risks, open questions, and implementation status distinct.          |
-| Operations/runbook                 | How do I operate, diagnose, deploy, or recover safely?             | Keep prerequisites and commands current; distinguish implemented capability from policy or proposal. |
-| API/user documentation             | What contract or behavior can a consumer rely on?                  | Describe the public contract and examples accurately; update with the implementation.                |
-| Glossary/domain record             | What does a domain term mean here?                                 | Use `domain-modeling`; keep definitions separate from code-level implementation decisions.           |
+| Document kind                      | Reader's question                                                  | Maintenance rule                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| README / getting started           | What is this and how can I try or contribute?                      | Keep an accurate entry point and quick start; derive commands from the current project.                         |
+| Current-system documentation       | How does the implemented system work now?                          | Update behavior, ownership, contracts, and failure boundaries when implementation changes.                      |
+| ADR (Architecture Decision Record) | What significant choice was made, why, and with what consequences? | Preserve rationale; mark changed decisions superseded rather than rewriting history.                            |
+| Issue / merge request              | What change is proposed, and what is still undecided?              | Discuss options in issues; review implementation and verification in merge requests. Agreement is not shipment. |
+| Operations/runbook                 | How do I operate, diagnose, deploy, or recover safely?             | Keep prerequisites and commands current; distinguish implemented capability from policy or proposal.            |
+| API/user documentation             | What contract or behavior can a consumer rely on?                  | Describe the public contract and examples accurately; update with the implementation.                           |
+| Glossary/domain record             | What does a domain term mean here?                                 | Use `domain-modeling`; keep definitions separate from code-level implementation decisions.                      |
 
 Current-system documents and ADRs serve different needs. A current-system document explains how the code works now; its ADR preserves why that design was selected. Link them instead of duplicating a full contract in both.
+
+In this repository, proposals belong in issues and merge requests, not separate proposal documents. After a consequential choice, preserve its reasoning in an ADR and link the discussion when available. Publishing an issue or merge request still requires authorization; an in-chat draft is sufficient until then.
 
 ### 2. Separate temporary work from durable knowledge
 

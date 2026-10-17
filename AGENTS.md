@@ -29,7 +29,13 @@ guide doesn't cover, search through the source code in `node_modules/effect/src`
 - **Frontend or framework changes:** read [interface verification](docs/engineering/ops/development.md#comparison-interface) and [the Firefox startup ADR](docs/engineering/adrs/firefox-entry-import-map.md). Verify rendered interactions in Chromium and Firefox before changing the `entryImportMap: false` workaround.
 - **Product copy or interpretation:** read [meaning and limitations](docs/product/meaning-and-limitations.md).
 - **Deployment or recovery:** read [deployment operations](docs/engineering/ops/deployment.md) and [release/recovery operations](docs/engineering/ops/releases-and-recovery.md). Default Wrangler environments are local-only; checked-in remote resources are maintainer-specific, not deployment authorization.
-- **Documentation changes:** use [the documentation map](docs/CONTEXT.md). Current engineering documents describe implementation; ADRs and RFCs preserve decisions and proposals, not proof of shipment.
+- **Documentation changes:** use [the documentation map](docs/CONTEXT.md). Discuss proposals in issues and review implementations in merge requests. ADRs preserve decisions with meaningful complexity or reversal cost; current engineering documents describe implementation. Neither agreement nor an ADR proves shipment.
+
+## Documentation style
+
+- In `README.md` and `docs/`, use plain language for the document's intended audience. Make explanations understandable at any experience level within that audience; explain necessary technical terms and avoid jargon where simpler words work.
+- Prefer short sentences and short paragraphs, with one main idea per paragraph. Use lists when they make information easier to scan.
+- Put optional background and deeper technical detail in endnotes or linked detail sections when helpful. Keep essential meaning, limitations, and safety warnings in the main text beside the relevant explanation or step.
 
 ## Essential boundaries
 

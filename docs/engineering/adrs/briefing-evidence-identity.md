@@ -1,21 +1,21 @@
 # Briefing identity follows evidence
 
-**Decision:** Identify a briefing by SHA-256 of its validated bounded evidence packet for a specific comparison. Reuse a stored successful result whenever that packet matches. Model, prompt, provider key, and retrieval time are not identity inputs.
+**Decision:** Identify a briefing by the SHA-256 hash of its validated, size-limited evidence packet for a specific comparison. Reuse a stored successful result whenever that packet matches. The model, prompt, provider key, and retrieval time do not contribute to the identity.
 
 ## Why
 
-The owner's rule is: unchanged evidence gives us no reason to regenerate the AI briefing. Identical evidence submitted by different users should share an active job or stored success instead of buying separate explanations. Changing AI settings alone is not a reason to invalidate that success.
+The owner's rule is: unchanged evidence gives us no reason to regenerate the AI briefing. Different users submitting identical evidence should share an active job or stored success, not buy separate explanations. Changing AI settings alone does not invalidate that success.
 
-D1 retains the first validated successful result for a hash; concurrent successful writers converge on that row rather than overwrite it.
+D1 keeps the first validated successful result for a hash. If several writers succeed at once, they all use that row rather than overwrite it.
 
 ## Costs and limits
 
-- The same package/version pair can acquire changed evidence, produce a new hash, and require another generation.
-- Matching evidence reuses the existing result even after a model or prompt change. First-writer-wins selects a canonical success, not the best possible wording.
-- Permanent reuse means no automatic expiry, not guaranteed existence: if the D1 row disappears, a later submission can generate again.
-- This is duplicate-spend control, not one lifetime charge per version pair or an account-wide monetary budget.
+- Evidence for the same package/version pair can change. That produces a new hash and can require another generation.
+- Matching evidence reuses the result even after a model or prompt change. First-writer-wins chooses one shared success, not the best possible wording.
+- Permanent reuse means no automatic expiry. It does not guarantee the row will exist: if it disappears from D1, a later submission can generate again.
+- This limits duplicate spending. It does not guarantee one lifetime charge per version pair or impose an account-wide spending budget.
 
-Reconsider identity only if the product deliberately changes what warrants regeneration, such as requiring existing results to reflect a revised prompt. That would be a policy change, not incidental cache cleanup.
+Reconsider identity only if the product deliberately changes when to regenerate. For example, requiring existing results to use a revised prompt would be a policy change, not routine cache cleanup.
 
 ## Artifacts
 

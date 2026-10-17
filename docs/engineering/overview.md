@@ -1,23 +1,51 @@
 # Comparison architecture
 
-The system compares two versions of one public npm package. It presents declarations first, then measurements and supplementary AI notes. It does not assess a consumer project or approve an upgrade; see [product meaning and limitations](../product/meaning-and-limitations.md).
+The system compares two versions of one public npm package. It shows package declarations first, then measurements and supplementary AI notes. It does not assess a consumer project or approve an upgrade. See [product meaning and limitations](../product/meaning-and-limitations.md).
 
-This document describes current source-backed behavior, not the state of a deployed environment. [Evidence architecture](evidence.md) owns collection, caching, admission, and provider failure details. [Briefing architecture](briefing.md) owns durable generation and browser subscriptions.
+**Declarations** are what the package says in its registry manifest, such as dependencies and supported Node versions. **Measurements** add evidence from external providers and the package archive. A **briefing** adds AI notes; it never replaces those facts.
+
+This guide describes the current source code, not what is running in a deployed environment. [Evidence architecture](evidence.md) explains how evidence is collected, cached, and limited, including provider failures. [Briefing architecture](briefing.md) explains how AI notes are generated, saved, and followed by the browser.
 
 ## Shared module organization
 
-`shared/` groups cross-runtime contracts and helpers by domain. `comparison/` owns comparison result contracts, with `briefing/` for content and job/service protocols, `evidence/` for provider/archive and evidence-binding contracts, and `package/` for registry metadata, search, and semver helpers. `telemetry/` owns diagnostic contracts, sanitization, trace context, and logging; `site/` owns public-origin and URL handling. `db/` retains the database schemas and driver type declarations, while root `cloudflare.d.ts` declares runtime bindings. Import modules directly; these folders do not add barrel exports or change runtime ownership.
+`shared/` holds contracts and helpers used across runtimes. Its main groups are:
+
+- `comparison/`: comparison result contracts. Within it, `briefing/` holds content and job/service protocols, `evidence/` holds provider/archive and evidence-binding contracts, and `package/` holds registry metadata, search, and semver helpers.
+- `telemetry/`: diagnostic contracts, safe-field filtering, trace context, and logging.
+- `site/`: public-origin and URL handling.
+- `db/`: database schemas and driver type declarations.
+
+The root `cloudflare.d.ts` declares runtime bindings: the connections a Worker can use to reach other services. Import modules directly; these folders do not add barrel exports (index files that re-export other modules) or change which runtime owns the work.
+
+## Server module ownership
+
+Server code is grouped by responsibility:
+
+- `server/api/` owns request decoding, response mapping, and private binding adapters. Each endpoint uses `index.<method>.ts`.
+- `server/httpDependencies/<provider>/` owns provider HTTP requests, authentication, response decoding, and transport limits.
+- `server/comparison/` owns comparison rules, evidence collection, and briefing behavior shared by Nuxt and the backend Workers.
+- `workers/` owns Worker entrypoints, durable jobs, and runtime storage adapters.
+
+Provider adapters depend on shared contracts and HTTP libraries, not comparison logic or Nuxt/H3. Comparison logic may use those adapters, but does not import API handlers or API-local binding adapters.
+
+Route-only helpers live in `_internals/`; helpers shared by sibling endpoints use their nearest common `_internals/` directory. Nitro must exclude `**/_internals/**` and `**/*.unit.ts` from route discovery. A leading underscore alone does not hide a helper.
+
+**Design context (2026-10-04):** This split replaced the `server/utils` catch-all. Renaming helpers would not make ownership clear. Broad `clients` or `services` folders would still mix unrelated owners; putting all logic beside endpoints would entangle code shared with Workers.
+
+The cutover changed structure, not public behavior. It retained route contracts, evidence policies, storage formats, and job lifecycles, without compatibility re-exports. A scanner probe at the time confirmed that endpoint directories preserved routes and that `_internals/` required an explicit exclusion.
 
 ## Runtime ownership
 
-| Owner                                                          | Responsibilities                                                                                                                | Does not own                                               |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Browser                                                        | Reactive comparison queries, result rendering, briefing submission and read-only job subscription                               | Trusted evidence, provider credentials, durable jobs       |
-| Nuxt Worker                                                    | SSR declarations and stored-result hydration, public comparison routes, request validation, private evidence and briefing calls | Archive inspection, AI generation, D1                      |
-| Evidence Worker / per-package `PackageEvidence` Durable Object | Provider collection, verified archive inspection, SQLite evidence cache, bounded briefing packet                                | AI generation or stored briefing results                   |
-| Briefing Worker / per-hash `BriefingJob` Durable Object        | Private submission, durable job state, generation, public read-only sockets                                                     | Registry/provider evidence collection                      |
-| Cloudflare Queue                                               | Delivers a hash and generation ID to wake its job                                                                               | Evidence packet, prompt, credentials, generation ownership |
-| D1                                                             | Permanent validated briefing results, first-writer-wins by evidence hash                                                        | Evidence cache, provider budget enforcement                |
+A **Worker** runs server code on Cloudflare. A **Durable Object** (DO) owns state for one named identity, such as a package or evidence hash. SQLite stores that object's data; D1 stores shared, permanent briefing results.
+
+| Owner                                                          | Responsibilities                                                                                                                                   | Does not own                                               |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Browser                                                        | Reactive comparison queries, result rendering, briefing submission and read-only job subscription                                                  | Trusted evidence, provider credentials, durable jobs       |
+| Nuxt Worker                                                    | Server-rendered (SSR) declarations, hydration of stored results, public comparison routes, request validation, private evidence and briefing calls | Archive inspection, AI generation, D1                      |
+| Evidence Worker / per-package `PackageEvidence` Durable Object | Provider collection, verified archive inspection, SQLite evidence cache, bounded briefing packet                                                   | AI generation or stored briefing results                   |
+| Briefing Worker / per-hash `BriefingJob` Durable Object        | Private submission, durable job state, generation, public read-only sockets                                                                        | Registry/provider evidence collection                      |
+| Cloudflare Queue                                               | Delivers a hash and generation ID to wake its job                                                                                                  | Evidence packet, prompt, credentials, generation ownership |
+| D1                                                             | Permanent, validated briefings; the first stored result for an evidence hash wins                                                                  | Evidence cache, provider budget enforcement                |
 
 ```mermaid
 flowchart TD
@@ -36,69 +64,120 @@ flowchart TD
   Browser -->|Read-only WebSocket| Job
 ```
 
-The [root bindings](../../wrangler.jsonc) give Nuxt access to the evidence DO namespace and named briefing entrypoint. The [evidence Worker](../../workers/evidence/index.ts) has no public application endpoint. The [briefing public entrypoint](../../workers/briefing/index.ts) accepts only allowed-origin socket upgrades for existing job identities; it cannot submit a generation. Briefing D1, Queue, job bindings, and socket configuration belong to the [briefing Worker configuration](../../workers/briefing/wrangler.jsonc), not Nuxt.
+The [root bindings](../../wrangler.jsonc) connect Nuxt to the evidence DO namespace and named briefing entrypoint. The [evidence Worker](../../workers/evidence/index.ts) has no public application endpoint.
+
+The [briefing public entrypoint](../../workers/briefing/index.ts) accepts only socket upgrades from allowed origins for existing jobs. It cannot submit a generation. D1, Queue, job bindings, and socket settings belong to the [briefing Worker configuration](../../workers/briefing/wrangler.jsonc), not Nuxt.
 
 ## Diagnostic transport
 
-Existing browser, Nuxt submission, and briefing generation instrumentation can export sanitized logs and completed spans through Effect's OTLP/HTTP exporters while retaining JSON console output. Console records pass the same scalar field allowlist as export, so unlisted fields, selector values, and raw causes never reach either sink. Export is disabled unless configured. The browser uses same-origin `/api/telemetry/v1/{logs,traces}` ingestion; Nuxt validates bounded JSON, forces the browser resource identity, and forwards to the privately configured OTLP endpoint. Workers export directly to their owning endpoint. Nuxt forwards only a formatted `traceparent` to the private evidence binding; each evidence request span follows it, while shared evidence collections run under independent roots that joiners link to by trace and span ID. The built Nuxt Worker intercepts telemetry at its entry before Nitro's Cloudflare adapter buffers POST bodies; other requests delegate to the official adapter unchanged. Only the Cloudflare production Rollup entry is overridden; prerender and HMR retain Nitro's own entries. The direct `nitropack` pin must stay aligned with Nuxt's adapter version when upgrading. Nuxt HMR uses a streaming H3 request bridge for the same ingestion policy. No diagnostic path generates briefings or changes evidence/job ownership.
+Diagnostics use **logs** for events and **spans** for timed operations. A trace links related spans. Existing browser, Nuxt submission, and briefing generation diagnostics can send sanitized logs and completed spans through Effect's OTLP/HTTP exporters. OTLP is the telemetry transport format. JSON console output remains available.
 
-[Telemetry decoding](../../shared/telemetry/telemetry.defs.ts) selects a schema-composed ingress decoder with `decodeTelemetryPayload(signal)(value)`. Its [bounded input schema](../../shared/telemetry/telemetryBounds.ts) checks traversal budgets and cycles before OTLP decoding or sanitization; downstream helpers receive validated types. Header and persisted trace-context readers likewise compose schema decoders with typed normalization, retaining their empty-header and absent-context fallbacks. Lifecycle-hook lookup inspects runtime containers shallowly, without reading unrelated fields, and invokes `waitUntil` with its original scope as receiver.
+Export is off unless configured. Console and export use the same allowlist of scalar fields: unlisted fields, requested selector values, and raw error causes reach neither destination.
 
-OTLP instrumentation scopes identify the library (`effect`), independently of the reviewed `service.name` resource identity. Shared decoding and native-batch projection accept only that scope and strip scope versions and attributes; browser ingress forces the browser resource identity while preserving the validated instrumentation scope.
+The transport paths are:
 
-Durable `briefing.job.settled` follows a successful terminal put; recovery lookup observations are not settlement claims. Dispatch and Queue records (`briefing.dispatch.decision`, `briefing.queue.decision`) explain attempts and ack/retry without changing fencing or work ownership.
+- The browser sends to same-origin `/api/telemetry/v1/{logs,traces}`. Nuxt validates size-bounded JSON, forces the browser's service identity, and forwards it to the privately configured OTLP endpoint.
+- Workers export directly to their own configured endpoints.
+- Nuxt sends only a formatted `traceparent` to the private evidence binding. Evidence request spans follow that parent. Shared collections have independent trace roots; callers link to them by trace and span ID.
 
-Failure observability is automatic when telemetry is enabled: the browser captures Vue/app/chunk errors, uncaught exceptions and promise rejections through a Faro Web SDK instrumentation bridged into the app telemetry runtime, and Nuxt captures SSR render failures and Nitro handler errors for a `can-i-update-nuxt` resource. All captured failure records pass through the shared `shared/telemetry/telemetryError.ts` policy first: reviewed error types, error source names, and code-file-only stack locations; exception messages are never exported; telemetry ingress recursion, expected sub-500 outcomes and aborted requests are excluded server-side. Disabling the telemetry flag or losing the sink never changes application outcomes.
+The built Nuxt Worker intercepts telemetry before Nitro's Cloudflare adapter buffers POST bodies. All other requests use the official adapter unchanged. Only the Cloudflare production Rollup entry is overridden; prerender and hot-module reload (HMR) keep Nitro's entries. Keep the direct `nitropack` pin aligned with Nuxt's adapter version during upgrades. Nuxt HMR uses a streaming H3 request bridge with the same ingestion policy. No diagnostic path generates briefings or changes evidence/job ownership.
 
-Package search and metadata requests use one explicit 10% success sample; failures are never sampled, and typing aborts are silent. Their records carry `outcome`, fixed failure `reason` / `statusClass`, duration, and bounded `resultCount` buckets, never query text or payloads. Comparison navigation records success, cancellation, ignored repeat submission, invalid input, or navigation failure without route or rejected form values. Its identity is attached only when the submitted package matches resolved metadata. Diagnostic failures never change query results, rejections, debounce, cache, enablement, or navigation return and rethrow behavior.
+[Telemetry decoding](../../shared/telemetry/telemetry.defs.ts) selects the ingress decoder with `decodeTelemetryPayload(signal)(value)`. The [bounded input schema](../../shared/telemetry/telemetryBounds.ts) checks traversal budgets and cycles before OTLP decoding or sanitization. Downstream helpers receive validated types.
 
-The generation acceptance root ends at acceptance; the later provider execution is its child using persisted context. Submission server spans link to that independent root when joining queued/running work. Logs and spans carry validated public package identity in `comparison.package.name`, and resolved releases in `comparison.version.from` / `comparison.version.to`. Identity is attached only after registry resolution. The page root carries operation context only, and failed lookups carry no package or version identity. Nuxt derives identity from its trusted evidence packet; requested selectors are never recorded. Generation records use their own persisted packet. These attributes are not resource identities or metric labels. Exported records exclude provider bodies, credentials, prompts, evidence packets, full URLs, and raw exception text. Missing telemetry is not proof an operation did not run. Query exported records in the Grafana UI.
+Header and stored trace-context readers also combine schema decoding with typed normalization. They retain the existing empty-header and absent-context fallbacks. Lifecycle-hook lookup checks runtime containers shallowly, without reading unrelated fields, and calls `waitUntil` with its original receiver.
 
-Declaration and measurement queries each settle through `runComparisonTier` at their own query owner, so the page's tiers are observable without a page-level state mirror. Each settlement emits `comparison.tier.settled` with fixed `operation` (`declarations` or `measurements`), `outcome`, `retainedData` (whether the query already held data when its request started), and a decimal-string `durationMs`. A rejection records `failure`, or `cancelled` when its signal aborted, and rethrows the original error. Measurement `partial` means advisory, tarball, or bundle evidence was unavailable. Declarations have no `partial` outcome. A throwing outcome classifier omits only the outcome field; it never changes the query result.
+OTLP instrumentation scopes identify the library (`effect`), separately from the reviewed `service.name` resource identity. Shared decoding and native-batch projection accept only that scope and remove scope versions and attributes. Browser ingress forces the browser resource identity but preserves the validated instrumentation scope.
 
-[The subscription owner](../../app/composables/briefingSubscription.ts) deduplicates queued/running transitions and distinguishes terminal, timeout, malformed frame, transport/disconnection exhaustion, and navigation cancellation; reconnect remains read-only and cancellation is not an error alert. All instrumentation is guarded so classifier, formatter, and exporter failure cannot replace application results.
+`briefing.job.settled` means the terminal state was successfully saved. Recovery lookups do not claim settlement. Dispatch and Queue events (`briefing.dispatch.decision`, `briefing.queue.decision`) explain attempts and acknowledgment/retry decisions; they do not change stale-writer protection or work ownership.
+
+When telemetry is enabled, browser failure capture covers Vue/app/chunk errors, uncaught exceptions, and promise rejections. A Faro Web SDK integration sends these through the app telemetry runtime. Nuxt captures SSR render and Nitro handler errors under `can-i-update-nuxt`.
+
+All captured failures first pass through `shared/telemetry/telemetryError.ts`. It allows reviewed error types, source names, and code-file-only stack locations. Exception messages are never exported. Server capture excludes telemetry-ingress recursion, expected outcomes below HTTP 500, and aborted requests. Turning telemetry off or losing its destination never changes application outcomes.
+
+Package search and metadata requests sample 10% of successes. Failures are never sampled out; typing aborts are silent. Records include `outcome`, fixed failure `reason` / `statusClass`, duration, and bounded `resultCount` buckets, never query text or payloads.
+
+Comparison navigation records success, cancellation, ignored repeat submission, invalid input, or navigation failure. It excludes route and rejected form values. Package identity is attached only when the submitted package matches resolved metadata. Diagnostic failures cannot change query results, rejections, debounce, caching, enablement, or navigation return/rethrow behavior.
+
+The generation acceptance trace root ends at acceptance. Later provider execution uses persisted context to become its child. Submission server spans link to that independent root when joining queued/running work.
+
+Identity rules are strict:
+
+- `comparison.package.name` holds validated public package identity. `comparison.version.from` / `comparison.version.to` hold resolved releases.
+- Identity is attached only after registry resolution. The page root has operation context only; failed lookups have no package/version identity.
+- Nuxt takes identity from its trusted evidence packet, never requested selectors. Generation records use their own persisted packet.
+- These attributes are not resource identities or metric labels.
+- Export excludes provider bodies, credentials, prompts, evidence packets, full URLs, and raw exception text.
+
+Missing telemetry does not prove an operation never ran. Query exported records in the Grafana UI.
+
+Declaration and measurement queries each report completion through `runComparisonTier` at their query owner. The page does not keep a duplicate tier-state model. Each emits `comparison.tier.settled` with:
+
+- Fixed `operation`: `declarations` or `measurements`.
+- `outcome`.
+- `retainedData`: whether the query already held data when its request started.
+- Decimal-string `durationMs`.
+
+A rejected request records `failure`, or `cancelled` if its signal aborted, then rethrows the original error. Measurement `partial` means advisory, tarball, or bundle evidence was unavailable. Declarations have no `partial` outcome. If outcome classification throws, only the outcome field is omitted; the query result does not change.
+
+[The subscription owner](../../app/composables/briefingSubscription.ts) reports queued/running transitions without duplicates. It distinguishes terminal results, timeout, malformed frames, exhausted transport/disconnection attempts, and navigation cancellation. Reconnect is read-only; cancellation is not an error alert. Classifier, formatter, and exporter failures cannot replace application results.
 
 ## Public comparison contracts
 
-All three routes decode the package name and trim nonempty `from`/`to` inputs, each bounded to 256 characters. The registry resolves inputs such as tags to manifest versions. The page passes the returned exact versions to its later-tier queries; the routes themselves share parameter validation rather than requiring browser inputs to be exact versions.
+All comparison routes validate the package name and trim the nonempty `from`/`to` inputs. Each input is limited to 256 characters. The registry resolves selectors, such as tags, to manifest versions.
 
-| Route                                                                    | Result and boundary                                                                                                                                                                                                      |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /api/package/{encodedPackageName}/compare?from=…&to=…`              | Resolved manifests and declaration comparison: dependencies, peers, Node requirement, module/export/type declarations, licenses, install scripts. No evidence binding, GitHub request, archive inspection, or inference. |
-| `GET /api/package/{encodedPackageName}/compare/measurements?from=…&to=…` | Size/advisory comparison and per-version evidence, including compact tarball summaries. Uses the private evidence backend; no per-file inventory or changelog bodies reach this response.                                |
-| `GET /api/package/{encodedPackageName}/compare/briefing?from=…&to=…`     | Read-only stored-result lookup by the server-built evidence hash. Returns `missing` or validated `available`; it never reads or mutates a job, enqueues work, or generates. Errors are sanitized service failures.       |
-| `POST /api/package/{encodedPackageName}/compare/briefing?from=…&to=…`    | Builds evidence server-side and submits it privately. Returns `200` with a stored briefing, `202` with pending job identity/socket information, or a sanitized refusal. Can initiate paid generation; it is not a read.  |
+The page uses those exact returned versions for later queries. The routes share parameter validation; they do not require browser inputs to already be exact versions.
+
+| Route                                                                    | Result and boundary                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/package/{encodedPackageName}/compare?from=…&to=…`              | Resolves manifests and compares declarations: dependencies, peers, Node requirements, modules/exports/types, licenses, and install scripts. No evidence binding, GitHub calls, archive inspection, or inference.     |
+| `GET /api/package/{encodedPackageName}/compare/measurements?from=…&to=…` | Returns size/advisory comparisons and per-version evidence, including compact tarball summaries. Uses the private evidence backend. Excludes per-file inventories and changelog bodies.                              |
+| `GET /api/package/{encodedPackageName}/compare/briefing?from=…&to=…`     | Looks up a stored result using the server-built evidence hash. Returns `missing` or validated `available`. Never reads/changes a job, enqueues work, or generates. Failures are sanitized service errors.            |
+| `POST /api/package/{encodedPackageName}/compare/briefing?from=…&to=…`    | Builds evidence on the server and submits it privately. Returns `200` with a stored briefing, `202` with pending job identity/socket details, or a sanitized refusal. Can start paid generation; this is not a read. |
 
 Sources: [collection and validation](../../server/comparison/collect.ts), [declaration comparator](../../server/comparison/declarations/compare.ts), [measurement comparator](../../server/comparison/measurements/compare.ts), [declarations route](../../server/api/package/[packageName]/compare/index.get.ts), [measurements route](../../server/api/package/[packageName]/compare/measurements/index.get.ts), [stored-briefing read route](../../server/api/package/[packageName]/compare/briefing/index.get.ts), [briefing submission route](../../server/api/package/[packageName]/compare/briefing/index.post.ts), and [evidence client boundary](../../server/api/package/[packageName]/compare/_internals/evidenceClient.ts).
 
-The browser supplies only package/version selectors, never trusted comparison facts. Measurements responses are decoded against the complete shared response schema, checked against the requested package/versions, and reject excess fields, including archive inventories. Briefing packets and service responses are likewise schema-decoded. Missing bindings, transport failures, upstream failures, or protocol violations become sanitized service failures rather than falling back to frontend collection or generation.
+The browser supplies only package/version selectors, never trusted comparison facts. Measurement responses must pass the complete shared schema, match the requested package/versions, and contain no extra fields, including archive inventories. Briefing packets and service responses also pass schema validation.
+
+Missing bindings, transport or upstream failures, and protocol violations become sanitized service failures. There is no fallback to browser-side collection or generation.
 
 ### Public request and new-generation protection
 
-The [public middleware](../../server/middleware/rateLimit.ts) checks Cloudflare's built-in `PUBLIC_RATE_LIMITER` for every request reaching Nitro, before its handler runs. The initial allowance is 60 requests per 60 seconds per network address, shared across pages, APIs (including health and telemetry), and unmatched paths. A single incoming SSR request is admitted once, including its internal API fetches. Static assets and cached responses served by Cloudflare without invoking Nitro remain outside this check; Worker-first asset routing is not enabled.
+The [public middleware](../../server/middleware/rateLimit.ts) checks Cloudflare's built-in `PUBLIC_RATE_LIMITER` before handling every request that reaches Nitro. The initial allowance is 60 requests per 60 seconds per network address. Pages, APIs (including health and telemetry), and unmatched paths share it.
 
-The stricter `BRIEFING_GENERATION_LIMITER` initially allows three new generations per 60 seconds. The job owner checks it inside the acceptance lock, only after D1 reuse and queued/running reuse. A denied attempt does not create or advance a job or dispatch work. Explicit retries that create another generation count again; socket observation, Queue delivery, D1 reads and pending joins do not.
+An incoming server-rendered (SSR) request is admitted once, including its internal API fetches. Static assets and cached responses served by Cloudflare without Nitro are outside this check. Worker-first asset routing is not enabled.
 
-Nuxt derives a transient SHA-256 key from `CF-Connecting-IP` on Nitro's original Cloudflare request, not browser body/query/forwarded identity or an SSR-local request. It passes the strictly schema-decoded key only over the private submission RPC and job RPC. The key is not evidence identity, authentication, or anonymization; it is never included in persisted packets/jobs, Queue messages, provider requests, responses or telemetry. Missing address metadata shares an unidentified bucket rather than selecting an arbitrary caller identity. Local Node development is not a trusted ingress.
+The stricter `BRIEFING_GENERATION_LIMITER` initially allows three new generations per 60 seconds. The job owner checks it under the acceptance lock, after checking D1 and reusing queued/running work. A refusal creates or advances no job and dispatches no work. Explicit retries that create another generation count again. Socket observation, Queue delivery, D1 reads, and pending joins do not.
 
-Refusals return sanitized `429`, `Retry-After: 60`, `no-store`, and structured `data.code` (`request-rate-limited` or `generation-rate-limited`) with `retryAfter: 60`. This is conservative retry advice, not a reset-time guarantee. Binding failure fails closed with sanitized `503`. Browser requests disable transport/query retries for 429, reconnect refetch and retry-on-mount; manual retry controls recover comparison, measurements and notes independently. The existing single briefing retry after 503 remains bounded.
+Nuxt hashes `CF-Connecting-IP` with SHA-256 to make a temporary caller key. It reads the address from Nitro's original Cloudflare request, not browser body/query/forwarded identity or an SSR-local request. Only private submission and job RPCs receive the strictly schema-validated key.
 
-Cloudflare's [limiter](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) is approximate, eventually consistent and per location. This site has no accounts, so shared-IP households, offices, carrier NAT and proxies share allowances; rotating addresses/locations can evade them. Limits reduce abuse, not global spend: retain provider-side spend limits. See [the decision](adrs/cloudflare-rate-limiting.md) and [configuration](ops/deployment.md#rate-limit-configuration).
+The key is not evidence identity, authentication, or anonymization. It never enters saved packets/jobs, Queue messages, provider requests, responses, or telemetry. Requests without address metadata share an unidentified bucket; they cannot choose another identity. Local Node development is not trusted ingress.
+
+Refusals return sanitized `429`, `Retry-After: 60`, `no-store`, and structured `data.code` (`request-rate-limited` or `generation-rate-limited`) with `retryAfter: 60`. This is conservative retry advice, not a guaranteed reset time. A failed limiter binding fails closed with sanitized `503`.
+
+Browser requests disable transport/query retries for 429, reconnect refetch, and retry-on-mount. Manual retry controls recover comparison, measurements, and notes separately. The existing single briefing retry after 503 stays bounded.
+
+Cloudflare's [limiter](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) is approximate, eventually consistent, and per location. With no accounts, people sharing an IP—households, offices, carrier NAT, or proxies—share allowances. Rotating addresses/locations can evade them.
+
+These limits reduce abuse; they are not a global spending cap. Keep provider-side spend limits. See [the decision](adrs/cloudflare-rate-limiting.md) and [configuration](ops/deployment.md#rate-limit-configuration).
 
 ## Declaration comparison invariants
 
-The [declaration comparator](../../server/comparison/declarations/compare.ts) runs on resolved manifest declarations without extra I/O or executing package code. Direction is the requested `from` → `to`; identical versions and downgrades do not take a separate approval path.
+The [declaration comparator](../../server/comparison/declarations/compare.ts) compares the resolved manifests without extra I/O or running package code. It follows the requested `from` → `to` direction. Identical versions and downgrades do not have a separate approval path.
 
-- Dependency changes cover runtime and optional requirements, not dev dependencies. Optional requirements override same-name runtime declarations; a category move is one change. Peers are separate and include required/optional transitions.
-- Declaration maps emit sorted differences. Scalar/composite results retain before/after values and `changed`; presence flags distinguish an absent declaration from explicit JSON `null`.
-- Conditional export/type mapping order is preserved because precedence matters. These are declaration comparisons, not semantic API tests or proof that imports work.
-- Node range changes are textual declaration changes, not range-containment analysis. License changes are facts, not legal advice. Install scripts cover explicit lifecycle commands, not inferred execution behavior.
+- Dependencies include runtime and optional requirements, not dev dependencies. An optional requirement overrides a same-name runtime declaration. Moving between categories counts as one change.
+- Peer dependencies are separate and include required/optional transitions.
+- Declaration maps return sorted differences. Scalar/composite results keep before/after values and `changed`. Presence flags distinguish a missing declaration from explicit JSON `null`.
+- Conditional export/type mapping order is preserved because order controls precedence. This does not test the semantic API or prove imports work.
+- Node range changes compare declaration text, not whether one range contains another.
+- License changes are facts, not legal advice. Install-script results cover explicit lifecycle commands, not inferred execution behavior.
 
-These rules explain the factual contract; [product limitations](../product/meaning-and-limitations.md) defines what consumers may conclude from it.
+These are factual comparison rules. [Product limitations](../product/meaning-and-limitations.md) explains what readers may conclude from them.
 
 ## Loading sequence
 
-[Page orchestration](../../app/composables/useComparisonPage.ts) creates all reactive queries before awaiting the server declarations prefetch. The [homepage](../../app/pages/index.vue) may stream, but [Nuxt configuration](../../nuxt.config.ts) disables streaming on non-root routes so comparison SSR can finish its optional stored-result and measurements reads before setting response headers. The package description arrives with declaration rows. Crawler user agents are excluded by Nuxt.
+[Page orchestration](../../app/composables/useComparisonPage.ts) creates all reactive queries before awaiting the server's declaration prefetch. The [homepage](../../app/pages/index.vue) may stream HTML as it renders. [Nuxt configuration](../../nuxt.config.ts) disables streaming on non-root routes so comparison SSR can finish optional stored-result and measurement reads before setting headers.
+
+The package description arrives with declaration rows. Crawler user agents are excluded by Nuxt.
 
 ```mermaid
 sequenceDiagram
@@ -140,45 +219,59 @@ sequenceDiagram
   end
 ```
 
-On a stored-result miss, measurements and briefing remain **parallel client queries after declarations**, not a serial measurements-then-AI pipeline. A stored success instead seeds the existing briefing query during SSR and prefetches measurements; it never submits or generates. Briefing independently gathers its own complete server-side evidence; it does not consume the browser's measurements response. Shared evidence cache misses may coalesce in the backend. Opening the notes panel does not trigger generation: the client briefing query is enabled automatically for a resolved comparison.
+After declarations, a stored-result miss leaves measurements and briefing as **parallel client queries**. Measurements do not have to finish before AI notes begin. A stored success instead fills the existing briefing query during SSR and prefetches measurements. SSR never submits or generates a briefing.
 
-SSR-prefetched query data is dehydrated by the [Vue Query plugin](../../app/plugins/vue-query.ts) and hydrated in the browser. Declarations always prefetch on SSR. The server checks for a stored briefing but only seeds the query on a validated D1 hit; it fetches measurements only for that hit. Missing results and evidence/storage failures leave the browser's existing POST flow intact, and failed SSR measurement state is removed rather than dehydrated.
+Briefing gathers its own complete server-side evidence; it does not use the browser's measurement response. The backend may share matching evidence work already in progress. Opening the notes panel does not trigger generation: the client briefing query turns on automatically once the comparison is resolved.
+
+The [Vue Query plugin](../../app/plugins/vue-query.ts) serializes SSR-prefetched data into the page and restores it in the browser (dehydration/hydration). Declarations always prefetch during SSR. The server seeds the briefing query only on a validated D1 hit and fetches measurements only for that hit.
+
+Missing results and evidence/storage failures leave the browser's existing POST flow in place. Failed SSR measurement state is removed rather than sent to the browser.
 
 ## Edge response caching
 
-The homepage is rendered at runtime rather than prerendered, so its canonical and social URLs use the deployed Worker's `NUXT_PUBLIC_SITE_URL`. The same frontend build can serve different environments without embedding their origins; the Nitro response policy supplies the homepage's cache headers.
+The homepage renders at runtime, not at build time. Its canonical and social URLs use the deployed Worker's `NUXT_PUBLIC_SITE_URL`, so one frontend build can serve different environments without embedding their origins. Nitro's response policy supplies its cache headers.
 
-The [response policy](../../server/plugins/responseCache.ts) caches only successful GET HTML handled by Nitro: `/`, `/privacy`, and `/about` receive a one-year Cloudflare edge TTL, and a comparison page receives 12 hours only after SSR has hydrated a validated stored briefing and successful measurements. `Cache-Control: no-cache` makes browsers revalidate; Cloudflare's CDN-specific header carries the edge TTL with `must-revalidate` to prevent stale serving beyond expiry. Misses, pending/failed briefings, evidence/storage errors, other routes, APIs, and non-HTML responses use `no-store`. Comparison routes disable SSR streaming so the eligibility decision and headers are final before the response starts.
+The [response policy](../../server/plugins/responseCache.ts) caches only successful GET HTML handled by Nitro:
 
-The [frontend Wrangler config](../../wrangler.jsonc) enables native Workers Cache for hosted `env.stage` (stage) and `env.production`. Cross-version sharing stays disabled, so each hosted environment starts with a cold Worker-version cache; platform eviction can expire an entry sooner, so the one-year home, privacy, and about TTLs are not guarantees of retention until deploy. The homepage, privacy, about, and comparison HTML are public and identical for every visitor; stage remains behind Cloudflare Access, while production is public. Local built dev does not enable this cache.
+- `/`, `/privacy`, and `/about`: one-year Cloudflare edge time-to-live (TTL).
+- Comparison pages: 12 hours, only after SSR has hydrated a validated stored briefing and successful measurements.
+- Misses, pending/failed briefings, evidence/storage errors, other routes, APIs, and non-HTML responses: `no-store`.
+
+`Cache-Control: no-cache` makes browsers revalidate. Cloudflare's CDN-specific header sets the edge TTL and uses `must-revalidate` to prevent stale serving after expiry. Comparison routes disable SSR streaming so this decision and its headers are final before the response starts.
+
+The [frontend Wrangler config](../../wrangler.jsonc) enables native Workers Cache for hosted `env.stage` (stage) and `env.production`. Cross-version sharing is off: each hosted environment starts with a cold Worker-version cache. Cloudflare may evict entries sooner, so the one-year homepage, privacy, and about TTLs do not promise retention until deploy.
+
+Homepage, privacy, about, and comparison HTML are public content identical for every visitor. Stage remains behind Cloudflare Access; production is public. Local built dev does not enable this cache.
 
 ## Identity and freshness
 
 Three identities serve different purposes:
 
-- **Browser query:** tier, package, and selected versions. Declarations use the requested selectors; later tiers use resolved versions. Declaration, measurement, and briefing caches are separate.
-- **Evidence object:** package name. Provider-specific keys let evidence be reused across comparison pairs; cache lifetimes and integrity policies are detailed in [evidence architecture](evidence.md).
-- **Briefing job/result:** exact bounded evidence hash. Different users submitting identical evidence share work and stored results. The same version pair with changed evidence can produce a different hash; see [briefing identity and spending controls](briefing.md).
+- **Browser query:** tier, package, and selected versions. Declarations use requested selectors; later tiers use resolved versions. Each tier has a separate cache.
+- **Evidence object:** package name. Provider-specific keys allow reuse across version pairs. [Evidence architecture](evidence.md) explains lifetimes and integrity rules.
+- **Briefing job/result:** the hash of the exact bounded evidence packet. Identical evidence shares work and stored results across users. Changed evidence can give the same version pair a different hash; see [briefing identity and spending controls](briefing.md).
 
-[Declarations](../../app/composables/packageComparisonQueryOptions.ts), [measurements](../../app/composables/packageMeasurementsQueryOptions.ts), and [briefing](../../app/composables/packageBriefingQueryOptions.ts) use a 60-second browser stale time, five-minute client garbage-collection time, no window-focus refetch, and no query-level automatic retries. The briefing query has its own narrowly scoped submission retry and socket reconnect policy, described in its subsystem document.
+[Declarations](../../app/composables/packageComparisonQueryOptions.ts), [measurements](../../app/composables/packageMeasurementsQueryOptions.ts), and [briefing](../../app/composables/packageBriefingQueryOptions.ts) use the same browser cache settings: data becomes stale after 60 seconds; unused client data is garbage-collected after five minutes. Window focus does not refetch, and query-level automatic retries are off. Briefing has its own narrow submission retry and socket reconnect policy, described in its guide.
 
-The public declarations route passes no persistent evidence-cache service to its collector. The backend later resolves manifests again through its own cache. Exact versions stabilize the selected releases, **not an atomic snapshot of all mutable provider evidence across routes**. Independent requests, provider freshness, and retained browser data can differ. Provider failures remain explicit uncertainty rather than zero measurements or a no-advisory conclusion.
+The public declarations route gives its collector no persistent evidence-cache service. The backend later resolves manifests again using its own cache. Exact versions stabilize the selected releases, **not one atomic snapshot of all changing provider evidence across routes**.
+
+Separate requests, provider freshness, and retained browser data can differ. Provider failures remain explicit uncertainty, not zero measurements or a conclusion that no advisories exist.
 
 ## Failure, cancellation, and recovery boundaries
 
-| Path                                                                                    | Current behavior                                                                                                                                                                                                              | What remains usable                                                                                                                                                                                                  |
-| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Invalid selectors or registry/declarations failure                                      | Validation or collection rejects. Failed SSR prefetch is removed; the browser gets its own attempt. A client declaration error renders the comparison error surface. Without resolved data, later-tier queries stay disabled. | Route-only shell; no invented comparison facts.                                                                                                                                                                      |
-| One measurement provider is unavailable or incomplete                                   | Collector retains unrelated evidence and returns coverage/status/reasons where possible.                                                                                                                                      | Declarations and other successful measurements; no inference of a fix from incomplete advisory coverage.                                                                                                             |
-| Measurements binding/backend/protocol failure                                           | Public measurements route returns sanitized `503`. Without cached data, affected UI becomes unavailable.                                                                                                                      | Declarations; briefing can succeed independently if its own collection succeeds.                                                                                                                                     |
-| Measurement refetch fails after data was cached                                         | Cached measurements remain renderable; unavailable is only set for an error without data.                                                                                                                                     | Previously fetched measurements, not a guarantee of fresh evidence.                                                                                                                                                  |
-| Evidence backend unavailable for briefing                                               | Submission cannot build a packet and fails; there is no frontend fallback.                                                                                                                                                    | Declarations and any already-returned measurements. A shared evidence outage can affect both later tiers.                                                                                                            |
-| Briefing refusal, generation/storage failure, invalid stream, or exhausted subscription | Notes become unavailable or the briefing query errors. Exact recovery/retry paths are in [briefing architecture](briefing.md).                                                                                                | Factual comparison; inference is never required to render it.                                                                                                                                                        |
-| Browser changes comparison or unmounts                                                  | When the last query observer detaches, its abort signal cancels the client fetch/subscription; a new comparison key owns separate query/status state.                                                                         | No application cancellation path stops shared evidence work when one browser leaves; runtime disconnect behavior is not specified by the evidence handlers. Accepted briefing jobs have their own durable lifecycle. |
-| Socket disconnect                                                                       | Browser reconnects to read the job snapshot within bounded attempts and one subscription deadline; it does not POST again just to reconnect.                                                                                  | Durable job and results can outlive the subscriber.                                                                                                                                                                  |
+| Path                                                                                    | Current behavior                                                                                                                                                                          | What remains usable                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Invalid selectors or registry/declarations failure                                      | Validation or collection fails. Failed SSR prefetch is removed so the browser can try. Client failure shows the comparison error view. Later queries stay disabled without resolved data. | Route-only shell, with no invented facts.                                                                                                                                                           |
+| One measurement provider unavailable/incomplete                                         | Keeps unrelated evidence and reports coverage/status/reasons where possible.                                                                                                              | Declarations and successful measurements. Incomplete advisory coverage does not prove a fix.                                                                                                        |
+| Measurements binding/backend/protocol failure                                           | Returns sanitized `503`. With no cached data, the affected UI is unavailable.                                                                                                             | Declarations. Briefing may still succeed if its own collection succeeds.                                                                                                                            |
+| Measurement refetch fails with cached data                                              | Keeps cached measurements visible. Unavailable is set only for an error without data.                                                                                                     | Previously fetched measurements, without a freshness guarantee.                                                                                                                                     |
+| Evidence backend unavailable for briefing                                               | Cannot build a packet; submission fails. No browser fallback.                                                                                                                             | Declarations and measurements already returned. A shared evidence outage can affect both later tiers.                                                                                               |
+| Briefing refusal, generation/storage failure, invalid stream, or exhausted subscription | Notes become unavailable or the query errors. See recovery/retry rules in [briefing architecture](briefing.md).                                                                           | Factual comparison; rendering never requires inference.                                                                                                                                             |
+| Browser changes comparison or unmounts                                                  | When the last query observer leaves, its abort signal cancels the client fetch/subscription. A new key owns separate query/status state.                                                  | No app cancellation path stops shared evidence work when one browser leaves. Evidence handlers do not specify runtime disconnect behavior. Accepted briefing jobs have their own durable lifecycle. |
+| Socket disconnect                                                                       | Reconnects to read a snapshot within bounded attempts and one deadline. Does not POST just to reconnect.                                                                                  | Durable jobs and results can outlive the subscriber.                                                                                                                                                |
 
-Sources: [page orchestration](../../app/composables/useComparisonPage.ts), [comparison rendering](../../app/components/comparison/ComparisonDetails.vue), [query cancellation/subscription](../../app/composables/packageBriefingQueryOptions.ts), and the linked subsystem documents. Provider/storage/admission failures and job recovery are expanded there rather than duplicated here.
+Sources: [page orchestration](../../app/composables/useComparisonPage.ts), [comparison rendering](../../app/components/comparison/ComparisonDetails.vue), [query cancellation/subscription](../../app/composables/packageBriefingQueryOptions.ts), and the linked subsystem guides. Those guides expand provider, storage, capacity, and job-recovery failures.
 
-Independence means declarations do not call the evidence service or AI provider, and notes do not gate factual rendering. It does **not** imply all tiers have isolated account resources: measurements and briefing share an evidence backend, and admission limits are not account-wide guarantees.
+Independence means declarations do not call the evidence service or AI provider, and notes never block factual rendering. It does **not** mean each tier has isolated account resources. Measurements and briefing share an evidence backend; capacity limits are not account-wide guarantees.
 
-Hash-based coalescing and result reuse are a local duplicate-spend control: multiple users do not each buy the same successful evidence snapshot. They are not a fixed monetary budget. The external OpenRouter budget is the separate spending cap when that provider is used; the application does not implement an account-wide budget of its own.
+Sharing work by hash and reusing stored results avoids duplicate spending on the same successful evidence snapshot. It is not a fixed monetary budget. When OpenRouter is used, its external budget is the separate spending cap. The application has no account-wide budget of its own.

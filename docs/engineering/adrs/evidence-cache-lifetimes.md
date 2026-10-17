@@ -1,19 +1,21 @@
 # Evidence cache lifetimes
 
-**Decision:** Cache mutable provider evidence for five minutes. Retain successful or partial verified archive inspections without expiry, keyed by integrity policy and inspector revision. Do not persist failed provider results or transiently failed partial results.
+**Decision:** Cache provider evidence that can change for five minutes. Keep successful or partial verified archive inspections without expiry. Their keys include the integrity policy and inspector revision. Do not store failed provider results or partial results affected by temporary failures.
 
 ## Why
 
-Repeated comparisons should reuse collected evidence rather than repeat external requests and archive inspection. Five minutes is the owner's chosen reasonable freshness window, not a measured optimum. Verified archive content can be reused while its integrity policy and inspection semantics remain the same.
+Repeated comparisons should reuse collected evidence rather than repeat external requests and archive inspections. The owner chose five minutes as a reasonable freshness window; it is not a measured optimum.
+
+Verified archive content can be reused while its integrity policy and inspection rules stay the same.
 
 ## Costs and limits
 
-- Advisories and release evidence can change for existing versions without a new npm release. The mutable cache can delay those changes by its freshness window; browser caching is a separate layer.
-- The cache lives in Durable Object SQLite. TTL is a freshness policy, not a memory or storage cap; expired mutable entries are cleaned up on cache access.
-- Archive inspections accumulate indefinitely. There is no archive eviction policy, and reuse is within a package's object, not global across packages.
-- Failed results are not preserved, so later requests can repeat unsuccessful external work.
+- Advisories and release evidence can change for existing versions without a new npm release. The mutable cache can delay those changes by its freshness window. Browser caching is a separate layer.
+- The cache lives in Durable Object SQLite. TTL (time to live) controls freshness, not memory or storage size. Expired mutable entries are cleaned up when the cache is accessed.
+- Archive inspections accumulate indefinitely; there is no eviction policy. Reuse is limited to a package's object, not shared across packages.
+- Failed results are not kept, so later requests can repeat unsuccessful external work.
 
-Reconsider the policy if freshness requirements or observed storage/workload costs change. A changed inspector revision already gives archive inspections new keys.
+Reconsider if freshness requirements or observed storage/workload costs change. Changing the inspector revision already gives archive inspections new keys.
 
 ## Artifacts
 

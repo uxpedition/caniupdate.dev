@@ -10,7 +10,7 @@ Build shared understanding of one engineering topic and produce the output the u
 
 ## Required composition
 
-Load `grilling` using the runtime's skill mechanism (or read `../grilling/SKILL.md`), then read [OUTPUTS.md](OUTPUTS.md) for the selected output mode. Before choosing a repository artifact destination, read [docs/CONTEXT.md](../../../docs/CONTEXT.md): current-system documents live directly under `docs/engineering/`, ADRs under `docs/engineering/adrs/`, engineering proposals under `docs/engineering/rfcs/`, and development, deployment, release, and recovery procedures under `docs/engineering/ops/`. AI idea briefs, specs, plans, and execution checklists belong in an OS-temporary working directory outside the repository and are never committed. Retired published reports are deleted, with history retained in Git. Invoke skills by loading their instructions; do not assume a tool literally named `Skill` exists.
+Load `grilling` using the runtime's skill mechanism (or read `../grilling/SKILL.md`), then read [OUTPUTS.md](OUTPUTS.md) for the selected output mode. Before choosing a repository artifact destination, read [docs/CONTEXT.md](../../../docs/CONTEXT.md): current-system documents live directly under `docs/engineering/`, ADRs under `docs/engineering/adrs/`, and development, deployment, release, and recovery procedures under `docs/engineering/ops/`. Discuss proposals in issues and review implementations in merge requests, with authorization before publication. AI idea briefs, specs, plans, and execution checklists belong in an OS-temporary working directory outside the repository and are never committed. Retired published reports are deleted, with history retained in Git. Invoke skills by loading their instructions; do not assume a tool literally named `Skill` exists.
 
 Use `grilling` for intent hypotheses, its decision tree, dependency-ready rounds, separation of retrievable facts from user decisions, and explicit-confirmation gate. **This wrapper bounds the tree to the confirmed slice and replaces automatic engineering recommendations with the invitation policy below; independent frontier questions still appear together.** Facts are the agent's work; use available tools and delegate only when the runtime and task warrant it.
 
@@ -29,7 +29,7 @@ Resolve enough ambiguity to select a slice, not every ambiguity in the project. 
 Present a brief for confirmation before substantive interviewing:
 
 - **Topic:** the question this session answers.
-- **Output:** explanation, PRD, issue, system documentation, design, RFC, or ADR.
+- **Output:** explanation, PRD, issue, system documentation, design, or ADR.
 - **Boundary:** included concerns and explicitly deferred topics.
 - **Endpoint:** what understanding or decisions make this slice ready to draft.
 
@@ -55,4 +55,4 @@ Get review before writing or publishing artifacts unless explicitly authorized a
 - Attaching recommended answers by habit after loading `grilling`.
 - Treating every discovered concern as a required branch.
 - Generating all artifact types instead of the selected output.
-- Treating a proposal or accepted RFC as current implementation.
+- Treating an agreed proposal as current implementation.

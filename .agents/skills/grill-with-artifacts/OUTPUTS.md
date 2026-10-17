@@ -1,6 +1,6 @@
 # Output guidance
 
-Read the selected mode before the engineering interview. Follow existing repository templates and naming conventions for PRDs, issues, and designs. For system documentation, use the structure below unless the user explicitly chooses another. Choose destinations from actual repository context; do not create an entire directory tree upfront.
+Read the selected mode before the engineering interview. Follow existing repository templates for PRDs and issues. Keep design exploration in the conversation or temporary working material; use issues and merge requests for lasting proposal review. For system documentation, use the structure below unless the user explicitly chooses another. Choose destinations from actual repository context; do not create an entire directory tree upfront.
 
 ## Evidence and ownership — every mode
 
@@ -17,7 +17,7 @@ For an interview, reach the agreed endpoint, obtain `grilling`'s explicit yes, d
 
 Draft from established material. Show the proposed destination and request review before writing or migrating files, posting issues, or publishing documents. Explicit permission to write a settled artifact is sufficient; unresolved content must remain labelled rather than filled with invented answers. An interview does not authorize code changes.
 
-AI idea briefs, specs, plans, and execution checklists are temporary working material, stored outside the repository in the task's named OS-temporary working directory and never committed. They may cache commands and context for execution. A durable RFC, ADR, product requirement, issue, or current-system document is a separately authorized publication: extract the important proposal, decision, requirement, or implemented knowledge into the repository's maintained format rather than committing the working artifact. Temporary design exploration is not automatically an RFC.
+AI idea briefs, specs, plans, and execution checklists are temporary working material, stored outside the repository in the task's named OS-temporary working directory and never committed. They may cache commands and context for execution. An ADR, product requirement, issue, merge request, or current-system document is a separately authorized publication: extract the lasting decision, requirement, or implemented knowledge rather than committing the working artifact. Discuss proposals in issues and review implementations in merge requests. Temporary design exploration does not automatically require publication.
 
 ## Quick routing
 
@@ -27,11 +27,11 @@ AI idea briefs, specs, plans, and execution checklists are temporary working mat
 | Define a product change                 | PRD                  | Repository's PRD format                          |
 | Specify actionable work                 | Issue                | Repository issue template or in-chat issue draft |
 | Explain the current system              | System documentation | Relevant document under `docs/`                  |
-| Work out an engineering solution        | Design               | Repository's design format                       |
-| Propose a change for discussion         | RFC                  | `docs/engineering/rfcs/`                         |
+| Work out an engineering solution        | Design               | In-chat or OS-temporary design                   |
+| Propose a change for discussion         | Issue                | Issue discussion or in-chat issue draft          |
 | Preserve a settled significant decision | ADR                  | `docs/engineering/adrs/`                         |
 
-Intent determines the mode, not request size. One session has one primary output. Related artifacts can be linked or parked as later work; do not automatically turn a PRD into an issue backlog, RFC, and ADR.
+Intent determines the mode, not request size. One session has one primary output. Related artifacts can be linked or parked as later work; do not automatically turn a PRD into an issue backlog and ADR.
 
 ## Explanation
 
@@ -74,7 +74,6 @@ docs/
     <document-name>.md    How does the implemented system work now?
     adrs/<adr-name>.md    What significant decisions were made, and why?
     ops/                  How do I run, deploy, diagnose, and recover it?
-    rfcs/                 What engineering changes are proposed for discussion?
 
 OS temporary directory    AI idea briefs, specs, plans, and execution checklists; never committed
 ```
@@ -83,21 +82,13 @@ Read [docs/CONTEXT.md](../../../docs/CONTEXT.md) before choosing destinations. I
 
 Inspect relevant existing docs and notes before drafting. Classify sections, not only files: a document can mix current instructions, old plans, and useful rationale. Present source, status (current, superseded, mixed, or unverified), and proposed destination for material affected by the session. Do not inventory the whole repository for a narrowly scoped topic.
 
-Document behaviour, rationale where supported, limitations, and open questions. Create only useful documents. README remains an introduction and quick start, not a duplicate architecture manual. ADRs and RFCs preserve historical decisions and proposals; all other published documentation is living guidance updated as behavior and procedures change. Do not append obsolete commands or investigation logs to current-system or operations documents.
+Document behaviour, rationale where supported, limitations, and open questions. Create only useful documents. README remains an introduction and quick start, not a duplicate architecture manual. ADRs preserve decision history; issues and merge requests retain proposal and implementation discussions. All other published documentation is living guidance updated as behavior and procedures change. Do not append obsolete commands or investigation logs to current-system or operations documents.
 
-Migrate only after replacement content is approved. Update affected links and remove competing current guidance. Retain context needed to understand current decisions in the relevant documents, labelled as historical where appropriate; delete retired reports and redundant execution material. Git preserves their history; do not create an archive copy. Keep AI working artifacts in the task's OS-temporary directory outside the repository; never commit them. Extract proposals needing durable review into `docs/engineering/rfcs/`, leaving execution checklists temporary. Implementation problems discovered during documentation are findings, not permission to fix code.
+Migrate only after replacement content is approved. Update affected links and remove competing current guidance. Retain context needed to understand current decisions in the relevant documents, labelled as historical where appropriate; delete retired reports and redundant execution material. Git preserves their history; do not create an archive copy. Keep AI working artifacts in the task's OS-temporary directory outside the repository; never commit them. Proposals needing review belong in issues or merge requests, with separate publication authorization; execution checklists stay temporary. Implementation problems discovered during documentation are findings, not permission to fix code.
 
 ## Design
 
-Describe the selected engineering solution: problem, goals and non-goals, current constraints, relevant interfaces or data flow, alternatives and trade-offs, failure behaviour, verification, and unresolved decisions. Match the level of detail to the topic. A design is proposed behaviour until implementation evidence establishes otherwise. Do not start implementing it as a consequence of completing the interview.
-
-## RFC
-
-Use `docs/engineering/rfcs/` for proposals. Follow existing numbering; otherwise use `0001-short-proposal-title.md` and continue the sequence.
-
-Include status, motivation, goals and non-goals, proposed design, alternatives, trade-offs and risks, rollout or compatibility considerations where relevant, and open questions. Status progresses from draft to discussion and then accepted, rejected, or withdrawn through explicit decisions.
-
-Acceptance establishes agreement, not shipment. Keep rejected and withdrawn RFCs here with their status. Link resulting ADRs or current system docs when relevant, without automatically creating them.
+Describe the selected engineering solution: problem, goals and non-goals, current constraints, relevant interfaces or data flow, alternatives and trade-offs, failure behaviour, verification, and unresolved decisions. Match the level of detail to the topic. Use the conversation or temporary working material for exploration; proposals needing lasting discussion belong in an issue or merge request, not a separate proposal-document workflow. A design is proposed behaviour until implementation evidence establishes otherwise. Do not start implementing it as a consequence of completing the interview.
 
 ## ADR
 
@@ -105,11 +96,11 @@ Use `docs/engineering/adrs/` for settled decisions worth preserving. Every expen
 
 Use descriptive filenames matching the existing repository convention, such as `evidence-cache-lifetimes.md`; do not introduce numbering alongside the existing unnumbered records. Include status, context, decision, considered alternatives, consequences, and evidence or related links. State whether rationale is historical or a present-day explanation when that distinction matters. If the original reason is unknown, say so.
 
-An undecided proposal belongs in an RFC or design, not an accepted ADR. Keep superseded ADRs here, mark their status, and link the replacement. Current engineering documents describe the implemented system; an ADR preserves the decision even when the system later changes.
+An undecided proposal belongs in an issue or merge-request discussion, not an accepted ADR. Keep superseded ADRs here, mark their status, and link the replacement. Current engineering documents describe the implemented system; an ADR preserves the decision even when the system later changes.
 
 ## Examples
 
 - “Help me understand what a comparison establishes” → explanation; documentation only if requested. Verified evidence collection does not justify claiming compatibility.
 - “Define who needs comparison history and why” → PRD; do not turn the interview into a database-schema design.
-- “Propose changing the worker coordination model” → RFC; accepted does not mean implemented.
+- “Propose changing the worker coordination model” → issue discussion or an in-chat issue draft; agreement does not mean implemented.
 - “Record why we chose queue-based coordination yesterday” → ADR if the trade-off is significant; cite the user's account rather than claiming code proves their motivation.
