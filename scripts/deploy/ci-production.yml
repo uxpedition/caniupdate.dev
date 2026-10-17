@@ -1,0 +1,63 @@
+include:
+  - local: scripts/deploy/ci-bootstrap.yml
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "parent_pipeline" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true"
+    - when: never
+
+stages:
+  - deploy
+  - verify
+
+# production:delivery in the parent owns the production resource group through both browser checks.
+deploy:production:
+  stage: deploy
+  timeout: 15m
+  interruptible: false
+  needs:
+    - pipeline: '$PARENT_PIPELINE_ID'
+      job: build-smoke
+    - pipeline: '$PARENT_PIPELINE_ID'
+      job: release:tag
+      artifacts: true
+  environment:
+    name: production
+    url: https://caniupdate.dev
+    deployment_tier: production
+  variables:
+    CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false'
+    CLOUDFLARE_INCLUDE_PROCESS_ENV: 'false'
+  script:
+    - nub run deploy:production
+  artifacts:
+    when: always
+    access: maintainer
+    expire_in: 30 days
+    paths:
+      - .data/production-deployment/report.json
+      - .data/production-release/tag.json
+
+verify:production:
+  stage: verify
+  timeout: 10m
+  interruptible: false
+  needs:
+    - job: deploy:production
+      artifacts: true
+  parallel:
+    matrix:
+      - SMOKE_BROWSER: [chromium, firefox]
+  script:
+    - export SMOKE_EXPECTED_VERSION="$(node --input-type=module -e 'import{readFileSync}from"node:fs";process.stdout.write(JSON.parse(readFileSync(".data/production-release/tag.json","utf8")).version)')"
+    - node scripts/smoke-deployed/ci-run.ts
+  variables:
+    SMOKE_TARGET: production
+    SMOKE_EXPECTED_SHA: '$CI_COMMIT_SHA'
+  artifacts:
+    when: always
+    access: maintainer
+    expire_in: 30 days
+    name: 'production-$SMOKE_BROWSER-$CI_COMMIT_SHA'
+    paths:
+      - .data/deployed-verification/

@@ -7,7 +7,7 @@
   "workers_dev": false,
   "preview_urls": false,
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PackageEvidence"] }],
-  // Local-only default. Deploy the explicit stage environment before its frontend.
+  // Local-only default. Deploy an explicit remote environment before its frontend.
   "env": {
     "stage": {
       "name": "can-i-update-preview-evidence",
@@ -16,6 +16,19 @@
       "preview_urls": false,
       // Uncaught exceptions and console error records stay queryable; per-request invocation records are
       // disabled because their request metadata includes client IPs. Request URLs lose query strings too.
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "redact_query_string": true,
+        "logs": { "invocation_logs": false },
+      },
+    },
+    "production": {
+      "name": "can-i-update-production-evidence",
+      "account_id": "8a0be24aad326a55ba610b94b106be81",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [],
       "observability": {
         "enabled": true,
         "head_sampling_rate": 1,

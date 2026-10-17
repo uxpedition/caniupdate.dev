@@ -72,10 +72,19 @@ const waitForOpaqueSurface = (page: Page, selector: string): Effect.Effect<void,
 const verifyFooter = (page: Page, config: SmokeConfig): Effect.Effect<void, SmokeFailure> =>
   Effect.gen(function* () {
     const footer = page.locator('footer');
+    const production = config.target === 'production';
     const link = footer.getByRole('link', {
-      name: `View ${config.local ? 'dev' : 'stage'} commit ${config.expectedSha}`,
+      name: `View ${production ? 'release' : config.local ? 'dev' : 'stage'} commit ${config.expectedSha}`,
       exact: true,
     });
+
+    if (production) {
+      const version = config.expectedVersion;
+      if (version === null) return yield* Effect.fail(new SmokeFailure('footer-version'));
+      yield* playwrightCall('footer-version', () =>
+        footer.getByText(`v${version}`, { exact: true }).waitFor({ state: 'visible' }),
+      );
+    }
 
     yield* playwrightCall('browser-interaction', () => link.waitFor({ state: 'visible' }));
 

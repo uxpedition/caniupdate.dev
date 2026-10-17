@@ -1,6 +1,7 @@
 import { Data, Effect, Schema, SchemaTransformation } from 'effect';
 
-import { STAGE_ORIGIN, STAGE_SOCKET_ORIGIN } from './configurationKeys.ts';
+import { isStableReleaseVersion } from '../../shared/site/releaseIdentity.ts';
+import { PRODUCTION_ORIGIN, PRODUCTION_SOCKET_ORIGIN, STAGE_ORIGIN, STAGE_SOCKET_ORIGIN } from './configurationKeys.ts';
 
 const NonBlank = Schema.String.check(
   Schema.makeFilter((value) => value.trim() !== '', { expected: 'nonblank configuration' }),
@@ -32,6 +33,8 @@ export class RuntimeSettingsFailure extends Data.TaggedError('RuntimeSettingsFai
   readonly message: string;
 }> {}
 const runtimeSettingsFailure = (message: string) => new RuntimeSettingsFailure({ message });
+
+export type DeploymentTarget = 'stage' | 'production';
 
 export type RuntimeSettings = {
   readonly rateLimits: { readonly public: number; readonly generation: number };
@@ -77,9 +80,22 @@ function readHeaders(value: string | undefined, name: string): Effect.Effect<str
 
 const decodeSettings = Schema.decodeUnknownEffect(RuntimeSchema, { errors: 'all' });
 
-function assertRuntimeOrigins(settings: typeof RuntimeSchema.Type): Effect.Effect<void, RuntimeSettingsFailure> {
-  if (settings.NUXT_PUBLIC_SITE_URL !== STAGE_ORIGIN || settings.BRIEFING_PUBLIC_URL !== STAGE_SOCKET_ORIGIN) {
-    return Effect.fail(runtimeSettingsFailure('Runtime origins do not match the stage deployment target'));
+const EXPECTED_ORIGINS: Record<DeploymentTarget, { readonly site: string; readonly socket: string }> = {
+  stage: { site: STAGE_ORIGIN, socket: STAGE_SOCKET_ORIGIN },
+  production: { site: PRODUCTION_ORIGIN, socket: PRODUCTION_SOCKET_ORIGIN },
+};
+
+function assertRuntimeOrigins(
+  settings: typeof RuntimeSchema.Type,
+  target: DeploymentTarget,
+): Effect.Effect<void, RuntimeSettingsFailure> {
+  const expectedOrigins = EXPECTED_ORIGINS[target];
+
+  if (
+    settings.NUXT_PUBLIC_SITE_URL !== expectedOrigins.site ||
+    settings.BRIEFING_PUBLIC_URL !== expectedOrigins.socket
+  ) {
+    return Effect.fail(runtimeSettingsFailure(`Runtime origins do not match the ${target} deployment target`));
   }
 
   return Effect.void;
@@ -117,15 +133,32 @@ function assertInferenceEndpoint(settings: typeof RuntimeSchema.Type) {
 
 export function readRuntimeSettings(
   environment: NodeJS.ProcessEnv,
+  target: DeploymentTarget,
+  releaseVersion?: string,
 ): Effect.Effect<RuntimeSettings, RuntimeSettingsFailure> {
   return Effect.gen(function* () {
+    if (environment.NUXT_PUBLIC_RELEASE_VERSION) {
+      return yield* Effect.fail(
+        runtimeSettingsFailure('NUXT_PUBLIC_RELEASE_VERSION must be derived from the production release receipt'),
+      );
+    }
+
+    const releaseReceiptVersion =
+      target === 'production' && isStableReleaseVersion(releaseVersion) ? releaseVersion : undefined;
+
+    if (target === 'production' ? releaseReceiptVersion === undefined : releaseVersion !== undefined) {
+      return yield* Effect.fail(
+        runtimeSettingsFailure('Release version metadata must match the production deployment receipt'),
+      );
+    }
+
     const settings = yield* decodeSettings(environment).pipe(
       Effect.mapError(() =>
         runtimeSettingsFailure('Invalid GitLab runtime settings; check required variables and deployment origins'),
       ),
     );
 
-    yield* assertRuntimeOrigins(settings);
+    yield* assertRuntimeOrigins(settings, target);
     yield* assertInferenceEndpoint(settings);
 
     const telemetry = yield* readTelemetrySettings(settings);
@@ -135,6 +168,7 @@ export function readRuntimeSettings(
       frontend: {
         NUXT_PUBLIC_SITE_URL: settings.NUXT_PUBLIC_SITE_URL,
         NUXT_PUBLIC_TELEMETRY_ENABLED: settings.NUXT_PUBLIC_TELEMETRY_ENABLED,
+        ...(releaseReceiptVersion === undefined ? {} : { NUXT_PUBLIC_RELEASE_VERSION: releaseReceiptVersion }),
         NUXT_OTEL_ENDPOINT: telemetry.endpoint,
         NUXT_OTEL_HEADERS: telemetry.headers,
       },

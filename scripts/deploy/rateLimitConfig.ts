@@ -3,12 +3,22 @@ import { dirname, join, resolve } from 'node:path';
 import { Data, Effect, FileSystem, Schema } from 'effect';
 import ts from 'typescript';
 
+import type { DeploymentTarget } from './runtimeSettings.ts';
+
 const RateLimitBindingSchema = Schema.Literals(['PUBLIC_RATE_LIMITER', 'BRIEFING_GENERATION_LIMITER']);
 export type RateLimitBinding = typeof RateLimitBindingSchema.Type;
 
-const RATE_LIMIT_NAMESPACE_IDS: Record<RateLimitBinding, string> = {
-  PUBLIC_RATE_LIMITER: '2001',
-  BRIEFING_GENERATION_LIMITER: '2002',
+const WRANGLER_ENVIRONMENT: Record<DeploymentTarget, 'stage' | 'production'> = {
+  stage: 'stage',
+  production: 'production',
+};
+
+// Cloudflare requires account-unique namespace IDs; bindings are not inherited by Wrangler environments.
+// Sources: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+//          https://developers.cloudflare.com/workers/wrangler/environments/
+const RATE_LIMIT_NAMESPACE_IDS: Record<DeploymentTarget, Record<RateLimitBinding, string>> = {
+  stage: { PUBLIC_RATE_LIMITER: '2001', BRIEFING_GENERATION_LIMITER: '2002' },
+  production: { PUBLIC_RATE_LIMITER: '3001', BRIEFING_GENERATION_LIMITER: '3002' },
 };
 
 const Extras = Schema.Record(Schema.String, Schema.Json);
@@ -41,7 +51,13 @@ const WorkerConfigSchema = Schema.StructWithRest(Schema.Struct(WorkerFields), [E
 const ConfigSchema = Schema.StructWithRest(
   Schema.Struct({
     ...WorkerFields,
-    env: Schema.StructWithRest(Schema.Struct({ stage: WorkerConfigSchema }), [Extras]),
+    env: Schema.StructWithRest(
+      Schema.Struct({
+        stage: WorkerConfigSchema,
+        production: Schema.optionalKey(WorkerConfigSchema),
+      }),
+      [Extras],
+    ),
   }),
   [Extras],
 );
@@ -81,6 +97,7 @@ export class RateLimitConfigFailure extends Data.TaggedError('RateLimitConfigFai
 export function deploymentRateLimitConfig(
   input: Schema.Json,
   directory: string,
+  target: DeploymentTarget,
   binding: RateLimitBinding,
   limit: number,
 ): Effect.Effect<DeploymentRateLimitConfig, RateLimitConfigFailure> {
@@ -88,18 +105,23 @@ export function deploymentRateLimitConfig(
     const config = yield* Schema.decodeUnknownEffect(ConfigSchema, { errors: 'all' })(input).pipe(
       Effect.mapError(() => new RateLimitConfigFailure({ message: 'Invalid Worker deployment configuration' })),
     );
-    const environmentConfig = config.env.stage;
+    const environment = WRANGLER_ENVIRONMENT[target];
+    const environmentConfig = config.env[environment];
+
+    if (environmentConfig === undefined) {
+      return yield* Effect.fail(new RateLimitConfigFailure({ message: `Missing Wrangler ${environment} environment` }));
+    }
 
     return {
       ...relocateWorkerConfig(config, directory),
       env: {
         ...config.env,
-        stage: {
+        [environment]: {
           ...relocateWorkerConfig(environmentConfig, directory),
           ratelimits: [
             {
               name: binding,
-              namespace_id: RATE_LIMIT_NAMESPACE_IDS[binding],
+              namespace_id: RATE_LIMIT_NAMESPACE_IDS[target][binding],
               simple: { limit, period: 60 },
             },
           ],
@@ -111,6 +133,7 @@ export function deploymentRateLimitConfig(
 
 export function withRateLimitConfig<A, E, R>(
   source: string,
+  target: DeploymentTarget,
   binding: RateLimitBinding,
   limit: number,
   deploy: (path: string) => Effect.Effect<A, E, R>,
@@ -132,7 +155,7 @@ export function withRateLimitConfig<A, E, R>(
       const json = yield* Schema.decodeUnknownEffect(Schema.Json, { errors: 'all' })(parsed.config).pipe(
         Effect.mapError(() => new RateLimitConfigFailure({ message: 'Invalid Worker deployment configuration' })),
       );
-      const config = yield* deploymentRateLimitConfig(json, dirname(resolve(source)), binding, limit);
+      const config = yield* deploymentRateLimitConfig(json, dirname(resolve(source)), target, binding, limit);
       const directory = yield* fs
         .makeTempDirectoryScoped({ prefix: 'can-i-update-rate-config-' })
         .pipe(

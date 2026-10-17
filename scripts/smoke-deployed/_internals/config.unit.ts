@@ -43,6 +43,39 @@ describe('deployed smoke configuration boundaries', () => {
     });
   });
 
+  it('pins production origins and requires a stable version without attaching Access credentials', async () => {
+    const config = await Effect.runPromise(
+      loadConfig({
+        ...stageEnvironment,
+        SMOKE_TARGET: 'production',
+        SMOKE_EXPECTED_VERSION: '1.2.3',
+        SMOKE_ORIGIN: 'https://untrusted.example',
+        SMOKE_SOCKET_ORIGIN: 'wss://untrusted.example',
+      }),
+    );
+    expect(config.target).toBe('production');
+    expect(config.frontendOrigin.origin).toBe('https://caniupdate.dev');
+    expect(config.socketOrigin.origin).toBe('wss://briefing.caniupdate.dev');
+    expect(config.expectedVersion).toBe('1.2.3');
+    expect(config.accessHeaders).toEqual({});
+  });
+
+  it.each([undefined, '', '01.2.3', '1.2.3-beta.1', '1.2.3+build'])(
+    'rejects invalid production version %j',
+    async (version) => {
+      const failure = await Effect.runPromise(
+        Effect.flip(
+          loadConfig({
+            SMOKE_TARGET: 'production',
+            SMOKE_EXPECTED_SHA: 'a'.repeat(40),
+            SMOKE_EXPECTED_VERSION: version,
+          }),
+        ),
+      );
+      expect(failure.stage).toBe('configuration');
+    },
+  );
+
   it.each([
     { SMOKE_LOCAL: '' },
     { SMOKE_LOCAL: 'yes' },

@@ -8,6 +8,7 @@ import {
   checkAuthorizedSocketAdmission,
   checkUnauthenticatedFrontend,
   checkUnauthenticatedSocket,
+  checkPublicSocketRoute,
 } from './access.ts';
 import { runBrowser, type BrowserOutcome, type BrowserName } from './browserScenario.ts';
 import { readSmokeConfig, REQUEST_TIMEOUT_MS, type SmokeConfig } from './config.ts';
@@ -17,6 +18,8 @@ type SmokeReport = {
   outcome: 'passed' | 'failed';
   target?: SmokeConfig['target'];
   commitSha?: string;
+  version?: string;
+  publicSocketRoute?: number;
   access?: { frontend: number; socket: number; authorizedSocketAdmission: number };
   health?: 'passed';
   browsers: BrowserOutcome[];
@@ -45,6 +48,11 @@ const verifyAccess = (config: SmokeConfig, report: SmokeReport) =>
   Effect.gen(function* () {
     if (config.local) return;
 
+    if (config.target === 'production') {
+      report.publicSocketRoute = yield* checkPublicSocketRoute(config);
+      return;
+    }
+
     const socketUrl = new URL(`/api/briefings/${'0'.repeat(64)}/events`, config.socketOrigin).href;
     const frontend = yield* checkUnauthenticatedFrontend(config);
     const socket = yield* checkUnauthenticatedSocket(config, socketUrl);
@@ -71,6 +79,7 @@ export const runSmoke = (outputDirectory: string) =>
 
       report.target = config.target;
       report.commitSha = config.expectedSha;
+      if (config.expectedVersion !== null) report.version = config.expectedVersion;
       yield* fs
         .makeDirectory(outputDirectory, { recursive: true, mode: 0o700 })
         .pipe(Effect.mapError(() => new SmokeFailure('configuration-or-response')));

@@ -60,5 +60,39 @@
         },
       ],
     },
+    // Production public routing is used only by the protected release pipeline after successful stage verification.
+    "production": {
+      "name": "can-i-update-production",
+      "account_id": "8a0be24aad326a55ba610b94b106be81",
+      "workers_dev": false,
+      "preview_urls": false,
+      "ratelimits": [
+        { "name": "PUBLIC_RATE_LIMITER", "namespace_id": "3001", "simple": { "limit": 60, "period": 60 } },
+      ],
+      "routes": [{ "pattern": "caniupdate.dev", "custom_domain": true }],
+      "cache": { "enabled": true, "cross_version_cache": false },
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "redact_query_string": true,
+        "logs": { "invocation_logs": false },
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "PACKAGE_EVIDENCE",
+            "class_name": "PackageEvidence",
+            "script_name": "can-i-update-production-evidence",
+          },
+        ],
+      },
+      "services": [
+        {
+          "binding": "BRIEFING_SERVICE",
+          "service": "can-i-update-production-briefing",
+          "entrypoint": "BriefingSubmitter",
+        },
+      ],
+    },
   },
 }

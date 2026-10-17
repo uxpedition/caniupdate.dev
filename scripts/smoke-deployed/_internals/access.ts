@@ -148,6 +148,18 @@ export const checkUnauthenticatedSocket = (
     });
   });
 
+export const checkPublicSocketRoute = (config: SmokeConfig): Effect.Effect<number, SmokeFailure> =>
+  Effect.gen(function* () {
+    if (config.target !== 'production') return yield* Effect.fail(new SmokeFailure('public-socket-route'));
+
+    const url = new URL(`/api/briefings/${'0'.repeat(64)}/events`, config.socketHttpOrigin);
+    const response = yield* requestSocketHandshake(url, config.frontendOrigin.origin, {});
+
+    if (response.status !== 404) return yield* Effect.fail(new SmokeFailure('public-socket-route'));
+
+    return response.status;
+  });
+
 const isClientId = Schema.is(Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}\.access$/i)));
 
 const isClientSecret = Schema.is(Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{64}|cfast_[A-Za-z0-9]{48})$/)));

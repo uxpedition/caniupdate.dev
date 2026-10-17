@@ -10,7 +10,7 @@ class CiRunFailure extends Data.TaggedError('CiRunFailure')<{
 
 const CiEnvironmentSchema = Schema.Struct({
   SMOKE_BROWSER: Schema.Union([Schema.Literal('chromium'), Schema.Literal('firefox')]),
-  SMOKE_TARGET: Schema.Literal('stage'),
+  SMOKE_TARGET: Schema.Union([Schema.Literal('stage'), Schema.Literal('production')]),
 });
 
 const runCommand = (
@@ -42,14 +42,22 @@ const program: Effect.Effect<void, CiRunFailure, ChildProcessSpawner.ChildProces
       })),
     ).pipe(
       Effect.mapError(
-        () => new CiRunFailure({ message: 'Stage browser verification requires a supported browser and target.' }),
+        () =>
+          new CiRunFailure({
+            message: 'Browser verification requires a supported browser and deployment target.',
+          }),
       ),
     );
 
     const childEnvironment: NodeJS.ProcessEnv = { ...process.env };
 
     for (const key of PRIVATE_CI_KEYS) {
-      if (key !== 'CF_ACCESS_CLIENT_ID' && key !== 'CF_ACCESS_CLIENT_SECRET') delete childEnvironment[key];
+      if (
+        environment.SMOKE_TARGET !== 'stage' ||
+        (key !== 'CF_ACCESS_CLIENT_ID' && key !== 'CF_ACCESS_CLIENT_SECRET')
+      ) {
+        delete childEnvironment[key];
+      }
     }
 
     const install = yield* runCommand(

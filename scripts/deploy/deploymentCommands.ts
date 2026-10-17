@@ -56,13 +56,35 @@ export function runCommand(command: string, args: string[], environment: NodeJS.
   );
 }
 
-export function assertCurrentMain(commitSha: string) {
+export function assertCurrentMain(commitSha: string, target: 'stage' | 'production') {
   return Effect.gen(function* () {
     const result = yield* Effect.exit(captureCommand('git', ['ls-remote', '--exit-code', 'origin', 'refs/heads/main']));
 
     if (Exit.isFailure(result) || result.value.trim() !== `${commitSha}\trefs/heads/main`) {
       return yield* Effect.fail(
-        new DeploymentFailure({ message: 'stage revision is superseded or main cannot be verified' }),
+        new DeploymentFailure({ message: `${target} revision is superseded or main cannot be verified` }),
+      );
+    }
+  });
+}
+
+export function assertRemoteReleaseTag(tag: string, commitSha: string) {
+  return Effect.gen(function* () {
+    const result = yield* Effect.exit(
+      captureCommand('git', ['ls-remote', '--exit-code', 'origin', `refs/tags/${tag}`, `refs/tags/${tag}^{}`]),
+    );
+    const output = Exit.isFailure(result) ? '' : result.value;
+    const refs = output
+      .trim()
+      .split('\n')
+      .map((line) => line.split(/\s+/))
+      .filter((fields) => fields.length === 2);
+    const tagObject = refs.find((fields) => fields[1] === `refs/tags/${tag}`);
+    const peeled = refs.find((fields) => fields[1] === `refs/tags/${tag}^{}`);
+
+    if (Exit.isFailure(result) || tagObject === undefined || peeled?.[0] !== commitSha) {
+      return yield* Effect.fail(
+        new DeploymentFailure({ message: 'Protected annotated release tag does not point to this production commit' }),
       );
     }
   });

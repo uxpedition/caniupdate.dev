@@ -1,20 +1,21 @@
-# Required validation precedes serialized deployment on protected main. One immutable artifact contains the
-# frontend and both backend Worker bundles, with content hashes checked again before stage deployment.
+# Every protected-main revision is checked and serialized through stage before a maintainer may create a release tag.
+# Production deploys only that pipeline's verified artifacts and immutable protected-tag receipt.
 # Pins: Node image digest, Node/Nub versions, Nub archive SHA-256, and the locked browser tooling.
-# Stage credentials MUST be protected and environment-scoped to stage; no shared writable caches.
+# Runtime credentials use exact stage, production, or release-tag environment scopes.
+stages:
+  - verify
+  - deploy-stage
+  - tag-release
+  - deploy-production
+
+include:
+  - local: scripts/deploy/ci-bootstrap.yml
 
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - when: never
-
-stages:
-  - verify
-  - deploy-stage
-
-include:
-  - local: scripts/deploy/ci-bootstrap.yml
 
 quality:
   stage: verify
@@ -77,6 +78,64 @@ stage:delivery:
   trigger:
     include:
       - local: scripts/deploy/ci-stage.yml
+    strategy: mirror
+    forward:
+      yaml_variables: true
+      pipeline_variables: false
+release:tag:
+  stage: tag-release
+  timeout: 10m
+  inputs:
+    version:
+      type: string
+      # GitLab requires a default; empty is rejected by the release CLI before publication.
+      # https://docs.gitlab.com/ci/jobs/job_inputs/#define-and-use-job-inputs
+      default: ''
+      description: Enter a stable MAJOR.MINOR.PATCH version; leaving it empty refuses release
+      regex: '^((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))?$'
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: manual
+      allow_failure: false
+    - when: never
+  needs:
+    - job: build-smoke
+      artifacts: true
+    - job: stage:delivery
+      artifacts: false
+  resource_group: release-tag
+  interruptible: false
+  environment:
+    name: release-tag
+    action: prepare
+  script:
+    - export RELEASE_VERSION='${{ job.inputs.version }}'
+    - nub run release:tag
+  artifacts:
+    when: always
+    access: maintainer
+    expire_in: 30 days
+    paths:
+      - .data/production-release/tag.json
+
+production:delivery:
+  stage: deploy-production
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true"'
+    - when: never
+  needs:
+    - job: release:tag
+      artifacts: false
+  inherit:
+    default: false
+    variables: false
+  resource_group: production
+  interruptible: false
+  variables:
+    PARENT_PIPELINE_ID: '$CI_PIPELINE_ID'
+  trigger:
+    include:
+      - local: scripts/deploy/ci-production.yml
     strategy: mirror
     forward:
       yaml_variables: true

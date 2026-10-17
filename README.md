@@ -56,6 +56,10 @@ The stage footer displays `stage - <short-commit>`; local dev runs display `dev 
 - [Cloudflare Workers](https://developers.cloudflare.com/workers/), Durable Objects, D1, and Queues
 - Public npm registry, OSV, Bundlephobia, and GitHub evidence
 
+## Release identity
+
+Stage identifies the deployed source commit in the footer. Production displays `vX.Y.Z` from the protected release receipt, not `package.json`. A Maintainer selects the version in the manual `release:tag` job only after protected-main checks and stage Chromium/Firefox verification pass; this does not create a version branch/MR or change the package manifest. Production promotes the exact verified frontend and backend bundles without rebuilding. See [deployment operations](docs/engineering/ops/deployment.md#manual-protected-main-release) and [release recovery](docs/engineering/ops/releases-and-recovery.md).
+
 ## Contributing
 
 Contributions are welcome. Report bugs and discuss changes through [GitLab issues](https://gitlab.com/uxpedition/can-i-npm-update/-/issues), or submit a merge request.

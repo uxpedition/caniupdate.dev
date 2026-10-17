@@ -14,6 +14,8 @@ Do not assume a failed step undoes earlier successful steps. Record partial depl
 
 ## Release identity
 
+The release receipt `.data/production-release/tag.json` is authoritative and contains exactly `version`, `tag`, `commitSha`, and `pipelineId`. It binds the immutable protected tag to the verified protected-main pipeline and artifact; production promotes the same hashed bundles with `--no-bundle`, without rebuilding.
+
 - Production displays `vMAJOR.MINOR.PATCH - <short-commit>` from validated `NUXT_PUBLIC_RELEASE_VERSION` runtime identity and the promoted artifact's build identity, never `package.json`. The hash links to the full commit that the release tag identifies.
 - Stage displays `stage - <short-commit>` for the main commit used to build the deployed artifact. Local dev runs display `dev - <short-commit>`. Both hashes link to the full commit on the actual repository host.
 - Metadata describes the built artifact, not a developer's current working tree or a mutable branch tip.
@@ -24,7 +26,17 @@ The footer uses a short hash prefix. The exact abbreviation length is a presenta
 
 The shared release schema accepts stable `MAJOR.MINOR.PATCH` versions only and validates a receipt's matching `v<version>` tag, lowercase full commit SHA, and positive decimal pipeline ID. At the production origin, the footer renders version and commit together only when the runtime version is valid and build identity is present; invalid production versions do not fall back to a stage or dev label. The release version is a runtime setting, not part of the build identity. No build-metadata endpoint is exposed.
 
-**Production release publication is not implemented:** this change adds shared version/receipt validation and runtime footer rendering only. No tag creation, release automation, production deployment, or hosted verification is added. The version-update and release procedure remains separate work.
+Stage and dev identity is implemented in [`SiteFooter.vue`](../../../app/components/SiteFooter.vue). Browser smoke checks compare its rendered commit link directly with the expected CI SHA. The validated SHA/repository URL pair is compiled into Nuxt app config, not runtime configuration; builds without metadata omit the link. No build-metadata endpoint is exposed.
+
+Production identity is implemented in [`SiteFooter.vue`](../../../app/components/SiteFooter.vue): a valid receipt-derived version and the promoted build identity display `vX.Y.Z - <short-commit>`, linked to the tag commit. GitLab smoke checks both the expected version and full commit link in Chromium and Firefox. A missing or invalid production version does not fall back to a stage or dev label.
+
+### Manual protected-main release
+
+Every protected-main push runs required checks, builds the exact deployable frontend and backend artifacts, and delivers stage. Only after stage deployment and both Chromium/Firefox checks pass can a Maintainer/Owner use the blocking manual `release:tag` input to select a stable SemVer version. The job verifies its protected-main push pipeline, required job/bridge evidence, current branch SHA, manual actor role, version progression, and the protected-tag rules through the read-only GitLab API; it then writes the tag and receipt. It never opens/merges a version MR or changes `package.json`. Ordinary main pushes cannot deploy production.
+
+`production:delivery` requires that receipt and consumes the same `build-smoke` artifact, verifies the tag/version/commit/pipeline identity and all artifact hashes, then promotes those exact bundles. The production child verifies the immutable annotated tag and current protected-main SHA before migrating/deploying. It deploys evidence → briefing → frontend and checks the public surface and receipt version footer in both browsers. Its smoke intercepts the briefing POST before dispatch and returns a schema-valid synthetic fixture; it does not prove paid-provider integration or rate limiting. Deployment is non-atomic, failed partial state is reported, and there is no automatic rollback.
+
+If deployment fails while its commit is still the current protected-main SHA, inspect the report and retry only that pipeline with the same exact immutable receipt. A conflicting or moved tag cannot be reused. Once `main` advances, stale production jobs are rejected; recovery requires a newer protected-main revision with all checks and stage browser verification, then a higher version selected in that pipeline's manual release job and a forward deployment accounting for partial Worker/migration changes. This workflow is implemented locally but has not deployed production.
 
 ## Verification and release evidence
 

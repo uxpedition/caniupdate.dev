@@ -1,5 +1,6 @@
 import { Data, Effect } from 'effect';
 
+import { PRODUCTION_SITE_ORIGIN } from '../../shared/site/siteUrl.ts';
 import { hasCredentialScopeViolation, PRIVATE_CI_KEYS } from './credentialScope.ts';
 
 export { PRIVATE_CI_KEYS };
@@ -7,6 +8,10 @@ export { PRIVATE_CI_KEYS };
 export const STAGE_ORIGIN = 'https://stage.caniupdate.dev';
 
 export const STAGE_SOCKET_ORIGIN = 'wss://stage-briefing.caniupdate.dev';
+
+export { PRODUCTION_SITE_ORIGIN as PRODUCTION_ORIGIN };
+
+export const PRODUCTION_SOCKET_ORIGIN = 'wss://briefing.caniupdate.dev';
 
 export class CredentialIsolationFailure extends Data.TaggedError('CredentialIsolationFailure')<{
   readonly message: string;

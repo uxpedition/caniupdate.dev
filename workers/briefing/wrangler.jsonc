@@ -34,8 +34,8 @@
   // A comma-separated list of exact Origins: the local launcher overrides it with every hostname the page is served on
   // (the loopback aliases and this machine's interface addresses), and an unset or empty list refuses every upgrade.
   "vars": { "BRIEFING_PUBLIC_URL": "ws://localhost:8791", "BRIEFING_ALLOWED_ORIGIN": "http://localhost:5173" },
-  // The default environment is local-only and uses placeholder IDs. Only `env.stage` may be deployed, and it
-  // repeats every non-inheritable binding with the existing physical names and stage D1 database.
+  // The default environment is local-only and uses placeholder IDs. Remote environments repeat every
+  // non-inheritable binding; production public routing is reached only by the protected release pipeline.
   "env": {
     "stage": {
       "name": "can-i-update-preview-briefing",
@@ -69,6 +69,47 @@
       ],
       // Uncaught exceptions and console error records stay queryable; per-request invocation records are
       // disabled because their request metadata includes client IPs. Request URLs lose query strings too.
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "redact_query_string": true,
+        "logs": { "invocation_logs": false },
+      },
+    },
+    "production": {
+      "name": "can-i-update-production-briefing",
+      "account_id": "8a0be24aad326a55ba610b94b106be81",
+      "workers_dev": false,
+      "preview_urls": false,
+      "ratelimits": [
+        {
+          "name": "BRIEFING_GENERATION_LIMITER",
+          "namespace_id": "3002",
+          "simple": { "limit": 3, "period": 60 },
+        },
+      ],
+      "routes": [{ "pattern": "briefing.caniupdate.dev", "custom_domain": true }],
+      "durable_objects": { "bindings": [{ "name": "BRIEFING_JOBS", "class_name": "BriefingJob" }] },
+      "queues": {
+        "producers": [{ "binding": "BRIEFING_QUEUE", "queue": "can-i-update-production-briefings" }],
+        "consumers": [
+          {
+            "queue": "can-i-update-production-briefings",
+            "max_batch_size": 1,
+            "max_batch_timeout": 0,
+            "max_retries": 2,
+          },
+        ],
+      },
+      "d1_databases": [
+        {
+          "binding": "BRIEFINGS_DB",
+          "database_name": "can-i-update-production-briefings",
+          "database_id": "465d4fc6-35ed-4ef6-842f-e67f3a919b87",
+          "migrations_dir": "../../migrations",
+          "remote": false,
+        },
+      ],
       "observability": {
         "enabled": true,
         "head_sampling_rate": 1,
