@@ -63,7 +63,7 @@ describe('telemetry sanitization', () => {
           },
           scopeSpans: [
             {
-              scope: { name: 'can-i-update-briefing' },
+              scope: { name: 'effect' },
               spans: [
                 span(ROOT_SPAN_ID, 'briefing.generation', {
                   attributes: [

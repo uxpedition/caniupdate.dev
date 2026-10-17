@@ -237,7 +237,6 @@ const forceBrowserIdentity = (
       resourceLogs: payload.resourceLogs.map((group) => ({
         ...group,
         resource: forceBrowserResource(group.resource),
-        scopeLogs: group.scopeLogs.map((scopeLog) => ({ ...scopeLog, scope: { name: BROWSER_SERVICE_NAME } })),
       })),
     };
   }
@@ -248,7 +247,6 @@ const forceBrowserIdentity = (
       resourceSpans: payload.resourceSpans.map((group) => ({
         ...group,
         resource: forceBrowserResource(group.resource),
-        scopeSpans: group.scopeSpans.map((scopeSpan) => ({ ...scopeSpan, scope: { name: BROWSER_SERVICE_NAME } })),
       })),
     };
   }

@@ -30,7 +30,7 @@ const logPayload = () => ({
       },
       scopeLogs: [
         {
-          scope: { name: 'can-i-update-browser', version: 'private-version', attributes: [{ key: 'token' }] },
+          scope: { name: 'effect', version: 'private-version', attributes: [{ key: 'token' }] },
           logRecords: [
             {
               timeUnixNano: '1700000000000000000',
@@ -68,7 +68,7 @@ const tracePayload = () => ({
       },
       scopeSpans: [
         {
-          scope: { name: 'can-i-update-nuxt' },
+          scope: { name: 'effect' },
           spans: [
             {
               traceId: TRACE_ID,
@@ -153,7 +153,7 @@ describe('decodeTelemetryPayload', () => {
           },
           scopeLogs: [
             {
-              scope: { name: 'can-i-update-browser' },
+              scope: { name: 'effect' },
               logRecords: [
                 {
                   traceId: TRACE_ID,

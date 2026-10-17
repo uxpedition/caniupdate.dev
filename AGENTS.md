@@ -8,6 +8,16 @@ Before any response or task action on a new user task—including clarifying que
 
 Reuse skills already loaded in the current context; reload after context loss. Respect user-only invocation restrictions and existing authorization boundaries. Use the harness's skill loader when available, otherwise read the local files directly.
 
+## Learning more about Effect
+
+This repository uses the Effect Typescript library.
+
+Before writing any Effect code, first read `node_modules/effect/AGENTS.md`
+**completely**, and follow the links in the file when required.
+
+If you need to learn more about particular Effect apis and concepts that the
+guide doesn't cover, search through the source code in `node_modules/effect/src`.
+
 ## Navigation
 
 - **Architecture or cross-runtime changes:** read [the system overview](docs/engineering/overview.md). `app/` owns presentation and reactive queries; `server/api/` owns public handlers; `server/comparison/` owns domain workflows; `server/httpDependencies/` owns provider I/O; `shared/**/*.defs.ts` owns cross-runtime contracts. Route-local helpers belong in `_internals/` directories excluded from Nitro routing.

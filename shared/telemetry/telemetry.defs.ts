@@ -8,6 +8,7 @@ import {
   SanitizedTraceDataSchema,
   TelemetryAttributeKeySchema,
   TelemetryEnvironmentSchema,
+  TelemetryInstrumentationNameSchema,
   TelemetryLogMessageSchema,
   TelemetryResourceSchema,
   TelemetryServiceNameSchema,
@@ -91,7 +92,7 @@ const decodeErrorAttributeString = Schema.decodeUnknownResult(Schema.Struct({ st
   onExcessProperty: 'error',
 });
 
-const isTelemetryServiceName = Schema.is(TelemetryServiceNameSchema);
+const isTelemetryInstrumentationName = Schema.is(TelemetryInstrumentationNameSchema);
 
 const isTelemetrySpanName = Schema.is(TelemetrySpanNameSchema);
 
@@ -219,7 +220,7 @@ const sanitizeLogs = (data: typeof OtlpLogsDataSchema.Type): SanitizedLogsData =
     const scopeLogs: Array<SanitizedLogsData['resourceLogs'][number]['scopeLogs'][number]> = [];
 
     for (const scopeLog of resourceLog.scopeLogs) {
-      if (!isTelemetryServiceName(scopeLog.scope.name)) continue;
+      if (!isTelemetryInstrumentationName(scopeLog.scope.name)) continue;
 
       const logRecords = scopeLog.logRecords.flatMap((record) => {
         const safeRecord = sanitizeLogRecord(record);
@@ -287,7 +288,7 @@ const sanitizeTraces = (data: typeof OtlpTracesDataSchema.Type): SanitizedTraceD
     const scopeSpans: Array<SanitizedTraceData['resourceSpans'][number]['scopeSpans'][number]> = [];
 
     for (const scopeSpan of resourceSpan.scopeSpans) {
-      if (!isTelemetryServiceName(scopeSpan.scope.name)) continue;
+      if (!isTelemetryInstrumentationName(scopeSpan.scope.name)) continue;
 
       const spans = scopeSpan.spans.flatMap((span) => {
         const safeSpan = sanitizeSpan(span);

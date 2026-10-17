@@ -150,6 +150,8 @@ export const TelemetryServiceNameSchema = Schema.Literals([
   'can-i-update-evidence',
 ]);
 
+export const TelemetryInstrumentationNameSchema = Schema.Literal('effect');
+
 export const TelemetryLogMessageSchema = Schema.Literals([
   'runtime.error',
   'runtime.warning',
@@ -299,7 +301,7 @@ export const TelemetryResourceSchema = Schema.Struct({
 
 export type TelemetryResource = typeof TelemetryResourceSchema.Type;
 
-const SafeScopeSchema = Schema.Struct({ name: TelemetryServiceNameSchema });
+const SafeScopeSchema = Schema.Struct({ name: TelemetryInstrumentationNameSchema });
 
 const SafeLogRecordSchema = Schema.Struct({
   timeUnixNano: UnixNanoSchema,

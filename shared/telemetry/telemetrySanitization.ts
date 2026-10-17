@@ -11,6 +11,7 @@ import {
   MAX_RESOURCE_GROUPS,
   MAX_SCOPE_GROUPS,
   TelemetryEnvironmentSchema,
+  TelemetryInstrumentationNameSchema,
   TelemetryLogMessageSchema,
   TelemetryServiceNameSchema,
   TelemetrySpanNameSchema,
@@ -52,6 +53,8 @@ const isTelemetryLogMessage = Schema.is(TelemetryLogMessageSchema);
 const isTelemetryServiceName = Schema.is(TelemetryServiceNameSchema);
 
 const isTelemetrySpanName = Schema.is(TelemetrySpanNameSchema);
+
+const isTelemetryInstrumentationName = Schema.is(TelemetryInstrumentationNameSchema);
 
 const isTelemetryServiceVersion = Schema.is(
   Schema.String.check(
@@ -189,7 +192,7 @@ const projectSpan = (span: NativeSpan): NativeSpan | undefined => {
 };
 
 const projectScopeSpans = (scopeSpan: NativeScopeSpan): NativeScopeSpan | undefined => {
-  if (!isTelemetryServiceName(scopeSpan.scope.name)) return undefined;
+  if (!isTelemetryInstrumentationName(scopeSpan.scope.name)) return undefined;
   const spans: Array<NativeSpan> = [];
 
   for (let index = 0; index < scopeSpan.spans.length && index < MAX_RECORDS; index++) {
@@ -273,7 +276,7 @@ const projectLogRecord = (record: NativeLogRecord): NativeLogRecord | undefined 
 const projectScopeLogs = (scopeLog: NativeScopeLogs): NativeScopeLogs | undefined => {
   const scopeName = scopeLog.scope?.name;
 
-  if (scopeName === undefined || !isTelemetryServiceName(scopeName)) return undefined;
+  if (scopeName === undefined || !isTelemetryInstrumentationName(scopeName)) return undefined;
   const sourceRecords = scopeLog.logRecords;
 
   if (sourceRecords === undefined) return undefined;

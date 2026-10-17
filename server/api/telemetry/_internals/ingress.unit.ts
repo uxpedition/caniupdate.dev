@@ -31,7 +31,7 @@ const logPayload = () => ({
       },
       scopeLogs: [
         {
-          scope: { name: 'can-i-update-nuxt' },
+          scope: { name: 'effect' },
           logRecords: [
             {
               timeUnixNano: '1700000000000000000',
@@ -64,7 +64,7 @@ const tracePayload = () => ({
       },
       scopeSpans: [
         {
-          scope: { name: 'can-i-update-briefing' },
+          scope: { name: 'effect' },
           spans: [
             {
               traceId: '4bf92f3577b34da6a3ce929d0e0e4736',
@@ -145,7 +145,7 @@ const expectTraceExport = (forwarded: readonly ForwardedRequest[]): void => {
   if (scope === undefined) throw new Error('Expected forwarded trace scope');
   expect(group.resource.attributes).toEqual([{ key: 'service.name', value: { stringValue: 'can-i-update-browser' } }]);
   expect(group.resource.droppedAttributesCount).toBe(2);
-  expect(scope.scope.name).toBe('can-i-update-browser');
+  expect(scope.scope.name).toBe('effect');
 };
 
 const expectLogExport = (forwarded: readonly ForwardedRequest[]): void => {
@@ -163,7 +163,7 @@ const expectLogExport = (forwarded: readonly ForwardedRequest[]): void => {
   if (record === undefined) throw new Error('Expected forwarded log record');
   expect(group.resource.attributes).toEqual([{ key: 'service.name', value: { stringValue: 'can-i-update-browser' } }]);
   expect(group.resource.droppedAttributesCount).toBe(0);
-  expect(scope.scope.name).toBe('can-i-update-browser');
+  expect(scope.scope.name).toBe('effect');
   expect(record.body.stringValue).toBe('comparison.page.opened');
 };
 
