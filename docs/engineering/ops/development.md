@@ -239,6 +239,10 @@ Other checks for absence still use quiet windows. No provider call or socket fra
 
 ### Comparison interface
 
+The global `app.head.htmlAttrs` setting in `nuxt.config.ts` declares English (`lang="en"`) in initial HTML, including Nuxt error documents. Pages inherit it through hydration and client navigation; do not repeat it in individual pages.
+
+When changing document metadata, inspect raw HTML for the homepage, About, Privacy, a comparison, and Nuxt's error renderer. Then check hydration and in-app navigation in Chromium and Firefox. Unknown routes return sanitized JSON rather than an HTML error document; check HTML errors through `/__nuxt_error?statusCode=404` and `/__nuxt_error?statusCode=500`.
+
 The homepage footer reaches the bottom of the viewport when content fits. Shorter or narrower screens scroll naturally. When changing the layout, check both cases and footer wrapping; do not assume a fixed footer height.
 
 After a successful comparison, the shared form moves from the homepage to the navigation header and resets for another search. On compact screens it wraps to a second header row. In-app home links and browser Back animate it home; Forward animates it into the header again.
