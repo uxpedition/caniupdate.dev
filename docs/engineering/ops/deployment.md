@@ -1,6 +1,6 @@
 # Deployment operations
 
-**Status: reviewed.** This guide describes stage and production automation and the external setup still needed to activate it. No production Worker, namespace, route, migration, or application release has been deployed.
+**Status: reviewed.** This guide describes stage and production automation, operator prerequisites, and verification requirements. Deployment existence does not establish release provenance, migration state, or full production readiness.
 
 See [development](development.md) for local commands and [releases and recovery](releases-and-recovery.md) for promotion, verification, and migrations.
 
@@ -100,7 +100,7 @@ Masked values must be single-line, at least eight characters, and contain no spa
 | `GITLAB_RELEASE_TAG_SSH_KEY`       | Protected tag creation / `release-tag`                        | File variable containing the dedicated project deploy key's multiline private SSH key                                                        | Protected, Visible, Raw, File                                                                                               |
 | `GITLAB_RELEASE_TAG_DEPLOY_KEY_ID` | Protected tag creation / `release-tag`                        | Non-secret project deploy-key ID paired with the private-key file                                                                            | Protected, Visible, Raw                                                                                                     |
 
-The recorded production review checked variable names without reading or printing their values. It reports `BRIEFING_PUBLIC_URL` as `wss://briefing.caniupdate.dev`, but says production `NUXT_PUBLIC_SITE_URL` does not match `https://caniupdate.dev`. **Correct the site URL before activation.** No GitLab settings or variables were changed.
+Validate `NUXT_PUBLIC_SITE_URL` against the target's frontend origin before each release. Canonical URLs in rendered HTML help check the public output, but do not establish that GitLab variables and Worker runtime settings agree.
 
 `NUXT_PUBLIC_RELEASE_VERSION` is not a GitLab variable. Production derives it from the validated release receipt for the frontend runtime. Stage receives no release-version override.
 
@@ -278,6 +278,26 @@ Cached pages have the same public content for everyone. Stage is behind Cloudfla
 
 Both hosted environments set `cross_version_cache` to `false`. The Worker version is part of the cache key, so every deployment starts cold. Cloudflare may evict entries before their TTL; one-year TTLs do not guarantee persistence. See [Workers Cache configuration](https://developers.cloudflare.com/workers/cache/configuration/) and [cache examples](https://developers.cloudflare.com/workers/cache/examples/).
 
+There is no explicit purge step in the checked-in deployment workflow. Version separation prevents a new Worker version from serving an older version's cached HTML; it does not physically purge old entries. Within one version, changed comparison evidence does not automatically invalidate already-cached HTML. See [release cache verification](releases-and-recovery.md#response-header-changes-and-cached-html).
+
+### Search discovery and crawler access
+
+Maintain one public HTTPS identity for each page intended for indexing. Keep its canonical URL, internal links, redirects, and sitemap entry consistent. Serve useful factual content in initial HTML without requiring user interaction or AI generation. Google can render JavaScript, but [recommends server rendering or pre-rendering](https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics) because not all crawlers can execute it. These are review requirements, not a claim that every comparison page already meets them.
+
+Use a bounded, reviewed set of useful comparison pages, not every possible package/version pair. A [sitemap helps new sites with few external links](https://developers.google.com/search/docs/crawling-indexing/sitemaps/overview), but neither sitemap submission nor canonical markup guarantees indexing. The comparison-discovery implementation is tracked in [the existing backlog](https://gitlab.com/uxpedition/can-i-npm-update/-/work_items/1).
+
+For a new deployment:
+
+1. Verify the production domain in [Google Search Console](https://support.google.com/webmasters/answer/34592) and [Bing Webmaster Tools](https://www2.bing.com/webmasters/help/add-and-verify-site-12184f8b). These tools provide diagnostics; accounts are not prerequisites for ordinary crawling.
+2. Submit a sitemap only after its canonical URLs are public and the sitemap returns `200`. Inspect representative static, comparison, and invalid URLs. Record indexing status, selected canonicals, crawl failures, and the dates and filters used for clicks/impressions.
+3. Use Bing's submission route for [Yahoo](https://help.yahoo.com/kb/SLN2217.html). [DuckDuckGo](https://duckduckgo.com/duckduckgo-help-pages/results/sources) largely sources traditional links from Bing and also maintains its own crawler and indexes. Bing inclusion does not guarantee placement in either service.
+4. Check both `robots.txt` and Cloudflare controls. Verify crawler identity with Cloudflare's [verified-bot information](https://developers.cloudflare.com/bots/concepts/bot/verified-bots/) or the operator's published verification method. Never bypass application limits based only on a claimed User-Agent.
+5. Keep search crawling, user-directed retrieval, and model-training policy separate. Google's [AI search features](https://developers.google.com/search/docs/appearance/ai-features) use ordinary Search eligibility; no additional technical optimization is required. [PerplexityBot and Perplexity-User](https://docs.perplexity.ai/docs/resources/perplexity-crawlers) have different discovery and retrieval roles, which Perplexity distinguishes from training. Do not change training policy to obtain search eligibility.
+
+Check the target's current robots, sitemap, and Cloudflare settings before submission. Robots permission alone does not prove crawler access. Zero zone security or cache rules does not disable platform protections, Worker rate-limit bindings, or Workers Cache. Inspect legacy Page Rules separately where applicable.
+
+Retain sanitized, dated baseline evidence in the issue or release record. Keep current procedures here, not raw dashboard exports or monthly market-share rankings. Record inaccessible metrics and settings as unavailable. New sites do not need to wait for traffic before recording a baseline.
+
 ### Automatic main-to-stage deployment
 
 [GitLab CI](../../../.gitlab-ci.yml) validates MRs and main pushes. Only a **protected `main` push**, after required validation, can start `stage:delivery`. No MR or tag deploys stage.
@@ -314,7 +334,7 @@ Production smoke checks the public socket route and exact package-version footer
 
 The HTTP proxy requests gzip, deflate, or Brotli only. Its Playwright fetch/fulfillment path cannot correctly decode Zstandard for Firefox. Native WebSocket handshakes bypass the proxy.
 
-Local checks and dry-runs do not activate hosted automation. This worktree change made no production deployment or GitLab settings change. Before enabling a live release, authorized operators must complete the credential, protected-environment/tag, Cloudflare Worker/DO/domain, and production-origin prerequisites below.
+Local checks and dry-runs do not activate hosted automation. Before each live release, authorized operators must verify the credentials, protected environments/tags, Cloudflare resources, and runtime origins for that target.
 
 ### Effect runtime for deployment scripts
 
@@ -417,25 +437,25 @@ The official stage admits authorized maintainers and approved automation only. D
 
 Worker-level Access does not support WebSockets, so the socket needs hostname-based protection. The briefing Worker's exact Origin check is separate and does not replace Access. Keep provisioning and Access policy changes outside ordinary redeployments. See [Workers Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) and [Access cookies](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/).
 
-Config declarations and this guide do not prove activation. This repository update had no authorization to change Cloudflare and changed no dashboard or hosted resource. Treat the new Access application, route attachment, and cross-host browser flow as unverified until an authorized deployment and check are recorded.
+Verify unauthenticated rejection and authorized admission on both hostnames. A frontend login redirect alone does not prove protection of the briefing socket path or successful authenticated cross-host access.
 
-## What remains necessary for production?
+## What is known about production readiness?
 
-Production at `https://caniupdate.dev` is still a launch target, not a public deployment. The three configs define isolated production Workers:
+Production serves `https://caniupdate.dev` using three isolated Workers:
 
 - `can-i-update-production`
 - `can-i-update-production-evidence`
 - `can-i-update-production-briefing`
 
-Frontend bindings target only those production Workers. Briefing binds D1 `can-i-update-production-briefings` (`465d4fc6-35ed-4ef6-842f-e67f3a919b87`) and Queue `can-i-update-production-briefings`. Both were provisioned empty, with no stage data copied or D1 migrations applied.
+Frontend bindings target only those production Workers. Briefing uses a separate production D1 database and Queue. Verify migration state and release-pipeline provenance for each release; resource existence does not establish either.
 
-Frontend and briefing declare custom domains `caniupdate.dev` and `briefing.caniupdate.dev`; evidence stays private. No production Workers, DO namespaces, routes, domains, or rate-limit bindings have been deployed or attached.
+Stage and production use separate rate-limit namespaces. Default limits are 60 public requests and 3 new generations per 60 seconds, with environment-scoped overrides. Verify the deployed binding values and exercise refusal and browser recovery separately.
 
-The first separately authorized production pipeline applies current D1 migrations, deploys evidence → briefing → frontend, then checks Chromium and Firefox. It uses production settings and the existing D1/Queue. It copies neither migration history nor DO state from stage.
+Each separately authorized production pipeline must apply the target's current D1 migrations, deploy evidence → briefing → frontend, and check Chromium and Firefox. It copies neither migration history nor DO state from stage.
 
-Required runtime values are `NUXT_PUBLIC_SITE_URL=https://caniupdate.dev` for frontend and `BRIEFING_PUBLIC_URL=wss://briefing.caniupdate.dev` for the socket. Builds are origin-independent. The recorded GitLab production site URL is wrong and must be corrected; the socket URL matches.
+Required runtime values are `NUXT_PUBLIC_SITE_URL=https://caniupdate.dev` for frontend and `BRIEFING_PUBLIC_URL=wss://briefing.caniupdate.dev` for the socket. Builds are origin-independent. Revalidate runtime settings before release.
 
-**Never reuse stage databases, job state, queues, provider keys, or deployment credentials.** Request and generation limits exist in source; production enforcement is unverified until authorized deployment.
+**Never reuse stage databases, job state, queues, provider keys, or deployment credentials.** Live binding values establish configured limits, not successful enforcement or a global spend cap.
 
 Cloudflare documents Free support for Workers, SQLite Durable Objects, D1, and Queues. This does not establish sustained suitability for this app. Measure deployed Worker CPU and separate request/storage/Queue quotas under representative workloads.
 
@@ -455,17 +475,17 @@ These are investigation targets, not proven causes or quantified savings. Deploy
 
 Cloudflare branch Previews do not provide an isolated three-Worker deployment for this design. Service bindings target production deployments, and branch Previews cannot consume Queues. Use separately deployed resources unless deliberately redesigning the topology. See [Preview resource limitations](https://developers.cloudflare.com/workers/previews/resources/).
 
-## Agreed requirements not yet implemented
+## Outstanding setup and verification
 
 - Portable account-local configuration and an exercised self-hosting workflow.
-- First authorized production deployment, domain/socket activation, and hosted verification. Routes and release automation exist in source, but no production Workers or DO namespaces are deployed and no domain is attached.
-- Production telemetry destination and hosted verification. Stage can export sanitized OTLP directly to GitLab's selected destination. Frontend/briefing endpoints and authentication become separate Worker secrets; checked-in stage vars select no endpoint, and no hosted Collector is required.
+- Production migration history, release provenance, and complete hosted verification. Check these for each release rather than inferring readiness from a reachable frontend.
+- Production telemetry destination and hosted verification. Frontend/briefing endpoints and authentication are separate Worker secrets. No hosted Collector is required by the implementation.
 
   Gateway acceptance and browser intake do not prove Loki/Tempo query visibility or export of platform crashes. Gateway authentication belongs only in frontend/briefing Worker secrets, never browser-visible or public configuration.
 
   [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/) remains enabled as an independent safeguard for escaped exceptions. Per-request invocation logs stay disabled because their metadata includes client IPs. Only exception and console records remain. No outstanding platform setting may reintroduce request-level IP records.
 
-- Hosted rate-limit behavior and browser recovery. Public-request and stricter new-generation limits are implemented in source. Production defaults are 60 requests and 3 new generations per 60 seconds, with optional environment-scoped overrides. Enforcement remains unverified until authorized deployment.
-- Hosted production release flow and footer rendering. Both are implemented in source but remain unverified until a release.
+- Hosted rate-limit behavior and browser recovery. Confirm the deployed bindings and any environment-scoped overrides, then exercise refusal and recovery through a separately authorized check.
+- Production release provenance and footer rendering. Deployment existence does not prove that the protected-tag promotion workflow or browser checks ran.
 
-These outstanding requirements are not claims of production readiness. Implemented limits still need authorized deployment and hosted verification.
+These outstanding requirements are not claims of production readiness. Keep configuration evidence separate from exercised behavior.

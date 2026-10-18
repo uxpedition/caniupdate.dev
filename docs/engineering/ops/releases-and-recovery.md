@@ -56,7 +56,7 @@ If deployment fails while its commit is still protected `main`:
 
 Once `main` advances, stale production jobs are rejected. Recovery needs a newer protected-main revision with passing checks and stage browsers, then a higher version selected in that pipeline's manual release job. Deploy forward, accounting for partial Worker/migration changes.
 
-This workflow is implemented locally but has not deployed production.
+Verify each release's receipt and pipeline evidence rather than inferring provenance from deployment existence.
 
 ## Verification and release evidence
 
@@ -116,6 +116,10 @@ Changing the app's headers does not repair an HTML response already stored at th
 6. If old headers remain, identify whether Workers Cache, another Cloudflare cache rule, or an upstream layer served the response. Invalidate affected URLs in that owning layer using the target's separately authorized purge procedure, then repeat cold and warm GETs. This repository does not automate an account-wide purge.
 
 Keep browser revalidation and the existing edge TTLs unchanged. Record cache replacement and repopulation evidence with the release. Local `smoke:routes:built` checks successful pages, ordinary/scoped comparisons, and 400/404/429/503 errors in the built Worker, but cannot prove hosted cache invalidation, warm edge delivery, or hosted 304 behavior.
+
+Apply the same content-freshness checks to other HTML changes: compare the expected text or metadata, not only cache-hit status. Version separation is not a physical purge. Data changes within one Worker version do not invalidate eligible comparison HTML; it can remain cached until expiry or eviction. A rollback may reuse still-valid entries for the restored version. See the [hosted HTML cache policy](deployment.md#hosted-frontend-html-caching) and [Cloudflare cache controls](https://developers.cloudflare.com/workers/cache/configuration/).
+
+The release operator owns recording these checks. Local header checks do not prove hosted invalidation. Confirm the target's deployed cache configuration rather than assuming the checked-in flags are active.
 
 ### Individual release record
 

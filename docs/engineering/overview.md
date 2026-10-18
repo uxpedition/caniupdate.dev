@@ -146,9 +146,11 @@ Missing bindings, transport or upstream failures, and protocol violations become
 
 ### Public request and new-generation protection
 
-The [public middleware](../../server/middleware/rateLimit.ts) checks Cloudflare's built-in `PUBLIC_RATE_LIMITER` before handling every request that reaches Nitro. The initial allowance is 60 requests per 60 seconds per network address. Pages, APIs (including health and telemetry), and unmatched paths share it.
+The [public middleware](../../server/middleware/rateLimit.ts) checks Cloudflare's built-in `PUBLIC_RATE_LIMITER` before handling every request that reaches Nitro. The initial allowance is 60 requests per 60 seconds per network address. Pages, APIs (including health and telemetry configuration), and unmatched paths share it.
 
 An incoming server-rendered (SSR) request is admitted once, including its internal API fetches. Static assets and cached responses served by Cloudflare without Nitro are outside this check. Worker-first asset routing is not enabled.
+
+The built Cloudflare [Worker entry](../../server/telemetry/workerEntry.ts) handles `/api/telemetry/v1/*` before Nitro. Its [telemetry ingress](../../server/api/telemetry/_internals/ingress.ts) has separate per-isolate admission: 30 requests per client per 60 seconds, at most eight active requests, and 128 client buckets. These signal requests do not consume the public middleware allowance. This in-memory protection is not a global limiter.
 
 The stricter `BRIEFING_GENERATION_LIMITER` initially allows three new generations per 60 seconds. The job owner checks it under the acceptance lock, after checking D1 and reusing queued/running work. A refusal creates or advances no job and dispatches no work. Explicit retries that create another generation count again. Socket observation, Queue delivery, D1 reads, and pending joins do not.
 

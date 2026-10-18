@@ -34,6 +34,7 @@ guide doesn't cover, search through the source code in `node_modules/effect/src`
 ## Documentation style
 
 - In `README.md` and `docs/`, use plain language for the document's intended audience. Make explanations understandable at any experience level within that audience; explain necessary technical terms and avoid jargon where simpler words work.
+- Keep `README.md` and Markdown files under `docs/` focused on current behavior, decisions in force, and operating procedures—not historical records. Replace outdated explanations instead of appending audit findings or change narratives; use Git history and issue/MR evidence for those. ADRs are the exception: preserve their decision history and mark superseded decisions explicitly.
 - Prefer short sentences and short paragraphs, with one main idea per paragraph. Use lists when they make information easier to scan.
 - Put optional background and deeper technical detail in endnotes or linked detail sections when helpful. Keep essential meaning, limitations, and safety warnings in the main text beside the relevant explanation or step.
 

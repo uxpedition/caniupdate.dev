@@ -417,9 +417,9 @@ Portable account-local deployment is still planned.
 
 Managed public-request and new-generation rate limiting are implemented in main. See [limits and configuration](deployment.md#rate-limit-configuration). Local Wrangler defaults use isolated namespaces and conservative limits. Counters are temporary platform state, not D1 migrations.
 
-The manual protected-main release flow, artifact promotion, and receipt-derived production footer identity are implemented in this worktree. Release credentials, protected tags/environments, production Cloudflare resources, the first authorized deployment, and hosted production verification are still outstanding.
+The manual protected-main release flow, artifact promotion, and receipt-derived production footer identity are implemented in source. Each release requires valid credentials, protected tags/environments, current migrations, and complete hosted verification.
 
-Stage/dev commit identity and automatic main-to-stage deployment are implemented locally. Hosted activation has not been observed. See [deployment status](deployment.md#agreed-requirements-not-yet-implemented) and [release identity](releases-and-recovery.md#release-identity).
+Stage/dev commit identity and automatic main-to-stage deployment are implemented in source. Deployment existence does not prove pipeline provenance or complete hosted verification. See [deployment status](deployment.md#outstanding-setup-and-verification) and [release identity](releases-and-recovery.md#release-identity).
 
 ## Further detail: runner measurements
 
