@@ -30,6 +30,12 @@ A separate warning shows changes to the package's stated Node requirements. If t
 
 Select a header tile to open its details in the comparison table. The table also shows other package declarations and measurements.
 
+The page header names the package and exact releases. The overview adds before-and-after values in each tile. These are factual labels, not an AI-generated summary. When measurements are missing, the overview says so rather than treating them as unchanged.
+
+Open **Fact sources & collection times** for links to each package version on npmx.dev, available Bundlephobia estimates, and matched advisory records. Package declarations are still collected from the npm registry. Collection times appear only when the evidence supplies them. An advisory's modification date is not the time we collected it.
+
+The overview and its source links are included in the initial HTML. A cold comparison can contain declarations before measurements are available; it does not wait for AI notes to explain those declarations.
+
 ## Where evidence comes from and how current it is
 
 The [About page](../../app/pages/about.vue) explains these sources and limits publicly:

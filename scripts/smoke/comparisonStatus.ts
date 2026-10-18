@@ -48,6 +48,31 @@ try {
       console.log(`${path} -> ${status}`);
     }
 
+    for (const name of ['measurement-fixture', 'unchanged-fixture']) {
+      const response = await runtime.dispatchFetch(`${origin}/${name}/1.0.0...2.0.0`);
+      const html = await response.text();
+      const overview = html.match(/<section[^>]*aria-labelledby="overview-heading"[^>]*>([\s\S]*?)<\/section>/)?.[1];
+      assert.ok(overview, `${name}: factual overview in initial HTML`);
+      assert.ok(overview.includes(name), `${name}: package identity`);
+
+      for (const version of ['1.0.0', '2.0.0']) {
+        assert.ok(
+          overview.includes(`href="https://npmx.dev/package/${name}/v/${version}"`),
+          `${name}: exact package version on npmx.dev for ${version}`,
+        );
+      }
+
+      assert.equal(
+        overview.includes('&gt;=20'),
+        name !== 'unchanged-fixture',
+        `${name}: declaration change is not invented or lost`,
+      );
+      assert.ok(!overview.includes('No size change'), `${name}: missing measurement is not unchanged`);
+      assert.ok(!overview.includes('0 matched'), `${name}: missing advisory coverage is not zero matches`);
+      assert.ok(!overview.includes('<time'), `${name}: declarations do not invent a collection time`);
+      console.log(`${name}: initial factual overview with exact sources and absent measurements`);
+    }
+
     for (const engine of process.argv.includes('--browsers') ? [chromium, firefox] : []) {
       // Fresh fixture failures for each browser; only public registry calls are replaced.
       const recovery = await comparisonStatusRuntime();
@@ -66,6 +91,17 @@ try {
         assert.deepEqual(errors, [], `${engine.name()}: hydration errors`);
         assert.equal((await page.reload())?.status(), 200, 'reload succeeds after registry recovery');
         await page.locator('#comparison-node').waitFor();
+        const overview = page.locator('section[aria-labelledby="overview-heading"]');
+        await overview.locator('summary').click();
+        assert.equal(
+          await overview.getByRole('link', { name: 'Package version on npmx.dev', exact: true }).count(),
+          2,
+          'both package version links remain available after hydration',
+        );
+        await overview.locator('a[href="#comparison-dependencies"]').click();
+        assert.equal(new URL(page.url()).hash, '#comparison-dependencies', 'overview opens dependency details');
+        await page.locator('#comparison-dependencies').waitFor();
+        assert.deepEqual(errors, [], `${engine.name()}: overview interaction errors`);
         console.log(`${engine.name()}: SSR 503 -> client declaration recovery -> reload 200`);
       } finally {
         await browser.close();

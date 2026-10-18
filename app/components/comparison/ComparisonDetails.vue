@@ -4,6 +4,7 @@ import { computed, nextTick, ref } from 'vue';
 
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import BriefingPanel from '~/components/comparison/BriefingPanel.vue';
+import ComparisonFactSources from '~/components/comparison/ComparisonFactSources.vue';
 import EvidencePanel from '~/components/comparison/EvidencePanel.vue';
 import RowHelp from '~/components/comparison/RowHelp.vue';
 import LoadingMessage from '~/components/element/LoadingMessage.vue';
@@ -55,6 +56,12 @@ const rows = computed(() =>
       )
     : [],
 );
+
+const overviewRows = computed(() => ({
+  dependencies: rows.value.find(({ row }) => row.sourceId === 'comparison.dependencies'),
+  gzip: rows.value.find(({ row }) => row.sourceId === 'comparison.sizes-gzip'),
+  advisories: rows.value.find(({ row }) => row.sourceId === 'comparison.advisories'),
+}));
 
 const groups = computed(() => [
   { title: 'Dependencies & runtime', rows: rows.value.slice(0, 3) },
@@ -165,6 +172,9 @@ const revealCitation = async (event: MouseEvent) => {
             <span class="text-[11px] leading-[1.6] text-muted-foreground max-[700px]:col-start-2"
               >Runtime and optional dependencies</span
             >
+            <span class="text-xs leading-[1.7] text-muted-foreground max-[700px]:col-start-2">
+              Before: {{ overviewRows.dependencies?.from }} · After: {{ overviewRows.dependencies?.to }}
+            </span>
           </a>
           <a
             href="#comparison-sizes-gzip"
@@ -191,6 +201,12 @@ const revealCitation = async (event: MouseEvent) => {
             <span class="text-[11px] leading-[1.6] text-muted-foreground max-[700px]:col-start-2"
               >Bundlephobia estimate, not your app bundle</span
             >
+            <span class="text-xs leading-[1.7] text-muted-foreground max-[700px]:col-start-2">
+              Before: {{ overviewRows.gzip?.from }}
+              <template v-if="overviewRows.gzip?.fromNote"> ({{ overviewRows.gzip.fromNote }})</template>
+              · After: {{ overviewRows.gzip?.to }}
+              <template v-if="overviewRows.gzip?.toNote"> ({{ overviewRows.gzip.toNote }})</template>
+            </span>
           </a>
           <a
             href="#comparison-advisories"
@@ -210,8 +226,17 @@ const revealCitation = async (event: MouseEvent) => {
             <span class="text-[11px] leading-[1.6] text-muted-foreground max-[700px]:col-start-2">{{
               security.detail
             }}</span>
+            <span class="text-xs leading-[1.7] text-muted-foreground max-[700px]:col-start-2">
+              Before: {{ overviewRows.advisories?.from }} · After: {{ overviewRows.advisories?.to }}
+            </span>
           </a>
         </div>
+        <p v-if="!measurements" class="mt-5 text-xs leading-[1.7] text-muted-foreground">
+          Bundle estimates and advisory coverage are
+          {{ isMeasurementsUnavailable ? 'unavailable' : 'not yet available' }}. Package declarations alone do not
+          establish that nothing else changed or that an update is safe.
+        </p>
+        <ComparisonFactSources :declarations="declarations" :measurements="measurements" />
       </section>
 
       <details

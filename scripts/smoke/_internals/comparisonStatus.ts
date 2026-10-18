@@ -3,6 +3,13 @@ import { readFile } from 'node:fs/promises';
 import { Miniflare, Response } from 'miniflare';
 import type { V4FetchHandler } from 'miniflare';
 
+const fixtureManifest = (name: string, version: string) => ({
+  name,
+  version,
+  engines: { node: name === 'unchanged-fixture' || version === '1.0.0' ? '>=18' : '>=20' },
+  dist: { tarball: `https://registry.npmjs.org/${name}/-/fixture.tgz`, shasum: 'abc' },
+});
+
 const registryFixture = (): V4FetchHandler => {
   const failedRecoveryVersions = new Set<string>();
 
@@ -25,12 +32,7 @@ const registryFixture = (): V4FetchHandler => {
       return new Response('private-provider-marker', { status: 503 });
     }
 
-    return Response.json({
-      name,
-      version,
-      engines: { node: version === '1.0.0' ? '>=18' : '>=20' },
-      dist: { tarball: `https://registry.npmjs.org/${name}/-/fixture.tgz`, shasum: 'abc' },
-    });
+    return Response.json(fixtureManifest(name, version));
   };
 };
 
