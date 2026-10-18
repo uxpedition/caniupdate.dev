@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import { chromium, firefox } from 'playwright';
 
+import { verifyComparisonIndexing } from './_internals/comparisonIndexing.ts';
 import { comparisonStatusRuntime } from './_internals/comparisonStatus.ts';
 
 const serve = process.argv.includes('--serve');
@@ -18,6 +19,8 @@ try {
       process.once('SIGTERM', resolve);
     });
   } else {
+    await verifyComparisonIndexing();
+
     for (const [path, status] of [
       ['/measurement-fixture/not-a-pair', 400],
       ['/measurement-fixture/1.0.0...', 400],

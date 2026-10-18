@@ -131,12 +131,14 @@ describe('GitLab private configuration boundaries', () => {
       'production',
       '1.2.3',
     );
-    const stage = readSettings(validSettings, 'stage');
+    const stage = readSettings({ ...validSettings, NUXT_INDEXING_ENABLED: 'true' }, 'stage');
 
     expect(production.frontend.NUXT_PUBLIC_SITE_URL).toBe(PRODUCTION_ORIGIN);
     expect(production.frontend.NUXT_PUBLIC_RELEASE_VERSION).toBe('1.2.3');
     expect(production.briefing.BRIEFING_ALLOWED_ORIGIN).toBe(PRODUCTION_ORIGIN);
     expect(stage.frontend).not.toHaveProperty('NUXT_PUBLIC_RELEASE_VERSION');
+    expect(production.frontend.NUXT_INDEXING_ENABLED).toBe('true');
+    expect(stage.frontend.NUXT_INDEXING_ENABLED).toBe('false');
     expect(() => readSettings(validSettings, 'production', undefined)).toThrow(RuntimeSettingsFailure);
     expect(() => readSettings(validSettings, 'production', '1.2.3-rc.1')).toThrow(RuntimeSettingsFailure);
     expect(() => readSettings(validSettings, 'stage', '1.2.3')).toThrow(RuntimeSettingsFailure);

@@ -106,6 +106,11 @@ Wrangler can fall back to dotenv settings. Deleting `.dev.vars` does not prove a
 
 Local hot-module replacement (HMR) and built dev can omit `NUXT_PUBLIC_SITE_URL`; pages then have no canonical link. Set it to the actual local frontend origin when those links are needed. Builds need no origin. If supplied, Nuxt validates it without embedding it in the artifact.
 
+Local HTML defaults to `X-Robots-Tag: noindex, follow`, even with a production-looking configured origin.
+The deployment helper derives `NUXT_INDEXING_ENABLED` from the validated target; it is not a build input or a new
+GitLab setting. Stage stays `false`; production alone receives `true`. The
+[reviewed inventory](../overview.md#search-indexing-pilot) and successful declaration SSR must also permit indexing.
+
 The homepage includes a description and Open Graph and Twitter card metadata in the initial HTML. Its social card image is a static 1200 × 630 PNG. Image URLs use only the configured runtime origin, never request headers. Without an origin, the description remains but canonical, social page, and image URLs are omitted. The image describes package-version evidence, not compatibility approval.
 
 The homepage also includes one JSON-LD graph in the initial HTML, describing the [WebSite](https://schema.org/WebSite) and [WebApplication](https://schema.org/WebApplication). Both use the homepage's name and description. With a configured origin, their URLs and fragment identifiers use that origin, and the website names the application as its main entity. Without an origin, both descriptions remain, but URLs, identifiers, and the reference between them are omitted. The graph belongs to the homepage and is removed when navigating away.
@@ -140,6 +145,11 @@ declarations prefetch on a cold comparison request; browser revalidation and edg
 For a frontend-only missing-route and protection check, run `nub run smoke:routes:built` after building. It loads the deployable frontend bundle in local Miniflare/workerd. It checks unknown-route `404` responses, existing pages and health, invalid comparison input, exhausted-limit `429` responses, and missing-binding `503` responses. Both HTML and JSON request preferences receive Nitro's sanitized JSON errors. This check needs no credentials, backend Workers, migrations, saved state, or provider calls.
 
 Run `nub run smoke:comparison:built` to check comparison response boundaries against fixed registry fixtures. It checks malformed routes (`400`), unknown packages and versions (`404`), temporary declaration failures (`503`), private error details, and usable declaration HTML (`200`) when measurements fail. CI runs this check against the built frontend. It needs no credentials, backend Workers, migrations, or external provider requests.
+
+The same smoke checks production and nonproduction indexing against fixed registry fixtures. It verifies all five
+reviewed comparisons and static pages, excluded and reverse comparisons, tracking-free canonical identity, and
+reviewed comparisons with unavailable or insufficient declarations. Measurements and AI remain unavailable, proving
+that they do not gate useful SSR facts.
 
 For browser recovery, install the pinned Playwright browsers with `nub exec playwright install --with-deps chromium firefox`, then run `nub run smoke:comparison:built --browsers`. Each browser receives an initial `503`, recovers declarations without changing the comparison URL, and reloads successfully with `200`. Missing backend bindings deliberately keep measurements and AI notes unavailable. For manual inspection, `nub run smoke:comparison:built --serve` serves the same fixtures on loopback port `5273`; open `/recovery-fixture/1.0.0...2.0.0` once for the initial failure and client recovery.
 

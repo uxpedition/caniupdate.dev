@@ -104,6 +104,18 @@ Validate `NUXT_PUBLIC_SITE_URL` against the target's frontend origin before each
 
 `NUXT_PUBLIC_RELEASE_VERSION` is not a GitLab variable. Production derives it from the validated release receipt for the frontend runtime. Stage receives no release-version override.
 
+`NUXT_INDEXING_ENABLED` is also derived, not a GitLab input. The deployment helper sends `true` only for a validated
+production target and sends `false` for stage, clearing any previous managed value. Local and contributor-demo
+runtimes default to `false`. Do not opt a demo into production indexing. The frontend's response policy sets
+`X-Robots-Tag: noindex, follow` on nonproduction HTML, including publicly reachable pages; robots.txt disallow is
+not the deindexing control. Keep Cloudflare Access and the existing origin/rate-limit controls in place.
+
+On production, the [reviewed comparison policy](../overview.md#search-indexing-pilot) still decides which successful
+HTML responses are eligible. Errors and unreviewed comparisons remain `noindex`. After changing inventory membership
+or indexing policy, invalidate affected cached HTML before verifying headers: the static pages can remain at the edge
+for one year and completed comparisons for twelve hours. Check both a reviewed and an excluded comparison, a failed
+comparison, and stage static HTML. A local smoke run does not establish hosted cache invalidation or Access protection.
+
 Enter `OTEL_EXPORTER_OTLP_HEADERS` as one-line JSON with string keys and values. Do not use OTLP shell syntax such as `Authorization=...` or comma-separated pairs.
 
 For Basic authentication, encode the required space as `\u0020`: `{"authorization":"Basic\u0020<base64>"}`. Replace the placeholder with the generated credential. GitLab's raw setting preserves the escape; JSON parsing restores the space. **Never use Visible for an API key, Access credential, or authentication-header value.**

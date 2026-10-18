@@ -7,6 +7,7 @@ import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue';
 import { setResponseStatus, useNuxtApp, useRequestEvent, useRequestFetch } from '#imports';
 import type { PackageMeasurementsResponse } from '#shared/comparison/comparison.defs';
 import { rateLimitMessage } from '#shared/request/rateLimit.defs';
+import { isReviewedComparisonIndexable } from '#shared/site/reviewedComparisons';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import { prefetchDeclarations } from '~/composables/comparisonDeclarationsPrefetch';
 import type { ComparisonTierTelemetry } from '~/composables/comparisonPageTelemetry';
@@ -169,6 +170,9 @@ export const useComparisonPage = async (pageTraceContext?: TraceContext) => {
 
     // Use Nuxt's status bridge: app-side H3 and Nitro can use different event implementations.
     if (requestEvent !== undefined && failureStatus !== undefined) setResponseStatus(requestEvent, failureStatus);
+    if (requestEvent !== undefined) {
+      requestEvent.context.comparisonIndexable = isReviewedComparisonIndexable(queries.declarations.value);
+    }
 
     await convergeIdentity();
   }

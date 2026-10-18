@@ -166,6 +166,7 @@ export function readRuntimeSettings(
     return {
       rateLimits: { public: settings.PUBLIC_RATE_LIMIT, generation: settings.BRIEFING_GENERATION_RATE_LIMIT },
       frontend: {
+        NUXT_INDEXING_ENABLED: String(target === 'production'),
         NUXT_PUBLIC_SITE_URL: settings.NUXT_PUBLIC_SITE_URL,
         NUXT_PUBLIC_TELEMETRY_ENABLED: settings.NUXT_PUBLIC_TELEMETRY_ENABLED,
         ...(releaseReceiptVersion === undefined ? {} : { NUXT_PUBLIC_RELEASE_VERSION: releaseReceiptVersion }),

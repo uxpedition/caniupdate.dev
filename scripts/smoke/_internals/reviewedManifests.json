@@ -1,0 +1,528 @@
+[
+  {
+    "name": "typescript",
+    "version": "6.0.3",
+    "engines": {
+      "node": ">=14.17"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz",
+      "shasum": "90251dc007916e972786cb94d74d15b185577d21"
+    }
+  },
+  {
+    "name": "typescript",
+    "version": "7.0.2",
+    "engines": {
+      "node": ">=16.20.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/typescript/-/typescript-7.0.2.tgz",
+      "shasum": "9ec773d7954a8c182c17cc5bbd575aa28bc51582"
+    }
+  },
+  {
+    "name": "next",
+    "version": "15.5.28",
+    "engines": {
+      "node": "^18.18.0 || ^19.8.0 || >= 20.0.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/next/-/next-15.5.28.tgz",
+      "shasum": "0589d32fa30ba712e4647deebeaabaf936e8a272"
+    }
+  },
+  {
+    "name": "next",
+    "version": "16.4.2",
+    "engines": {
+      "node": ">=20.9.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/next/-/next-16.4.2.tgz",
+      "shasum": "5b35585834dd7ed338099723eefe117eb6ab497b"
+    }
+  },
+  {
+    "name": "react-dom",
+    "version": "18.3.1",
+    "peerDependencies": {
+      "react": "^18.3.1"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz",
+      "shasum": "c2265d79511b57d479b3dd3fdfa51536494c5cb4"
+    }
+  },
+  {
+    "name": "react-dom",
+    "version": "19.3.1",
+    "peerDependencies": {
+      "react": "^19.3.1"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/react-dom/-/react-dom-19.3.1.tgz",
+      "shasum": "b384c53cfcbe9c2a5d09d863b98455de9d68afe2"
+    }
+  },
+  {
+    "name": "tailwindcss",
+    "version": "3.4.19",
+    "types": "types/index.d.ts",
+    "dist": {
+      "tarball": "https://registry.npmjs.org/tailwindcss/-/tailwindcss-3.4.19.tgz",
+      "shasum": "af2a0a4ae302d52ebe078b6775e799e132500ee2"
+    }
+  },
+  {
+    "name": "tailwindcss",
+    "version": "4.3.3",
+    "dist": {
+      "tarball": "https://registry.npmjs.org/tailwindcss/-/tailwindcss-4.3.3.tgz",
+      "shasum": "c006861611c213c1877893ab5b23daa16be2bb55"
+    }
+  },
+  {
+    "name": "vite",
+    "version": "7.3.7",
+    "dependencies": {
+      "fdir": "^6.5.0",
+      "rollup": "^4.43.0",
+      "esbuild": "^0.27.0 || ^0.28.0",
+      "postcss": "^8.5.6",
+      "picomatch": "^4.0.3",
+      "tinyglobby": "^0.2.15"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/vite/-/vite-7.3.7.tgz",
+      "shasum": "017a80fdce051003a4aa290dddd0b159aa769282"
+    }
+  },
+  {
+    "name": "vite",
+    "version": "8.3.4",
+    "dependencies": {
+      "postcss": "^8.5.29",
+      "rolldown": "~1.2.12",
+      "picomatch": "^4.0.7",
+      "tinyglobby": "^0.2.17",
+      "lightningcss": "^1.33.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/vite/-/vite-8.3.4.tgz",
+      "shasum": "ba08678ba41ba53f41c251b1772946c27b1c874e"
+    }
+  },
+  {
+    "name": "zod",
+    "version": "3.24.2",
+    "types": "./index.d.ts",
+    "dist": {
+      "tarball": "https://registry.npmjs.org/zod/-/zod-3.24.2.tgz",
+      "shasum": "8efa74126287c675e92f46871cfc8d15c34372b3"
+    }
+  },
+  {
+    "name": "zod",
+    "version": "4.6.7",
+    "types": "./index.d.cts",
+    "dist": {
+      "tarball": "https://registry.npmjs.org/zod/-/zod-4.6.7.tgz",
+      "shasum": "e806cf64a7f4e37635ce9f2f52c04c3766f75e5b"
+    }
+  },
+  {
+    "name": "eslint",
+    "version": "9.39.5",
+    "engines": {
+      "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/eslint/-/eslint-9.39.5.tgz",
+      "shasum": "2a4e3c8b0f753196efae943c8ffaa8730fc6a3fa"
+    }
+  },
+  {
+    "name": "eslint",
+    "version": "10.13.0",
+    "engines": {
+      "node": "^20.19.0 || ^22.13.0 || >=24"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/eslint/-/eslint-10.13.0.tgz",
+      "shasum": "a8a4742648c0fa9131f429b509de5407682d4864"
+    }
+  },
+  {
+    "name": "vitest",
+    "version": "4.1.12",
+    "engines": {
+      "node": "^20.0.0 || ^22.0.0 || >=24.0.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/vitest/-/vitest-4.1.12.tgz",
+      "shasum": "b372587e9c000f165f1757793178ea6b5631f82e"
+    }
+  },
+  {
+    "name": "vitest",
+    "version": "5.0.5",
+    "engines": {
+      "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/vitest/-/vitest-5.0.5.tgz",
+      "shasum": "266e335f4177541e3e60f876e0694f966a9601f2"
+    }
+  },
+  {
+    "name": "express",
+    "version": "4.22.3",
+    "dependencies": {
+      "qs": "~6.16.0",
+      "depd": "2.0.0",
+      "etag": "~1.8.1",
+      "send": "~0.19.0",
+      "vary": "~1.1.2",
+      "debug": "2.6.9",
+      "fresh": "~0.5.2",
+      "cookie": "~0.7.1",
+      "accepts": "~1.3.8",
+      "methods": "~1.1.2",
+      "type-is": "~1.6.18",
+      "parseurl": "~1.3.3",
+      "statuses": "~2.0.1",
+      "encodeurl": "~2.0.0",
+      "proxy-addr": "~2.0.7",
+      "body-parser": "~1.20.5",
+      "escape-html": "~1.0.3",
+      "http-errors": "~2.0.0",
+      "on-finished": "~2.4.1",
+      "safe-buffer": "5.2.1",
+      "utils-merge": "1.0.1",
+      "content-type": "~1.0.4",
+      "finalhandler": "~1.3.1",
+      "range-parser": "~1.2.1",
+      "serve-static": "~1.16.2",
+      "array-flatten": "1.1.1",
+      "path-to-regexp": "~0.1.13",
+      "setprototypeof": "1.2.0",
+      "cookie-signature": "~1.0.6",
+      "merge-descriptors": "1.0.3",
+      "content-disposition": "~0.5.4"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/express/-/express-4.22.3.tgz",
+      "shasum": "e8f898d3c17582b1e311dd2c5cd6d8deff84724b"
+    }
+  },
+  {
+    "name": "express",
+    "version": "5.3.0",
+    "dependencies": {
+      "qs": "^6.16.0",
+      "depd": "^2.0.0",
+      "etag": "^1.8.1",
+      "once": "^1.4.0",
+      "send": "^1.1.0",
+      "vary": "^1.1.2",
+      "debug": "^4.4.0",
+      "fresh": "^2.0.0",
+      "cookie": "^0.7.1",
+      "router": "^2.2.0",
+      "accepts": "^2.0.0",
+      "type-is": "^2.1.0",
+      "parseurl": "^1.3.3",
+      "statuses": "^2.0.1",
+      "encodeurl": "^2.0.0",
+      "mime-types": "^3.0.0",
+      "proxy-addr": "^2.0.8",
+      "body-parser": "^2.3.0",
+      "escape-html": "^1.0.3",
+      "http-errors": "^2.0.0",
+      "on-finished": "^2.4.1",
+      "content-type": "^2.0.0",
+      "finalhandler": "^2.1.0",
+      "range-parser": "^1.2.1",
+      "serve-static": "^2.2.0",
+      "cookie-signature": "^1.2.1",
+      "merge-descriptors": "^2.0.0",
+      "content-disposition": "^2.0.1"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/express/-/express-5.3.0.tgz",
+      "shasum": "ab72dace89c50c8417bd3f865dad0b4fd1ca1c73"
+    }
+  },
+  {
+    "name": "react",
+    "version": "18.3.1",
+    "dependencies": {
+      "loose-envify": "^1.1.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
+      "shasum": "49ab892009c53933625bd16b2533fc754cab2891"
+    }
+  },
+  {
+    "name": "react",
+    "version": "19.3.1",
+    "dist": {
+      "tarball": "https://registry.npmjs.org/react/-/react-19.3.1.tgz",
+      "shasum": "26e9523fc36ea06be5050ebb780249a133260ad7"
+    }
+  },
+  {
+    "name": "@tanstack/react-query",
+    "version": "4.44.0",
+    "peerDependencies": {
+      "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0",
+      "react-dom": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0",
+      "react-native": "*"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/@tanstack/react-query/-/react-query-4.44.0.tgz",
+      "shasum": "8e6b93cbf08dc19e1ab8b1b97a9451ba82069d19"
+    }
+  },
+  {
+    "name": "@tanstack/react-query",
+    "version": "5.104.4",
+    "peerDependencies": {
+      "react": "^18 || ^19",
+      "@types/react": "^18 || ^19"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/@tanstack/react-query/-/react-query-5.104.4.tgz",
+      "shasum": "c4bd67a1964ca2f359c65cb3376fea86b3149f15"
+    }
+  },
+  {
+    "name": "@prisma/client",
+    "version": "6.19.3",
+    "engines": {
+      "node": ">=18.18"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/@prisma/client/-/client-6.19.3.tgz",
+      "shasum": "b04413143eeb0812a323451bbc1a22767cee11ef"
+    }
+  },
+  {
+    "name": "@prisma/client",
+    "version": "7.10.1",
+    "engines": {
+      "node": "^20.19 || ^22.12 || >=24.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/@prisma/client/-/client-7.10.1.tgz",
+      "shasum": "c3a6acd14b79ccd788fc93e150df26bae4be5c83"
+    }
+  },
+  {
+    "name": "nuxt",
+    "version": "3.21.11",
+    "engines": {
+      "node": "^20.19.0 || >=22.12.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/nuxt/-/nuxt-3.21.11.tgz",
+      "shasum": "b37f52fbb69340c71e59d8982c42cc465fa1ca2c"
+    }
+  },
+  {
+    "name": "nuxt",
+    "version": "4.6.2",
+    "engines": {
+      "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/nuxt/-/nuxt-4.6.2.tgz",
+      "shasum": "e7ebd4d78d26b8f53d79e9ab49bb3274ab767081"
+    }
+  },
+  {
+    "name": "svelte",
+    "version": "4.2.20",
+    "engines": {
+      "node": ">=16"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/svelte/-/svelte-4.2.20.tgz",
+      "shasum": "31cae3e8f10ccdc6441fae8157c1e8da5965d228"
+    }
+  },
+  {
+    "name": "svelte",
+    "version": "5.57.2",
+    "engines": {
+      "node": ">=18"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/svelte/-/svelte-5.57.2.tgz",
+      "shasum": "708ba9778114dc59457894055c9b034a4e0c86e0"
+    }
+  },
+  {
+    "name": "jest",
+    "version": "29.7.0",
+    "engines": {
+      "node": "^14.15.0 || ^16.10.0 || >=18.0.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/jest/-/jest-29.7.0.tgz",
+      "shasum": "994676fc24177f088f1c5e3737f5697204ff2613"
+    }
+  },
+  {
+    "name": "jest",
+    "version": "30.5.2",
+    "engines": {
+      "node": "^18.14.0 || ^20.0.0 || ^22.0.0 || >=24.0.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/jest/-/jest-30.5.2.tgz",
+      "shasum": "f70e547083b214a3a8314fcf45f54d559b32d4a1"
+    }
+  },
+  {
+    "name": "@angular/core",
+    "version": "21.2.25",
+    "engines": {
+      "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/@angular/core/-/core-21.2.25.tgz",
+      "shasum": "905103a3e1bfb5ab8c1dd85038b1f6108ffda919"
+    }
+  },
+  {
+    "name": "@angular/core",
+    "version": "22.2.3",
+    "engines": {
+      "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/@angular/core/-/core-22.2.3.tgz",
+      "shasum": "7d150456dca4eeb2b2dfbecba85a20f717376b0f"
+    }
+  },
+  {
+    "name": "fastify",
+    "version": "4.29.1",
+    "dependencies": {
+      "pino": "^9.0.0",
+      "rfdc": "^1.3.0",
+      "avvio": "^8.3.0",
+      "semver": "^7.5.4",
+      "proxy-addr": "^2.0.7",
+      "toad-cache": "^3.3.0",
+      "find-my-way": "^8.0.0",
+      "@fastify/error": "^3.4.0",
+      "process-warning": "^3.0.0",
+      "abstract-logging": "^2.0.1",
+      "light-my-request": "^5.11.0",
+      "secure-json-parse": "^2.7.0",
+      "fast-json-stringify": "^5.8.0",
+      "@fastify/ajv-compiler": "^3.5.0",
+      "fast-content-type-parse": "^1.1.0",
+      "@fastify/fast-json-stringify-compiler": "^4.3.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/fastify/-/fastify-4.29.1.tgz",
+      "shasum": "fbd91a507e3a575c6c8032ad5d1bfd801004fb3b"
+    }
+  },
+  {
+    "name": "fastify",
+    "version": "5.12.7",
+    "dependencies": {
+      "pino": "^9.14.0 || ^10.1.0",
+      "rfdc": "^1.3.1",
+      "avvio": "^9.0.0",
+      "semver": "^7.6.0",
+      "toad-cache": "^3.7.0",
+      "find-my-way": "^9.6.0",
+      "@fastify/error": "^4.0.0",
+      "process-warning": "^5.1.0",
+      "abstract-logging": "^2.0.1",
+      "light-my-request": "^6.0.0",
+      "secure-json-parse": "^4.0.0",
+      "@fastify/proxy-addr": "^5.0.0",
+      "fast-json-stringify": "^7.0.0",
+      "@fastify/ajv-compiler": "^4.0.5",
+      "@fastify/fast-json-stringify-compiler": "^5.0.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/fastify/-/fastify-5.12.7.tgz",
+      "shasum": "e8f9859b1ae908ba38bbdb0572d358788c4a4b46"
+    }
+  },
+  {
+    "name": "date-fns",
+    "version": "3.6.0",
+    "dist": {
+      "tarball": "https://registry.npmjs.org/date-fns/-/date-fns-3.6.0.tgz",
+      "shasum": "f20ca4fe94f8b754951b24240676e8618c0206bf"
+    }
+  },
+  {
+    "name": "date-fns",
+    "version": "4.4.0",
+    "type": "module",
+    "dist": {
+      "tarball": "https://registry.npmjs.org/date-fns/-/date-fns-4.4.0.tgz",
+      "shasum": "806539edf45c616b2b76b5f78b88c56ed3c7e036"
+    }
+  },
+  {
+    "name": "prettier",
+    "version": "2.8.8",
+    "engines": {
+      "node": ">=10.13.0"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/prettier/-/prettier-2.8.8.tgz",
+      "shasum": "e8c5d7e98a4305ffe3de2e1fc4aca1a71c28b1da"
+    }
+  },
+  {
+    "name": "prettier",
+    "version": "3.9.10",
+    "engines": {
+      "node": ">=14"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/prettier/-/prettier-3.9.10.tgz",
+      "shasum": "ac378e432f1a7381518f2e080816bbaefa38d585"
+    }
+  },
+  {
+    "name": "vue",
+    "version": "2.7.16",
+    "dependencies": {
+      "csstype": "^3.1.0",
+      "@vue/compiler-sfc": "2.7.16"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/vue/-/vue-2.7.16.tgz",
+      "shasum": "98c60de9def99c0e3da8dae59b304ead43b967c9"
+    }
+  },
+  {
+    "name": "vue",
+    "version": "3.5.44",
+    "dependencies": {
+      "@vue/shared": "3.5.44",
+      "@vue/runtime-dom": "3.5.44",
+      "@vue/compiler-dom": "3.5.44",
+      "@vue/compiler-sfc": "3.5.44",
+      "@vue/server-renderer": "3.5.44"
+    },
+    "dist": {
+      "tarball": "https://registry.npmjs.org/vue/-/vue-3.5.44.tgz",
+      "shasum": "de7828ab2cf53757ecb920564b7b6c36bf187aca"
+    }
+  }
+]

@@ -140,6 +140,65 @@ The browser supplies only package/version selectors, never trusted comparison fa
 
 Missing bindings, transport or upstream failures, and protocol violations become sanitized service failures. There is no fallback to browser-side collection or generation.
 
+### Search indexing pilot
+
+Production allows indexing of the homepage, About, Privacy, and the twenty ordered comparisons in
+[`reviewedComparisons.ts`](../../shared/site/reviewedComparisons.ts). Every other valid comparison remains usable
+and shareable, with its own exact canonical URL, but receives `X-Robots-Tag: noindex, follow`.
+
+Inventory membership alone does not make a response eligible. It must return successful HTML with resolved
+declarations that show the entry's reviewed kind of change. A missing declaration response, a placeholder, an error,
+or declarations that no longer support that evidence receives `noindex`. The initial overview links exact release
+sources and explains missing measurement coverage. Measurements and successful AI notes are not indexing requirements.
+Reading the inventory performs no provider collection, archive inspection, or AI generation.
+
+The inventory covers current major-version migrations and selected older migrations. Package adoption helps
+prioritize candidates; npm downloads are not search-volume measurements. The list is not a ranking of the most
+searched upgrades. Exact registry declarations were checked on 2026-10-18:
+
+| Ordered comparison                    | Required declaration evidence     | Registry sources                                                                                                                           |
+| ------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| TypeScript 6.0.3 → 7.0.2              | Node requirement                  | [6.0.3](https://registry.npmjs.org/typescript/6.0.3), [7.0.2](https://registry.npmjs.org/typescript/7.0.2)                                 |
+| Next.js 15.5.28 → 16.4.2              | Node requirement                  | [15.5.28](https://registry.npmjs.org/next/15.5.28), [16.4.2](https://registry.npmjs.org/next/16.4.2)                                       |
+| React DOM 18.3.1 → 19.3.1             | React peer requirement            | [18.3.1](https://registry.npmjs.org/react-dom/18.3.1), [19.3.1](https://registry.npmjs.org/react-dom/19.3.1)                               |
+| Tailwind CSS 3.4.19 → 4.3.3           | Root type entry                   | [3.4.19](https://registry.npmjs.org/tailwindcss/3.4.19), [4.3.3](https://registry.npmjs.org/tailwindcss/4.3.3)                             |
+| Vite 7.3.7 → 8.3.4                    | Build dependencies                | [7.3.7](https://registry.npmjs.org/vite/7.3.7), [8.3.4](https://registry.npmjs.org/vite/8.3.4)                                             |
+| Zod 3.24.2 → 4.6.7                    | Root type entry                   | [3.24.2](https://registry.npmjs.org/zod/3.24.2), [4.6.7](https://registry.npmjs.org/zod/4.6.7)                                             |
+| ESLint 9.39.5 → 10.13.0               | Node requirement                  | [9.39.5](https://registry.npmjs.org/eslint/9.39.5), [10.13.0](https://registry.npmjs.org/eslint/10.13.0)                                   |
+| Vitest 4.1.12 → 5.0.5                 | Node requirement                  | [4.1.12](https://registry.npmjs.org/vitest/4.1.12), [5.0.5](https://registry.npmjs.org/vitest/5.0.5)                                       |
+| Express 4.22.3 → 5.3.0                | Direct dependencies               | [4.22.3](https://registry.npmjs.org/express/4.22.3), [5.3.0](https://registry.npmjs.org/express/5.3.0)                                     |
+| React 18.3.1 → 19.3.1                 | Direct dependencies               | [18.3.1](https://registry.npmjs.org/react/18.3.1), [19.3.1](https://registry.npmjs.org/react/19.3.1)                                       |
+| TanStack React Query 4.44.0 → 5.104.4 | React peer requirements           | [4.44.0](https://registry.npmjs.org/@tanstack%2Freact-query/4.44.0), [5.104.4](https://registry.npmjs.org/@tanstack%2Freact-query/5.104.4) |
+| Prisma Client 6.19.3 → 7.10.1         | Node requirement                  | [6.19.3](https://registry.npmjs.org/@prisma%2Fclient/6.19.3), [7.10.1](https://registry.npmjs.org/@prisma%2Fclient/7.10.1)                 |
+| Nuxt 3.21.11 → 4.6.2                  | Node requirement                  | [3.21.11](https://registry.npmjs.org/nuxt/3.21.11), [4.6.2](https://registry.npmjs.org/nuxt/4.6.2)                                         |
+| Svelte 4.2.20 → 5.57.2                | Node requirement                  | [4.2.20](https://registry.npmjs.org/svelte/4.2.20), [5.57.2](https://registry.npmjs.org/svelte/5.57.2)                                     |
+| Jest 29.7.0 → 30.5.2                  | Node requirement                  | [29.7.0](https://registry.npmjs.org/jest/29.7.0), [30.5.2](https://registry.npmjs.org/jest/30.5.2)                                         |
+| Angular Core 21.2.25 → 22.2.3         | Node requirement                  | [21.2.25](https://registry.npmjs.org/@angular%2Fcore/21.2.25), [22.2.3](https://registry.npmjs.org/@angular%2Fcore/22.2.3)                 |
+| Fastify 4.29.1 → 5.12.7               | Direct dependencies               | [4.29.1](https://registry.npmjs.org/fastify/4.29.1), [5.12.7](https://registry.npmjs.org/fastify/5.12.7)                                   |
+| date-fns 3.6.0 → 4.4.0                | Module format                     | [3.6.0](https://registry.npmjs.org/date-fns/3.6.0), [4.4.0](https://registry.npmjs.org/date-fns/4.4.0)                                     |
+| Prettier 2.8.8 → 3.9.10               | Node requirement                  | [2.8.8](https://registry.npmjs.org/prettier/2.8.8), [3.9.10](https://registry.npmjs.org/prettier/3.9.10)                                   |
+| Vue 2.7.16 → 3.5.44                   | Compiler and runtime dependencies | [2.7.16](https://registry.npmjs.org/vue/2.7.16), [3.5.44](https://registry.npmjs.org/vue/3.5.44)                                           |
+
+The comparison smoke fixtures retain only the reviewed declaration fields and package identity from these
+manifests. They exercise every entry with available, missing, and insufficient evidence, without external requests.
+TypeScript's native-compiler speedups are [maintainer-reported](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/),
+not measured by this product or required for indexing.
+
+These are metadata comparisons, not claims about API compatibility, installed dependency resolution, measured sizes,
+or security. Reverse comparisons and other release pairs need their own review.
+
+The maintainer approving an inventory MR owns review and removal for that change; this policy assigns no individual.
+Review the inventory monthly and whenever a source failure or misleading result is reported. Check exact identity,
+initial HTML, canonical URLs, meaningful facts, and coverage limits without requiring AI. Remove an entry promptly
+if it is no longer useful or its sources cannot support its rationale. Update its manifest-review date only after
+checking those sources. Restore it through a reviewed MR after resolving the problem. Removing an entry does not
+remove the comparison route. Any future no-change entry needs an explicit useful rationale and a coverage rule;
+an empty diff alone is not evidence of usefulness.
+
+Nonproduction responses are explicitly `noindex` by default, independently of their hostname and robots.txt.
+Only a validated production deployment enables indexing. This does not replace stage access controls.
+See [deployment](ops/deployment.md) for configuration and cache invalidation.
+
 ### Public request and new-generation protection
 
 The [public middleware](../../server/middleware/rateLimit.ts) checks Cloudflare's built-in `PUBLIC_RATE_LIMITER` before handling every request that reaches Nitro. The initial allowance is 60 requests per 60 seconds per network address. Pages, APIs (including health and telemetry configuration), and unmatched paths share it.
