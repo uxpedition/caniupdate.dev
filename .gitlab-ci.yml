@@ -57,6 +57,7 @@ smoke:built:
   script:
     - export NUXT_PUBLIC_SITE_URL='http://localhost:5273'
     - printf '%s\n' 'AI_BRIEFING_ENDPOINT="http://127.0.0.1:8787/v1/chat/completions"' 'AI_BRIEFING_API_KEY="local-fixture-key"' 'AI_BRIEFING_MODEL="local-fixture-model"' > workers/briefing/.dev.vars
+    - nub run smoke:routes:built
     - nub run smoke:built
 
 .stage-main:

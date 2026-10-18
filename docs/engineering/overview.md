@@ -154,6 +154,8 @@ The key is not evidence identity, authentication, or anonymization. It never ent
 
 Refusals return sanitized `429`, `Retry-After: 60`, `no-store`, and structured `data.code` (`request-rate-limited` or `generation-rate-limited`) with `retryAfter: 60`. This is conservative retry advice, not a guaranteed reset time. A failed limiter binding fails closed with sanitized `503`.
 
+Nitro returns its sanitized JSON error envelope for both page and API failures, including requests that accept HTML. Unknown routes return `404`; `/sitemap.xml` is not implemented and also returns `404`. The response keeps the original status and public error data. Error rendering does not make another routed request: Nuxt's Vue error renderer would lose Cloudflare bindings on that internal fetch and turn an admitted request's error into a false protection-unavailable `503`.
+
 Browser requests disable transport/query retries for 429, reconnect refetch, and retry-on-mount. Manual retry controls recover comparison, measurements, and notes separately. The existing single briefing retry after 503 stays bounded.
 
 Cloudflare's [limiter](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) is approximate, eventually consistent, and per location. With no accounts, people sharing an IP—households, offices, carrier NAT, or proxies—share allowances. Rotating addresses/locations can evade them.

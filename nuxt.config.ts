@@ -53,6 +53,9 @@ export default defineNuxtConfig({
     pattern: ['**/*.vue'],
   },
   nitro: {
+    // Keep Nitro's sanitized error responder. Nuxt's Vue error fetch drops Cloudflare
+    // context and would replace the original error with a protection-unavailable 503.
+    errorHandler: [],
     ignore: ['**/*.unit.ts', '**/_internals/**'],
     preset: 'cloudflare_module',
     hooks: {

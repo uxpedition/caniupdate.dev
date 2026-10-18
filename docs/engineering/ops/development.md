@@ -131,6 +131,8 @@ edge-cached HTML between user agents. Streaming can deliver page metadata only a
 exclusion applies at the origin, not when a crawler receives a browser-warmed cache entry. Buffering waits for the
 declarations prefetch on a cold comparison request; browser revalidation and edge TTLs remain unchanged.
 
+For a frontend-only missing-route and protection check, run `nub run smoke:routes:built` after building. It loads the deployable frontend bundle in local Miniflare/workerd. It checks unknown-route `404` responses, existing pages and health, invalid comparison input, exhausted-limit `429` responses, and missing-binding `503` responses. Both HTML and JSON request preferences receive Nitro's sanitized JSON errors. This check needs no credentials, backend Workers, migrations, saved state, or provider calls.
+
 Changing `NUXT_PUBLIC_SITE_URL` takes effect on the next built dev start or frontend Worker deployment. No rebuild is needed.
 
 To check that one build works under different origins:
