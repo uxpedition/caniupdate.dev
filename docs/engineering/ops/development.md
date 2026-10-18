@@ -108,6 +108,10 @@ Local hot-module replacement (HMR) and built dev can omit `NUXT_PUBLIC_SITE_URL`
 
 The homepage includes a description and Open Graph and Twitter card metadata in the initial HTML. Its social card image is a static 1200 × 630 PNG. Image URLs use only the configured runtime origin, never request headers. Without an origin, the description remains but canonical, social page, and image URLs are omitted. The image describes package-version evidence, not compatibility approval.
 
+The homepage also includes one JSON-LD graph in the initial HTML, describing the [WebSite](https://schema.org/WebSite) and [WebApplication](https://schema.org/WebApplication). Both use the homepage's name and description. With a configured origin, their URLs and fragment identifiers use that origin, and the website names the application as its main entity. Without an origin, both descriptions remain, but URLs, identifiers, and the reference between them are omitted. The graph belongs to the homepage and is removed when navigating away.
+
+Validate the emitted JSON-LD with the [Schema Markup Validator](https://validator.schema.org/). Check both configured and unset origins, then navigate away and back in Chromium and Firefox to confirm that the graph is not duplicated. The markup describes the product; it does not claim ratings, reviews, compatibility approval, or eligibility for a search rich result.
+
 ## How do I check the built runtime?
 
 Stop a launcher that owns `.wrangler/state` before starting another. Stop the built dev runtime before rebuilding its output.

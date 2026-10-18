@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { FileCode, Gauge, Network, Shield } from '@lucide/vue';
 
-import { useNuxtApp, useRuntimeConfig, useSeoMeta, useState } from '#imports';
+import { useHead, useNuxtApp, useRuntimeConfig, useSeoMeta, useState } from '#imports';
 import { absoluteUrl } from '#shared/site/siteUrl';
 import ComparisonForm from '~/components/comparison/ComparisonForm.vue';
 import SiteFooter from '~/components/SiteFooter.vue';
@@ -13,9 +13,42 @@ const showFormIntro = useNuxtApp().isHydrating === true;
 const title = 'Compare npm Package Versions | Can I Update?';
 
 const description =
-  'Compare two versions of one public npm package. Review dependency changes, bundle estimates, and known security advisories—not a guarantee of compatibility.';
+  'Compare two versions of one public npm package. Review dependency changes, bundle estimates, and known security advisories. This does not guarantee compatibility.';
 
 const siteUrl = useRuntimeConfig().public.siteUrl;
+
+const homepageUrl = siteUrl === '' ? undefined : absoluteUrl(siteUrl, '/');
+
+const applicationId = homepageUrl === undefined ? undefined : `${homepageUrl}#application`;
+
+useHead({
+  script: [
+    {
+      key: 'homepage-structured-data',
+      type: 'application/ld+json',
+      textContent: {
+        '@context': 'https://schema.org',
+        '@graph': [
+          {
+            '@type': 'WebSite',
+            '@id': homepageUrl === undefined ? undefined : `${homepageUrl}#website`,
+            name: 'Can I Update?',
+            description,
+            url: homepageUrl,
+            mainEntity: applicationId === undefined ? undefined : { '@id': applicationId },
+          },
+          {
+            '@type': 'WebApplication',
+            '@id': applicationId,
+            name: 'Can I Update?',
+            description,
+            url: homepageUrl,
+          },
+        ],
+      },
+    },
+  ],
+});
 
 const image = siteUrl === '' ? undefined : absoluteUrl(siteUrl, '/social-preview.png');
 
