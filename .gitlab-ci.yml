@@ -17,6 +17,14 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - when: never
 
+merge-request-title:
+  stage: verify
+  timeout: 5m
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - printf '%s\n' "$CI_MERGE_REQUEST_TITLE" | nub run commitlint --verbose
+
 quality:
   stage: verify
   timeout: 5m

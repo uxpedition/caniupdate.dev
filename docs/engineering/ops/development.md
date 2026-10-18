@@ -175,10 +175,15 @@ Jobs use the self-hosted group runner tagged `debian-home-server`, with Docker o
 
 Jobs use a pinned Node image, Nub from the `packageManager` pin, and `nub ci`. They run the existing non-fixing package checks without changing lint severities or adding a coverage threshold.
 
+The required `merge-request-title` job checks `CI_MERGE_REQUEST_TITLE` with `nub run commitlint`, using the same [`commitlint.config.mjs`](../../../commitlint.config.mjs) as the commit-message hook. Use a Conventional Commit title, such as `fix(comparison): preserve missing evidence`, so it can become the squash commit subject. This job runs only in MR pipelines; it does not check every commit on the source branch.
+
+After editing a title, start a new pipeline from the MR's **Pipelines → Run pipeline** action before merging. A title edit alone does not trigger an [MR pipeline](https://docs.gitlab.com/ci/pipelines/merge_request_pipelines/). A passing pipeline validates the title supplied to that pipeline, not later title edits. Keep the final squash commit subject consistent with the validated title.
+
 The test job uses four Vitest workers. The [sequencer](../../../test/realAlarm.sequencer.ts) starts the two real-time alarm guards first. Other suites share a fresh Worker bundle and use test-only clock control. Keep suite discovery, isolated storage/runtimes, and native scheduling guards intact when changing test scheduling.
 
 Required gates cover:
 
+- MR titles against the existing commit-message rules.
 - Types across all three runtimes, lint, and formatting.
 - The complete Vitest suite and migration consistency.
 - Deployable frontend/backend bundles and built-application smoke.
