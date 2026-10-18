@@ -4,6 +4,7 @@
 
 import { Effect, Schema } from 'effect';
 import { HttpClient } from 'effect/http';
+import { maxSatisfying, validRange } from 'semver';
 
 import type { BriefingInput } from '../../shared/comparison/briefing/briefing.defs';
 import type {
@@ -19,6 +20,7 @@ import { PackageVulnerabilitiesSchema } from '../../shared/comparison/evidence/o
 import type { PackageTarball } from '../../shared/comparison/evidence/tarball.defs';
 import { isExactSemver } from '../../shared/comparison/package/compareSemver';
 import {
+  RegistryPackageMetadataSchema,
   RegistryVersionManifestSchema,
   toPackageVersion,
   type RegistryVersionManifest,
@@ -56,14 +58,31 @@ const reportProviderAvailability = (provider: EvidenceProvider, ...statuses: Rea
   );
 };
 
-// The registry does not negotiate content on this route: `install-v1+json` and `application/json` return the
-// same full manifest. Only the packument route abbreviates, so no `Accept` header is sent here.
-const registryVersionManifestRequest = (packageName: string, version: string) =>
-  Effect.gen(function* () {
+// Ranges need the version index; npm's version endpoint resolves only exact releases and tags.
+// Fetch the selected full manifest separately: abbreviated metadata omits declarations we compare.
+const registryVersionManifestRequest = Effect.fnUntraced(
+  function* (packageName: string, selector: string) {
+    let version = selector;
+
+    if (!isExactSemver(selector) && validRange(selector) !== null) {
+      const response = yield* getRegistryJson(`/${encodeURIComponent(packageName)}`, {
+        accept: 'application/vnd.npm.install-v1+json',
+      });
+
+      const metadata = yield* Schema.decodeUnknownEffect(RegistryPackageMetadataSchema)(response);
+      const selected = maxSatisfying(Object.keys(metadata.versions), selector);
+
+      if (selected === null) return yield* Effect.fail(new Error('No matching published release'));
+
+      version = selected;
+    }
+
     const response = yield* getRegistryJson(`/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`);
 
     return yield* Schema.decodeUnknownEffect(RegistryVersionManifestSchema)(response, { errors: 'all' });
-  }).pipe(Effect.mapError((cause) => new RegistryRequestError({ cause })));
+  },
+  Effect.mapError((cause) => new RegistryRequestError({ cause })),
+);
 
 // Each comparison side shares its request-local manifest effect across branches. Keep the sides separate
 // so each tarball can start as soon as its own manifest resolves.

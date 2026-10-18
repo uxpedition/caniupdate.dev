@@ -245,6 +245,8 @@ The global `app.head.htmlAttrs` setting in `nuxt.config.ts` declares English (`l
 
 When changing document metadata, inspect raw HTML for the homepage, About, Privacy, a comparison, and Nuxt's error renderer. Then check hydration and in-app navigation in Chromium and Firefox. Unknown routes return sanitized JSON rather than an HTML error document; check HTML errors through `/__nuxt_error?statusCode=404` and `/__nuxt_error?statusCode=500`.
 
+For comparison URL changes, check exact releases, tags, ranges, scoped packages, prereleases, and reverse direction in raw responses and browser direct loads and client navigation. Include returning to a comparison already held in the query cache. Moving selectors must use non-cacheable `302` redirects; permanent redirects are only for equivalent formatting of exact releases. Confirm that the final URL, title, visible versions, and canonical identity agree. Known tracking parameters are omitted from canonical links, while unknown parameters and repeated values remain. Check a canonical scoped URL directly to catch redirect loops caused by the router decoding path characters.
+
 The homepage footer reaches the bottom of the viewport when content fits. Shorter or narrower screens scroll naturally. When changing the layout, check both cases and footer wrapping; do not assume a fixed footer height.
 
 After a successful comparison, the shared form moves from the homepage to the navigation header and resets for another search. On compact screens it wraps to a second header row. In-app home links and browser Back animate it home; Forward animates it into the header again.

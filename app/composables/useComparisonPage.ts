@@ -17,6 +17,7 @@ import {
   prefetchPackageMeasurements,
 } from '~/composables/packageMeasurementsQueryOptions';
 import { useComparisonBriefing } from '~/composables/useComparisonBriefing';
+import { useComparisonIdentity } from '~/composables/useComparisonIdentity';
 import { useComparisonRoute } from '~/composables/useComparisonRoute';
 import { resolvedBriefingVersions } from '~/pages/[packageName]/comparisonView';
 
@@ -173,7 +174,12 @@ export const useComparisonPage = async (pageTraceContext?: TraceContext) => {
 
   const queries = useComparisonPageQueries(requestFetch, packageName, fromVersion, toVersion, pageTraceContext);
 
+  const convergeIdentity = useComparisonIdentity(queries.declarations, queries.declarationsOptions);
+
   await prefetchDeclarations(queryClient, queries.declarationsOptions);
+
+  if (import.meta.server) await convergeIdentity();
+
   await prefetchComparisonForSsr({
     requestEvent,
     requestFetch,

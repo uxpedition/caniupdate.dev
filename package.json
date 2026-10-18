@@ -46,6 +46,7 @@
     "h3": "^2.0.1-rc.32",
     "nuxt": "^4.5.2",
     "reka-ui": "^2.10.4",
+    "semver": "7.8.5",
     "tar-stream": "^3.2.1",
     "vue": "^3.5.42",
     "vue-router": "^5.3.1"
@@ -58,6 +59,7 @@
     "@oxlint/plugins": "1.85.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.2",
+    "@types/semver": "7.7.1",
     "@vue/language-server": "3.3.11",
     "@vue/typescript-plugin": "3.3.11",
     "drizzle-kit": "1.0.0-rc.5-ab785fc",

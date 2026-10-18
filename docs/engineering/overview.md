@@ -123,9 +123,13 @@ A rejected request records `failure`, or `cancelled` if its signal aborted, then
 
 ## Public comparison contracts
 
-All comparison routes validate the package name and trim the nonempty `from`/`to` inputs. Each input is limited to 256 characters. The registry resolves selectors, such as tags, to manifest versions.
+All comparison routes validate the package name and trim the nonempty `from`/`to` inputs. Each input is limited to 256 characters. Tags resolve through the registry. Semver ranges select the highest matching published release from the registry version index, then fetch its full manifest. Stable ranges exclude prereleases unless the range explicitly includes them. A range with no match fails; it does not fall back to `latest`.
 
-The page uses those exact returned versions for later queries. The routes share parameter validation; they do not require browser inputs to already be exact versions.
+After declarations resolve, the page replaces selector URLs with exact ordered releases. Initial requests receive a temporary `302` redirect for tags, ranges, or other selectors that resolve to a different version string. These redirects are not cached by browsers or the edge. An already-exact comparison can receive a permanent `301` redirect for equivalent URL formatting, such as scoped-name encoding. Failed resolution leaves the requested URL unchanged.
+
+The declaration-query owner also replaces the URL after successful client resolution or retry. The exact route supplies the title and displayed identity. Canonical and social URLs use the configured public origin and normalized, exactly-once encoded comparison path. They omit known tracking parameters, including standard `utm_*` campaign fields and click IDs, but retain unknown query parameters and repeated values. Redirects preserve query parameters and fragments. `A → B` and `B → A` remain different comparisons; prerelease identifiers are preserved. Comparisons never canonicalize to the homepage.
+
+The page uses the exact returned versions for later queries. The API routes share parameter validation; they do not require browser inputs to already be exact versions.
 
 | Route                                                                    | Result and boundary                                                                                                                                                                                                  |
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -52,6 +52,9 @@ importers:
       reka-ui:
         specifier: ^2.10.4
         version: 2.10.5(vue@3.5.43(typescript@6.0.3))
+      semver:
+        specifier: 7.8.5
+        version: 7.8.5
       tar-stream:
         specifier: ^3.2.1
         version: 3.2.1
@@ -83,6 +86,9 @@ importers:
       '@types/node':
         specifier: ^26.6.2
         version: 26.6.2
+      '@types/semver':
+        specifier: 7.7.1
+        version: 7.7.1
       '@vue/language-server':
         specifier: 3.3.11
         version: 3.3.11(typescript@6.0.3)
@@ -2175,6 +2181,9 @@ packages:
 
   '@types/resolve@1.20.2':
     resolution: {integrity: sha512-60BCwRFOZCQhDncwQdxxeOEEkbc5dIMccYLwbxsS4TUNeVECQ/pBJ0j09mrHOl/JJvpRPGwO9SvE4nR2Nb/a4Q==}
+
+  '@types/semver@7.7.1':
+    resolution: {integrity: sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA==}
 
   '@types/web-bluetooth@0.0.21':
     resolution: {integrity: sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==}
@@ -7314,6 +7323,8 @@ snapshots:
       undici-types: 8.9.0
 
   '@types/resolve@1.20.2': {}
+
+  '@types/semver@7.7.1': {}
 
   '@types/web-bluetooth@0.0.21': {}
 
