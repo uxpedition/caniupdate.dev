@@ -38,7 +38,10 @@ At the production origin, version and commit render together only with a valid r
 
 ### Manual protected-main release
 
-Every protected-main push runs required checks, builds the exact frontend/backend artifacts, and delivers stage. Only after stage deployment and both browser checks pass can a Maintainer/Owner select a stable SemVer version through blocking manual `release:tag`.
+Protected-main pushes start the required checks and build the exact frontend/backend artifacts. A newer commit can
+cancel superseded validation before delivery. Pipelines that complete validation deliver stage without interrupting
+started delivery or release operations. Only after stage deployment and both browser checks pass can a Maintainer/Owner
+select a stable SemVer version through blocking manual `release:tag`.
 
 Using the read-only GitLab API, the job checks its protected-main push pipeline, required job/bridge evidence, current branch SHA, manual actor role, version progression, and protected-tag rules. It then writes the tag and receipt. It never opens or merges a version MR or changes `package.json`. Ordinary main pushes cannot deploy production.
 

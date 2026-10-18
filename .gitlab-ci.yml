@@ -1,4 +1,4 @@
-# Every protected-main revision is checked and serialized through stage before a maintainer may create a release tag.
+# Current protected-main revisions are checked before stage; started delivery and release work is not interrupted.
 # Production deploys only that pipeline's verified artifacts and immutable protected-tag receipt.
 # Pins: Node image digest, Node/Nub versions, Nub archive SHA-256, and the locked browser tooling.
 # Runtime credentials use exact stage, production, or release-tag environment scopes.
@@ -12,13 +12,22 @@ include:
   - local: scripts/deploy/ci-bootstrap.yml
 
 workflow:
+  auto_cancel:
+    on_new_commit: interruptible
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - when: never
 
-merge-request-title:
+# Both runner pools can validate; delivery keeps the home-only default from ci-bootstrap.yml.
+.validation:
   stage: verify
+  interruptible: true
+  tags:
+    - saas-linux-small-amd64
+
+merge-request-title:
+  extends: .validation
   timeout: 5m
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -26,7 +35,7 @@ merge-request-title:
     - printf '%s\n' "$CI_MERGE_REQUEST_TITLE" | nub run commitlint --verbose
 
 quality:
-  stage: verify
+  extends: .validation
   timeout: 5m
   script:
     - nub run type-check
@@ -35,14 +44,14 @@ quality:
     - nub run db:check
 
 unit-tests:
-  stage: verify
+  extends: .validation
   timeout: 5m
   script:
     # Native alarm guards start first; other alarm paths use a test-only clock with real workerd delivery.
     - nub run test --maxWorkers=4
 
 build-smoke:
-  stage: verify
+  extends: .validation
   timeout: 10m
   variables:
     NUXT_BUILD_COMMIT_SHA: '$CI_COMMIT_SHA'
@@ -58,7 +67,7 @@ build-smoke:
 
 # Separate job: it runs on its own copy of .output, so smoke writes cannot reach the published artifact.
 smoke:built:
-  stage: verify
+  extends: .validation
   timeout: 5m
   needs:
     - job: build-smoke

@@ -358,7 +358,10 @@ Dry-runs skip remote D1 migrations and pass Wrangler `--dry-run`. They write a s
 
 ### Manual protected-main release
 
-Every protected `main` push runs validation and build gates, then the stage child pipeline under its deployment lock. Stage deploys the exact frontend build and checks it in Chromium and Firefox. Its footer keeps the full source commit link.
+Protected `main` pushes start validation and build gates. A newer commit can cancel superseded validation.
+Pipelines that pass those gates continue to the stage child pipeline under its deployment lock. Stage deploys
+the exact frontend build and checks it in Chromium and Firefox. Its footer keeps the full source commit link.
+Started delivery and release operations remain non-interruptible.
 
 Only after `build-smoke` and the complete stage child pass does blocking manual `release:tag` become available. A Maintainer or Owner must select a stable `MAJOR.MINOR.PATCH` version in GitLab's native [job inputs](https://docs.gitlab.com/ci/jobs/job_inputs/) form. The required default is empty, not a release version; the CLI rejects it before publication.
 

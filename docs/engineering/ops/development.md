@@ -185,7 +185,30 @@ Git hooks check lint, types, formatting, and commit messages. They do not run te
 
 [`.gitlab-ci.yml`](../../../.gitlab-ci.yml) validates merge requests (MRs) and pushes to `main`. Other branch pushes do not create duplicate pipelines.
 
-Jobs use the self-hosted group runner tagged `debian-home-server`, with Docker on Linux/amd64. A replacement runner needs that tag, executor, and architecture. Independent jobs run at the same time only when runner capacity allows.
+The five validation jobs—MR title, quality, unit tests, build, and built smoke—use the
+`saas-linux-small-amd64` tag. Both GitLab-hosted small Linux/amd64 runners and the home-server group runner can
+accept these jobs. Jobs use either pool as capacity permits; there is no hosted-first preference.
+
+Keep both `debian-home-server` and `saas-linux-small-amd64` on the home runner in GitLab's runner settings.
+Keep **Run untagged jobs** disabled. A replacement home runner needs Docker on Linux/amd64 and both tags.
+Do not put both tags on validation jobs: GitLab requires a runner to match
+[every job tag](https://docs.gitlab.com/ci/runners/configure_runners/#how-the-runner-uses-tags).
+The shared tag also makes this group runner eligible for matching jobs in other projects in the group.
+
+Deployment, hosted-stage browser checks, and release jobs keep the home-only `debian-home-server` default.
+Their credentials and environment scopes do not move to hosted validation jobs. Pipeline trigger jobs coordinate
+delivery without occupying a runner.
+
+GitLab enforces the top-level namespace's shared compute quota. When it is exhausted, hosted runners stop accepting
+new work; the home group runner is not subject to that quota. Hosted jobs already running can continue under
+[GitLab's grace-period rules](https://docs.gitlab.com/ci/pipelines/instance_runner_compute_minutes/#enforcement).
+This setup does not purchase minutes, poll quota usage, or guarantee uninterrupted progress if the home runner is
+unavailable. Quota exhaustion and hosted-job completion are controlled by GitLab, not repository scripts.
+
+New commits on the same branch or MR cancel superseded validation jobs, including running builds and smoke checks.
+The workflow uses [`on_new_commit: interruptible`](https://docs.gitlab.com/ci/yaml/#workflowauto_cancelon_new_commit);
+only validation jobs opt into interruption. Delivery triggers, deployments, stage browser checks, and releases remain
+non-interruptible. A newer commit therefore cannot interrupt a started delivery or release operation.
 
 Jobs use a pinned Node image, Nub from the `packageManager` pin, and `nub ci`. They run the existing non-fixing package checks without changing lint severities or adding a coverage threshold.
 
@@ -232,7 +255,9 @@ These settings live in GitLab, not in YAML. Maintainers must preserve them under
 
 When changing CI configuration or project merge settings, verify hosted enforcement with an MR pipeline, including a deliberately failing check that blocks merge. Local checks and CI Lint simulations do not prove hosted enforcement.
 
-A passing MR does not deploy. After review and normal merge, every protected-main push deploys stage. The blocking manual `release:tag` input becomes available only after required checks and stage Chromium/Firefox verification pass.
+A passing MR does not deploy. After review and normal merge, protected-main pipelines that complete validation
+continue to stage; a newer commit can cancel superseded validation before delivery. The blocking manual `release:tag`
+input becomes available only after required checks and stage Chromium/Firefox verification pass.
 
 The selected version creates an immutable tag and receipt, not a version commit or MR. Production uses that receipt to promote the exact build-smoke artifact without rebuilding. Ordinary merges never deploy production. See [manual protected-main release](deployment.md#manual-protected-main-release) for prerequisites.
 
