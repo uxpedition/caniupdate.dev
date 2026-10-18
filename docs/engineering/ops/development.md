@@ -146,10 +146,12 @@ For a frontend-only missing-route and protection check, run `nub run smoke:route
 
 Run `nub run smoke:comparison:built` to check comparison response boundaries against fixed registry fixtures. It checks malformed routes (`400`), unknown packages and versions (`404`), temporary declaration failures (`503`), private error details, and usable declaration HTML (`200`) when measurements fail. CI runs this check against the built frontend. It needs no credentials, backend Workers, migrations, or external provider requests.
 
-The same smoke checks production and nonproduction indexing against fixed registry fixtures. It verifies all five
+The same smoke checks production and nonproduction indexing against fixed registry fixtures. It verifies all twenty
 reviewed comparisons and static pages, excluded and reverse comparisons, tracking-free canonical identity, and
 reviewed comparisons with unavailable or insufficient declarations. Measurements and AI remain unavailable, proving
 that they do not gate useful SSR facts.
+It also checks production sitemap URLs against successful pages, canonical links and indexing headers; nonproduction
+empty sitemaps; robots advertisement; and zero provider requests while rendering sitemap and robots output.
 
 The same command checks eligible reviewed measurement SSR through isolated private binding fixtures: no stored notes,
 stored success, partial or unavailable measurements, and a stored-read failure. It compares ordinary and crawler

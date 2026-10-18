@@ -4,6 +4,7 @@ import { chromium, firefox } from 'playwright';
 
 import { verifyComparisonIndexing } from './_internals/comparisonIndexing.ts';
 import { comparisonStatusRuntime } from './_internals/comparisonStatus.ts';
+import { verifyDiscovery } from './_internals/discovery.ts';
 import { verifyMeasurementHydration, verifyMeasurementSsr } from './_internals/measurementSsr.ts';
 
 const serve = process.argv.includes('--serve');
@@ -21,6 +22,7 @@ try {
     });
   } else {
     await verifyComparisonIndexing();
+    await verifyDiscovery();
     await verifyMeasurementSsr();
 
     for (const [path, status] of [

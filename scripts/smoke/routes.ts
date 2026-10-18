@@ -55,7 +55,7 @@ const assertSecurityHeaders = (response: { status: number; headers: { get(name: 
 };
 
 try {
-  for (const path of ['/sitemap.xml', '/definitely-not-a-real-page-launch-check', '/missing/nested/path']) {
+  for (const path of ['/definitely-not-a-real-page-launch-check', '/missing/nested/path']) {
     for (const accept of ['text/html', 'application/json']) {
       const response = await admitted.dispatchFetch(`https://example.test${path}`, { headers: { accept } });
       assert.equal(response.status, 404, `${path} (${accept})`);
@@ -71,6 +71,8 @@ try {
     '/',
     '/about',
     '/privacy',
+    '/sitemap.xml',
+    '/robots.txt',
     '/api/health',
     '/is-number/7.0.0...7.0.0',
     '/@vue%2Fshared/3.5.0...3.5.0',

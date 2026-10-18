@@ -3,7 +3,7 @@ import { toValue, watch, type ComputedRef } from 'vue';
 
 import { navigateTo, useNuxtApp, useRequestURL, useRoute } from '#imports';
 import type { PackageDeclarationsResponse } from '#shared/comparison/comparison.defs';
-import { comparisonRedirect } from '~/composables/comparisonRouteIdentity';
+import { comparisonRedirect } from '#shared/site/comparisonRouteIdentity';
 import type { PackageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
 import { useComparisonRoute } from '~/composables/useComparisonRoute';
 

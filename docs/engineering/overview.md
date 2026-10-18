@@ -152,6 +152,19 @@ or declarations that no longer support that evidence receives `noindex`. The ini
 sources and explains missing measurement coverage. Measurements and successful AI notes are not indexing requirements.
 Reading the inventory performs no provider collection, archive inspection, or AI generation.
 
+`/sitemap.xml` lists these reviewed comparison identities and the three static pages only when production indexing
+is enabled and a public origin is configured. Other environments return an empty sitemap. `/robots.txt` allows
+crawling and advertises the sitemap only under the same conditions. Absolute URLs use the configured origin,
+never request headers. Both discovery responses use `no-store`.
+
+Sitemap and robots rendering read only the checked-in inventory; they never enumerate release pairs, collect
+evidence, or generate AI notes. The sitemap does not probe current provider availability. Individual responses still
+enforce declaration-backed indexing, and maintainers remove entries whose sources no longer support them.
+
+The sitemap omits `lastmod`. Inventory review dates do not establish when page content changed, and a request
+timestamp would misrepresent freshness. See [release cache verification](ops/releases-and-recovery.md#response-header-changes-and-cached-html)
+before publishing inventory changes.
+
 The inventory covers current major-version migrations and selected older migrations. Package adoption helps
 prioritize candidates; npm downloads are not search-volume measurements. The list is not a ranking of the most
 searched upgrades. Exact registry declarations were checked on 2026-10-18:

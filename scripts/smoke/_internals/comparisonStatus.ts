@@ -10,6 +10,7 @@ type RuntimeOptions = {
   indexingEnabled?: boolean;
   reviewedEvidence?: 'available' | 'unavailable' | 'thin';
   measurements?: 'missing' | 'stored' | 'partial' | 'unavailable' | 'read-error';
+  onProviderRequest?: () => void;
 };
 
 const fixtureManifest = (name: string, version: string, thin: boolean) => {
@@ -34,6 +35,7 @@ const registryFixture = (options: RuntimeOptions): V4FetchHandler => {
   }
 
   return async (request) => {
+    options.onProviderRequest?.();
     const url = new URL(request.url);
 
     if (url.origin !== 'https://registry.npmjs.org') throw new Error('Unexpected external provider request');

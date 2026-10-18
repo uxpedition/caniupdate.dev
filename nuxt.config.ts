@@ -29,7 +29,7 @@ export default defineNuxtConfig({
     // Deployment derives this from its validated target; local/demo runtimes stay noindex by default.
     indexingEnabled: false,
     public: {
-      // Public by design: canonical, social, and later sitemap URLs. Builds never bake it: each deployed Worker and
+      // Public by design: canonical, social, and sitemap URLs. Builds never bake it: each deployed Worker and
       // dev runtime supplies `NUXT_PUBLIC_SITE_URL` at runtime, and an unset value emits no canonical link.
       siteUrl: '',
       // A production version is runtime identity from the validated release receipt, never part of the build artifact.

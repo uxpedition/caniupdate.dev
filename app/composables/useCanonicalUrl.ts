@@ -1,8 +1,8 @@
 import { Schema } from 'effect';
 
 import { computed, useRoute, useRuntimeConfig } from '#imports';
+import { comparisonIdentityPath, substantiveSearch } from '#shared/site/comparisonRouteIdentity';
 import { absoluteUrl } from '#shared/site/siteUrl';
-import { comparisonIdentityPath, substantiveSearch } from '~/composables/comparisonRouteIdentity';
 
 const isString = Schema.is(Schema.String);
 

@@ -1,6 +1,6 @@
 /**
  * The site's public origin — `NUXT_PUBLIC_SITE_URL` — names the scheme, host, and optional port this deployment
- * publishes under. Everything absolute (canonical links, social URLs, later the sitemap) is built from this value, so
+ * publishes under. Everything absolute (canonical links, social URLs, the sitemap) is built from this value, so
  * it is never derived from a request's `Host` or forwarded headers: a dev hostname or an alias cannot leak into a
  * canonical address. A configured value must therefore be an origin and nothing else — a path, query, fragment, or
  * credential is a configuration error, not a silently ignored part of a URL.

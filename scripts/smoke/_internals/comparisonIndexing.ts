@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { Response } from 'miniflare';
 
-import { comparisonIdentityPath } from '../../../app/composables/comparisonRouteIdentity.ts';
+import { comparisonIdentityPath } from '../../../shared/site/comparisonRouteIdentity.ts';
 import { REVIEWED_COMPARISONS } from '../../../shared/site/reviewedComparisons.ts';
 import { comparisonStatusRuntime } from './comparisonStatus.ts';
 

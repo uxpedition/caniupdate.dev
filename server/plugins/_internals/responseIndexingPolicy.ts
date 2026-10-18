@@ -1,7 +1,7 @@
 import { getRequestURL, getResponseHeader, getResponseStatus, setResponseHeader } from 'h3';
 import type { H3Event } from 'h3';
 
-const INDEXABLE_STATIC_PATHS: readonly string[] = ['/', '/about', '/privacy'];
+import { INDEXABLE_STATIC_PATHS } from '#shared/site/discovery';
 
 /** A deployment opt-in and useful SSR facts are independent requirements; headers survive all page head owners. */
 export const applyResponseIndexingPolicy = (event: H3Event, indexingEnabled: boolean): void => {

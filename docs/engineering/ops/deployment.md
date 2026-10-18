@@ -288,7 +288,14 @@ There is no explicit purge step in the checked-in deployment workflow. Version s
 
 Maintain one public HTTPS identity for each page intended for indexing. Keep its canonical URL, internal links, redirects, and sitemap entry consistent. Serve useful factual content in initial HTML without requiring user interaction or AI generation. Google can render JavaScript, but [recommends server rendering or pre-rendering](https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics) because not all crawlers can execute it. These are review requirements, not a claim that every comparison page already meets them.
 
-Use a bounded, reviewed set of useful comparison pages, not every possible package/version pair. A [sitemap helps new sites with few external links](https://developers.google.com/search/docs/crawling-indexing/sitemaps/overview), but neither sitemap submission nor canonical markup guarantees indexing. The comparison-discovery implementation is tracked in [the existing backlog](https://gitlab.com/uxpedition/can-i-npm-update/-/work_items/1).
+Discovery uses the [bounded reviewed inventory](../overview.md#search-indexing-pilot), not every possible package/version pair. Production `/robots.txt` advertises `/sitemap.xml`; staging and local runtimes advertise no sitemap and return an empty URL set. A [sitemap helps new sites with few external links](https://developers.google.com/search/docs/crawling-indexing/sitemaps/overview), but neither submission nor canonical markup guarantees indexing.
+
+For an authorized discovery release, confirm the reviewed pages provide their promised initial HTML before exposing
+them. Replace the frontend cache namespace through a new Worker version with `cross_version_cache: false`, then
+verify cold and warm robots output and sitemap URLs. Include `/robots.txt` if an independent cache layer retained
+its static response. Follow
+[cache replacement and recovery](releases-and-recovery.md#response-header-changes-and-cached-html); local smoke
+does not prove deployed invalidation. Deployment, cache purging, and search-engine submission require separate authorization.
 
 For a new deployment:
 
