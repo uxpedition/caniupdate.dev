@@ -308,7 +308,9 @@ The homepage footer reaches the bottom of the viewport when content fits. Shorte
 
 After a successful comparison, the shared form moves from the homepage to the navigation header and resets for another search. On compact screens it wraps to a second header row. In-app home links and browser Back animate it home; Forward animates it into the header again.
 
-On homepage load or reload, the form fades in and rises 12 px over 400 ms after a 60 ms delay. That intro does not replay on in-app return. The hero enters on initial load and return home. Hero, form, and comparison-content animations honor reduced-motion preferences.
+On homepage load or reload, the form fades in and rises 12 px over 400 ms after a 60 ms delay. That intro does not replay on in-app return. The product explanation and homepage footer use the same fade and rise on initial load and every return home, including browser Back and the logo link. The hero enters on initial load and return home. All entry and form-relocation animations honor reduced-motion preferences.
+
+On comparison-page entry, the navigation header and footer use the content's 180 ms fade and 16 px rise after a 120 ms delay. The site layout owns these shared transition styles. Other site pages do not animate their header or footer on load.
 
 When changing this interface, exercise submission, reset, Back/Forward, fragment links, compact layouts, and reduced motion.
 

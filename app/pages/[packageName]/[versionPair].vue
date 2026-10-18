@@ -73,31 +73,3 @@ if (import.meta.client) {
     </div>
   </Transition>
 </template>
-
-<style>
-.comparison-content-appear-active,
-.comparison-content-enter-active {
-  transition:
-    opacity 180ms ease 120ms,
-    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1) 120ms;
-}
-
-.comparison-content-appear-from,
-.comparison-content-enter-from {
-  opacity: 0;
-  transform: translateY(16px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .comparison-content-appear-active,
-  .comparison-content-enter-active {
-    transition: none !important;
-  }
-
-  .comparison-content-appear-from,
-  .comparison-content-enter-from {
-    opacity: 1;
-    transform: none;
-  }
-}
-</style>

@@ -18,11 +18,17 @@ const route = useRoute();
 
 const homepageHeroEntry = useState('homepage-hero-entry', () => 0);
 
+const comparisonEntry = useState('comparison-entry', () => 0);
+
 watch(
   () => route.path,
   (path, previousPath) => {
     if (path === '/' && previousPath !== '/') {
       homepageHeroEntry.value += 1;
+    }
+
+    if (route.name === 'packageName-versionPair' && path !== previousPath) {
+      comparisonEntry.value += 1;
     }
   },
 );
