@@ -245,6 +245,14 @@ The [frontend Wrangler config](../../wrangler.jsonc) enables native Workers Cach
 
 Homepage, privacy, about, and comparison HTML are public content identical for every visitor. Stage remains behind Cloudflare Access; production is public. Local built dev does not enable this cache.
 
+### Baseline response headers
+
+The [shared Nitro response hook](../../server/plugins/responseSecurity.ts) adds `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin` when those headers are absent. [This referrer policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy#strict-origin-when-cross-origin_default) keeps full referrers on same-origin requests, sends only the origin cross-origin, and sends no referrer on an HTTPS-to-HTTP downgrade. Existing policies are not overwritten or appended; Nitro's error responder retains its stricter `no-referrer` policy.
+
+Nitro's error responder supplies these protections explicitly; successful responses need the shared hook. This app-level difference does not establish a hosted cache defect. The hook does not change cache eligibility, TTLs, or browser revalidation. Static assets served outside Nitro and direct telemetry-ingress responses do not pass through this hook.
+
+Cached HTML retains the headers from the response that populated it. Follow the [release procedure](ops/releases-and-recovery.md#response-header-changes-and-cached-html) to replace old cached HTML and verify hosted delivery. Local smoke proves application responses, not Cloudflare cache behavior.
+
 ## Identity and freshness
 
 Three identities serve different purposes:

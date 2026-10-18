@@ -104,6 +104,19 @@ Label these outcomes separately:
 
 Do not silently retry failed paid checks or assume exactly-once billing. The app can retry invalid model output once. A later explicit submission can start another generation. See [generation failure semantics](../briefing.md#result-storage-and-generation-failures).
 
+### Response-header changes and cached HTML
+
+Changing the app's headers does not repair an HTML response already stored at the edge. Include cache replacement in an authorized frontend release:
+
+1. Confirm the target's frontend config still has `cache.enabled: true` and `cross_version_cache: false`. A new Worker version then starts a separate cache; do not enable cross-version reuse for a header-policy change.
+2. Deploy the reviewed frontend artifact through the authorized release workflow. Record its Worker version. A new version replaces the active cache namespace; do not assume a same-version restart invalidates responses.
+3. GET `/`, `/about`, `/privacy`, and representative ordinary and scoped comparison URLs. Retain status, `X-Content-Type-Options`, `Referrer-Policy`, cache directives, and available cache-hit/age evidence. Repeat the exact URLs to check warm delivery after repopulation. Check a complete stored-result comparison as well as an uncached comparison.
+4. Confirm a single `nosniff` value and the explicit referrer policy on successful responses. Check representative 4xx and 5xx responses separately; Nitro errors must retain `no-referrer`. Do not trigger paid generation or exhaust shared limits without separate authorization.
+5. Where a response supplies `ETag` or `Last-Modified`, repeat its GET with `If-None-Match` or `If-Modified-Since`. Inspect the actual 304 and verify that the browser's reused response keeps the security policy. If the target returns 200 or supplies no validator, record 304 as not exercised rather than claiming support.
+6. If old headers remain, identify whether Workers Cache, another Cloudflare cache rule, or an upstream layer served the response. Invalidate affected URLs in that owning layer using the target's separately authorized purge procedure, then repeat cold and warm GETs. This repository does not automate an account-wide purge.
+
+Keep browser revalidation and the existing edge TTLs unchanged. Record cache replacement and repopulation evidence with the release. Local `smoke:routes:built` checks successful pages, ordinary/scoped comparisons, and 400/404/429/503 errors in the built Worker, but cannot prove hosted cache invalidation, warm edge delivery, or hosted 304 behavior.
+
 ### Individual release record
 
 Keep reusable procedures here and deployment observations with the individual release. Each record should include:

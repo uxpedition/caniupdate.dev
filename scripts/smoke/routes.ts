@@ -46,11 +46,20 @@ const unavailable = runtime(false);
 
 const exhausted = runtime(true, 1);
 
+const assertSecurityHeaders = (response: { status: number; headers: { get(name: string): string | null } }): void => {
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(
+    response.headers.get('referrer-policy'),
+    response.status >= 400 ? 'no-referrer' : 'strict-origin-when-cross-origin',
+  );
+};
+
 try {
   for (const path of ['/sitemap.xml', '/definitely-not-a-real-page-launch-check', '/missing/nested/path']) {
     for (const accept of ['text/html', 'application/json']) {
       const response = await admitted.dispatchFetch(`https://example.test${path}`, { headers: { accept } });
       assert.equal(response.status, 404, `${path} (${accept})`);
+      assertSecurityHeaders(response);
       assert.match(response.headers.get('content-type') ?? '', /application\/json/);
       const body = decodePublicError(await response.json());
       assert.equal(body.statusCode, 404);
@@ -58,15 +67,24 @@ try {
     }
   }
 
-  for (const path of ['/', '/about', '/privacy', '/api/health']) {
+  for (const path of [
+    '/',
+    '/about',
+    '/privacy',
+    '/api/health',
+    '/is-number/7.0.0...7.0.0',
+    '/@vue%2Fshared/3.5.0...3.5.0',
+  ]) {
     const response = await admitted.dispatchFetch(`https://example.test${path}`);
     assert.equal(response.status, 200, path);
+    assertSecurityHeaders(response);
     console.log(`${path} -> 200`);
   }
 
   // Invalid API input is rejected before provider I/O; no paid/provider work is dispatched.
   const invalid = await admitted.dispatchFetch('https://example.test/api/package/vue/compare');
   assert.equal(invalid.status, 400);
+  assertSecurityHeaders(invalid);
 
   for (const path of ['/', '/api/health', '/sitemap.xml', '/__nuxt_error']) {
     for (const accept of ['text/html', 'application/json']) {
@@ -75,6 +93,7 @@ try {
       });
 
       assert.equal(response.status, 503, `${path} must fail closed`);
+      assertSecurityHeaders(response);
       const body = decodePublicError(await response.json());
       assert.equal(body.statusMessage, 'Request protection unavailable');
       console.log(`unavailable protection: ${path} (${accept}) -> 503`);
@@ -86,6 +105,7 @@ try {
   for (const accept of ['text/html', 'application/json']) {
     const response = await exhausted.dispatchFetch('https://example.test/sitemap.xml', { headers: { accept } });
     assert.equal(response.status, 429);
+    assertSecurityHeaders(response);
     assert.equal(response.headers.get('retry-after'), '60');
     assert.equal(response.headers.get('cache-control'), 'no-store');
     const body = decodePublicError(await response.json());
