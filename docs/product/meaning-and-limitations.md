@@ -30,6 +30,21 @@ A separate warning shows changes to the package's stated Node requirements. If t
 
 Select a header tile to open its details in the comparison table. The table also shows other package declarations and measurements.
 
+## Where evidence comes from and how current it is
+
+The [About page](../../app/pages/about.vue) explains these sources and limits publicly:
+
+- **npm:** Published metadata supplies package declarations. Package archives supply file sizes and shipped changelogs. Neither proves application behavior.
+- **GitHub:** Release notes and changelogs supply maintainer descriptions for AI notes when the collector can identify a supported repository and matching versions.
+- **OSV:** Advisory matches describe known issues for the selected package versions, not the security of a user's project.
+- **Bundlephobia:** Bundle and gzip estimates describe the package on its own, not inside an application.
+
+Sources can fail or return incomplete evidence. Collection limits can also leave gaps. Other evidence can remain available when one source is missing. A missing result does not mean nothing changed or an issue was fixed.
+
+A collection or retrieval date describes when evidence was fetched. A release date describes publication, not the latest check. Some evidence is cached, and upstream sources can lag or change. Reopening a comparison does not guarantee every source is current.
+
+AI notes can be reused when the collected evidence matches. They are not a new independent check each time the page opens. See [evidence collection and cache rules](../engineering/evidence.md#cache-keys-coalescing-expiry-and-storage-failures) and [briefing identity](../engineering/briefing.md#evidence-identity-and-private-submission) for implementation details.
+
 ## What AI adds
 
 AI notes add context. You can still use the factual comparison when the notes are unavailable.
