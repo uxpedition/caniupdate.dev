@@ -6,6 +6,18 @@
 
 It compares packages, not your project. It shows facts to help you review an update; it does not approve the update or give it a safety score.
 
+## Start a comparison
+
+The homepage keeps the package and version form first. Below it, a short guide introduces the compared categories, followed by three steps: find a public npm package, pick two versions, and explore the changes to plan what to test.
+
+The heading and form occupy most of the first screen, with the guide beginning near the bottom to show there is more to read. On shorter screens, the form keeps its natural height and the page scrolls.
+
+The guide has a lightly shaded background and rounded outer corners matching the form inputs. The four category panels have square corners and sit together with single-line dividers, without gaps or an outer inset. Their heading bands are shaded. The usage steps have simple left-hand rules instead of boxes.
+
+Both section headings use full-width shaded bands. The evidence note is plain text; the three usage steps keep their left-hand rules.
+
+The guide is part of the initial HTML. It leads with the available evidence and keeps limits beside the relevant categories, with a short note on coverage and compatibility. AI notes are supplementary; they are not required to use the factual comparison.
+
 ## Read the comparison at a glance
 
 The header highlights three categories:

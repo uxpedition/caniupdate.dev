@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { FileCode, Gauge, Network, Shield } from '@lucide/vue';
+
 import { useNuxtApp, useRuntimeConfig, useSeoMeta, useState } from '#imports';
 import { absoluteUrl } from '#shared/site/siteUrl';
 import ComparisonForm from '~/components/comparison/ComparisonForm.vue';
@@ -46,7 +48,7 @@ useSeoMeta({
 <template>
   <div class="flex min-h-svh flex-col bg-background text-foreground">
     <main class="flex flex-1 flex-col px-4 py-6 sm:px-6">
-      <div class="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center pb-16">
+      <div class="mx-auto flex min-h-[calc(100svh-9rem)] w-full max-w-6xl flex-1 flex-col justify-center pb-16">
         <Transition appear name="homepage-hero">
           <header :key="homepageHeroEntry" class="mx-auto max-w-2xl space-y-4 text-center">
             <p class="font-mono font-semibold tracking-[-0.04em]">
@@ -63,6 +65,99 @@ useSeoMeta({
             <ComparisonForm variant="home" />
           </section>
         </Transition>
+      </div>
+      <div
+        class="mx-auto mb-10 w-full max-w-5xl overflow-hidden rounded-md border border-border bg-muted/50 text-sm leading-6"
+      >
+        <section aria-labelledby="comparison-scope">
+          <h2
+            id="comparison-scope"
+            class="border-b border-border bg-muted px-4 py-4 font-mono text-base font-semibold uppercase tracking-tight sm:px-6"
+          >
+            What gets compared?
+          </h2>
+          <p class="mt-6 px-4 text-muted-foreground sm:px-6">
+            Package changes, side by side. Follow the sources for a closer look.
+          </p>
+
+          <dl class="mt-6 grid border-y border-border sm:grid-cols-2">
+            <div class="border-border sm:border-r">
+              <dt class="flex items-center gap-3 border-b border-border bg-muted px-4 py-3 font-mono font-semibold">
+                <Network class="size-4 shrink-0 text-change" aria-hidden="true" />
+                Dependencies &amp; Node
+              </dt>
+              <dd class="p-4 text-muted-foreground">
+                See changes to runtime and optional dependencies, along with the package’s declared Node version range.
+              </dd>
+            </div>
+            <div class="border-t border-border sm:border-t-0">
+              <dt class="flex items-center gap-3 border-b border-border bg-muted px-4 py-3 font-mono font-semibold">
+                <Gauge class="size-4 shrink-0 text-change" aria-hidden="true" />
+                Bundle estimates
+              </dt>
+              <dd class="p-4 text-muted-foreground">
+                Compare Bundlephobia’s gzip estimates for the package in isolation. App bundle sizes will vary.
+              </dd>
+            </div>
+            <div class="border-t border-border sm:border-r">
+              <dt class="flex items-center gap-3 border-b border-border bg-muted px-4 py-3 font-mono font-semibold">
+                <Shield class="size-4 shrink-0 text-change" aria-hidden="true" />
+                Security advisories
+              </dt>
+              <dd class="p-4 text-muted-foreground">
+                Check advisory matches from OSV, with links to the sources. Incomplete coverage leaves security
+                questions open.
+              </dd>
+            </div>
+            <div class="border-t border-border">
+              <dt class="flex items-center gap-3 border-b border-border bg-muted px-4 py-3 font-mono font-semibold">
+                <FileCode class="size-4 shrink-0 text-change" aria-hidden="true" />
+                Exports, types &amp; releases
+              </dt>
+              <dd class="p-4 text-muted-foreground">
+                Explore published declarations and collected maintainer notes for changes worth investigating. These
+                cover part of the picture, rather than every API or behavior change.
+              </dd>
+            </div>
+          </dl>
+
+          <p class="mx-4 my-6 text-muted-foreground sm:mx-6">
+            Package-level evidence is a starting point, not a compatibility guarantee. Missing evidence leaves open
+            questions. Optional AI notes add context to the facts.
+          </p>
+        </section>
+
+        <section aria-labelledby="comparison-steps" class="mt-8 pb-6">
+          <h2
+            id="comparison-steps"
+            class="border-y border-border bg-muted px-4 py-4 font-mono text-base font-semibold uppercase tracking-tight sm:px-6"
+          >
+            How to use it
+          </h2>
+          <ol class="mx-4 mt-6 grid gap-6 sm:mx-6 sm:grid-cols-3" role="list">
+            <li class="space-y-2 border-l-2 border-border pl-4">
+              <div class="flex items-baseline gap-3">
+                <span class="font-mono text-change" aria-hidden="true">01</span>
+                <h3 class="font-mono font-semibold">Find a package</h3>
+              </div>
+              <p class="text-muted-foreground">Search by its public npm name.</p>
+            </li>
+            <li class="space-y-2 border-l-2 border-border pl-4">
+              <div class="flex items-baseline gap-3">
+                <span class="font-mono text-change" aria-hidden="true">02</span>
+                <h3 class="font-mono font-semibold">Pick two versions</h3>
+              </div>
+              <p class="text-muted-foreground">Choose a starting point and a target, then compare.</p>
+            </li>
+            <li class="space-y-2 border-l-2 border-border pl-4">
+              <div class="flex items-baseline gap-3">
+                <span class="font-mono text-change" aria-hidden="true">03</span>
+                <h3 class="font-mono font-semibold">Explore the changes</h3>
+              </div>
+              <p class="text-muted-foreground">Follow the details and sources to plan what to test.</p>
+            </li>
+          </ol>
+        </section>
       </div>
     </main>
     <SiteFooter />
