@@ -129,4 +129,53 @@ describe('prefetchStoredComparison', () => {
       for (const fixture of fixtures) fixture.queryClient.clear();
     }
   });
+
+  it.each([missing, new Error('storage unavailable'), { ...storedSuccess, to: '9.9.9' }])(
+    'prefetches reviewed measurements independently of stored briefing availability: %j',
+    async (stored) => {
+      const fixture = createPrefetchFixture(stored);
+      fixture.event.context.comparisonIndexable = true;
+
+      try {
+        await runPrefetch(fixture);
+
+        expect(fixture.prefetchMeasurements).toHaveBeenCalledTimes(1);
+        expect(fixture.queryClient.getQueryData(packageBriefingQueryKey(PACKAGE, FROM, TO))).toBeUndefined();
+        expect(fixture.event.context.comparisonHtmlCacheable).toBeUndefined();
+      } finally {
+        fixture.queryClient.clear();
+      }
+    },
+  );
+
+  it('reuses the reviewed measurement prefetch for stored success and preserves cache eligibility', async () => {
+    const fixture = createPrefetchFixture(storedSuccess);
+    fixture.event.context.comparisonIndexable = true;
+
+    try {
+      await runPrefetch(fixture);
+
+      expect(fixture.prefetchMeasurements).toHaveBeenCalledTimes(1);
+      expect(fixture.event.context.comparisonHtmlCacheable).toBe(true);
+    } finally {
+      fixture.queryClient.clear();
+    }
+  });
+
+  it('keeps stored notes visible when reviewed measurements reject without caching incomplete HTML', async () => {
+    const fixture = createPrefetchFixture(storedSuccess);
+    fixture.event.context.comparisonIndexable = true;
+    fixture.prefetchMeasurements.mockRejectedValue(new Error('measurement unavailable'));
+
+    try {
+      await runPrefetch(fixture);
+
+      expect(fixture.queryClient.getQueryData(packageBriefingQueryKey(PACKAGE, FROM, TO))).toMatchObject({
+        briefing: storedSuccess.briefing,
+      });
+      expect(fixture.event.context.comparisonHtmlCacheable).toBeUndefined();
+    } finally {
+      fixture.queryClient.clear();
+    }
+  });
 });

@@ -52,6 +52,10 @@ export const prefetchStoredComparison = async ({
 }: StoredComparisonPrefetch): Promise<void> => {
   if (packageName.trim() === '' || from.trim() === '' || to.trim() === '') return;
 
+  // Reviewed facts must not wait for AI availability. Other routes retain stored-hit-only collection.
+  const reviewedMeasurements =
+    event.context.comparisonIndexable === true ? prefetchMeasurements().catch(() => false) : undefined;
+
   try {
     const stored = await readStoredBriefing();
 
@@ -64,10 +68,12 @@ export const prefetchStoredComparison = async ({
       briefing: stored.briefing,
     });
 
-    if (!(await prefetchMeasurements())) return;
+    if (!(await (reviewedMeasurements ?? prefetchMeasurements()))) return;
 
     event.context.comparisonHtmlCacheable = true;
   } catch {
     // Evidence, storage, or protocol failures opt out of caching and preserve the browser's existing POST path.
+  } finally {
+    await reviewedMeasurements;
   }
 };

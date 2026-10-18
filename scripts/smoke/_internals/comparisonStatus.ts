@@ -3,11 +3,13 @@ import { readFile } from 'node:fs/promises';
 import { Miniflare, Response } from 'miniflare';
 import type { V4FetchHandler } from 'miniflare';
 
+import { measurementSsrBindings, measurementSsrWorker } from './measurementSsrFixture.ts';
 import reviewedManifests from './reviewedManifests.json' with { type: 'json' };
 
 type RuntimeOptions = {
   indexingEnabled?: boolean;
   reviewedEvidence?: 'available' | 'unavailable' | 'thin';
+  measurements?: 'missing' | 'stored' | 'partial' | 'unavailable' | 'read-error';
 };
 
 const fixtureManifest = (name: string, version: string, thin: boolean) => {
@@ -54,7 +56,7 @@ const registryFixture = (options: RuntimeOptions): V4FetchHandler => {
   };
 };
 
-/** Isolated frontend with fixed registry fixtures, no backend bindings or external network. */
+/** Isolated frontend with fixed registry fixtures and optional private backend fixtures; no external network. */
 export const comparisonStatusRuntime = async (port = 0, options: RuntimeOptions = {}) => {
   const script = await readFile('.output/workers/frontend/index.js', 'utf8');
 
@@ -73,10 +75,12 @@ export const comparisonStatusRuntime = async (port = 0, options: RuntimeOptions 
             PUBLIC_RATE_LIMITER: { type: 'rate-limit', namespace: '1001', simple: { limit: 1000, period: 60 } },
             NUXT_INDEXING_ENABLED: { type: 'text', value: String(options.indexingEnabled ?? false) },
             NUXT_PUBLIC_SITE_URL: { type: 'text', value: 'https://caniupdate.dev' },
+            ...measurementSsrBindings(options.measurements),
           },
         },
         dev: { outboundService: { type: 'fetcher', handler: registryFixture(options) } },
       },
+      ...measurementSsrWorker(options.measurements),
     ],
   });
 };

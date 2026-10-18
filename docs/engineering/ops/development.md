@@ -151,7 +151,16 @@ reviewed comparisons and static pages, excluded and reverse comparisons, trackin
 reviewed comparisons with unavailable or insufficient declarations. Measurements and AI remain unavailable, proving
 that they do not gate useful SSR facts.
 
+The same command checks eligible reviewed measurement SSR through isolated private binding fixtures: no stored notes,
+stored success, partial or unavailable measurements, and a stored-read failure. It compares ordinary and crawler
+overviews, checks measurement/read call counts and unchanged HTML-cache eligibility, and rejects generation submissions.
+These fixtures have no job namespace, queue, credentials, or external providers. They verify frontend request bounds,
+not provider-cache reuse inside the evidence Worker; the existing evidence tests cover that behavior.
+
 For browser recovery, install the pinned Playwright browsers with `nub exec playwright install --with-deps chromium firefox`, then run `nub run smoke:comparison:built --browsers`. Each browser receives an initial `503`, recovers declarations without changing the comparison URL, and reloads successfully with `200`. Missing backend bindings deliberately keep measurements and AI notes unavailable. For manual inspection, `nub run smoke:comparison:built --serve` serves the same fixtures on loopback port `5273`; open `/recovery-fixture/1.0.0...2.0.0` once for the initial failure and client recovery.
+
+The browser option also checks hydrated measurement facts and home/Back navigation in Chromium and Firefox.
+It writes screenshots to an operating-system temporary directory and prints their paths.
 
 Changing `NUXT_PUBLIC_SITE_URL` takes effect on the next built dev start or frontend Worker deployment. No rebuild is needed.
 

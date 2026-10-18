@@ -260,17 +260,24 @@ sequenceDiagram
   participant Briefing as Briefing service/job
   Nuxt->>Registry: Resolve both declaration manifests concurrently
   Registry-->>Nuxt: Resolved versions and declarations
+  par Reviewed inventory entry with qualifying declarations
+    Nuxt->>Evidence: GET measurements independently of stored notes
+    Evidence-->>Nuxt: Available measurements and explicit coverage gaps
+  and Read-only stored-result lookup
   Nuxt->>Evidence: Build packet for a read-only stored-result lookup
   Evidence-->>Nuxt: Server-built packet
   Nuxt->>Briefing: Read D1 by evidence hash (no job lookup or mutation)
   alt Validated stored success
     Briefing-->>Nuxt: available
-    Nuxt->>Evidence: GET measurements
-    Evidence-->>Nuxt: Measurement comparison and summaries
-    Note over Nuxt: Seed existing briefing and measurements queries; mark complete HTML cacheable
+    opt Measurements not already prefetched
+      Nuxt->>Evidence: GET measurements
+      Evidence-->>Nuxt: Measurement comparison and summaries
+    end
+    Note over Nuxt: Seed briefing query; successful measurements also make HTML cacheable
   else Missing result or read failure
     Briefing-->>Nuxt: missing or sanitized service error
     Note over Nuxt: Do not submit or generate during SSR; keep HTML uncacheable
+  end
   end
   Nuxt-->>Browser: Complete HTML and hydrated queries
   Note over Browser: On a miss, resolved-version client queries continue independently
@@ -291,13 +298,15 @@ sequenceDiagram
   end
 ```
 
-After declarations, a stored-result miss leaves measurements and briefing as **parallel client queries**. Measurements do not have to finish before AI notes begin. A stored success instead fills the existing briefing query during SSR and prefetches measurements. SSR never submits or generates a briefing.
+After declarations, eligible reviewed comparisons prefetch measurements alongside the stored-result lookup. Eligibility uses the reviewed inventory and its required declaration evidence, not AI availability or the deployment's indexing switch. Available measurements appear in ordinary initial HTML even when stored notes are missing or their read fails. Partial results keep their coverage gaps; failed reads do not erase declarations.
 
 Briefing gathers its own complete server-side evidence; it does not use the browser's measurement response. The backend may share matching evidence work already in progress. Opening the notes panel does not trigger generation: the client briefing query turns on automatically once the comparison is resolved.
 
-The [Vue Query plugin](../../app/plugins/vue-query.ts) serializes SSR-prefetched data into the page and restores it in the browser (dehydration/hydration). Declarations always prefetch during SSR. The server seeds the briefing query only on a validated D1 hit and fetches measurements only for that hit.
+The [Vue Query plugin](../../app/plugins/vue-query.ts) serializes SSR-prefetched data into the page and restores it in the browser (dehydration/hydration). Declarations always prefetch during SSR. The server seeds the briefing query only on a validated D1 hit. Other comparisons still prefetch measurements only after that hit; a miss leaves measurements and briefing as parallel client queries. All reactive queries are created before the first server await.
 
 Missing results and evidence/storage failures leave the browser's existing POST flow in place. Failed SSR measurement state is removed rather than sent to the browser.
+
+SSR never submits a briefing, looks up or changes a job, or generates AI notes. Browser and crawler GETs use the same measurement policy and substantive facts. Measurement reads reuse the evidence object's existing provider caches, shared in-progress work, admission limits, and provider deadlines; see [evidence collection](evidence.md). This adds no whole-request deadline or account-wide collection budget. Measurement success alone does not make HTML edge-cacheable.
 
 ## Edge response caching
 

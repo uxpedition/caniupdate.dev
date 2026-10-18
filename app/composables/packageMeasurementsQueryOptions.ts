@@ -70,8 +70,8 @@ export const packageMeasurementsQueryOptions = (
       normalizedToVersion.value,
     ]),
     queryFn: (context: PackageMeasurementsQueryContext) => loadMeasurements(context, requestFetch, diagnostics),
-    // Measurements are client-only: awaiting declarations during SSR would otherwise enable this query and collect
-    // tarballs, OSV, and Bundlephobia evidence on the server for every page view.
+    // Automatic collection is client-only. SSR explicitly prefetches eligible reviewed comparisons
+    // and stored briefing hits rather than collecting expensive evidence for every route.
     enabled: computed(
       () =>
         import.meta.client === true &&

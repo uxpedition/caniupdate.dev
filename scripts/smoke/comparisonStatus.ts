@@ -4,6 +4,7 @@ import { chromium, firefox } from 'playwright';
 
 import { verifyComparisonIndexing } from './_internals/comparisonIndexing.ts';
 import { comparisonStatusRuntime } from './_internals/comparisonStatus.ts';
+import { verifyMeasurementHydration, verifyMeasurementSsr } from './_internals/measurementSsr.ts';
 
 const serve = process.argv.includes('--serve');
 
@@ -20,6 +21,7 @@ try {
     });
   } else {
     await verifyComparisonIndexing();
+    await verifyMeasurementSsr();
 
     for (const [path, status] of [
       ['/measurement-fixture/not-a-pair', 400],
@@ -77,6 +79,8 @@ try {
     }
 
     for (const engine of process.argv.includes('--browsers') ? [chromium, firefox] : []) {
+      await verifyMeasurementHydration(engine);
+      await verifyMeasurementHydration(engine, 'missing');
       // Fresh fixture failures for each browser; only public registry calls are replaced.
       const recovery = await comparisonStatusRuntime();
       const browser = await engine.launch({ headless: true });
