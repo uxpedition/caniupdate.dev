@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { useNuxtApp, useSeoMeta, useState } from '#imports';
+import { useNuxtApp, useRuntimeConfig, useSeoMeta, useState } from '#imports';
+import { absoluteUrl } from '#shared/site/siteUrl';
 import ComparisonForm from '~/components/comparison/ComparisonForm.vue';
 import SiteFooter from '~/components/SiteFooter.vue';
 
@@ -7,7 +8,39 @@ const homepageHeroEntry = useState('homepage-hero-entry', () => 0);
 
 const showFormIntro = useNuxtApp().isHydrating === true;
 
-useSeoMeta({ title: 'Can I update? · Review npm package changes before updating' });
+const title = 'Compare npm Package Versions | Can I Update?';
+
+const description =
+  'Compare two versions of one public npm package. Review dependency changes, bundle estimates, and known security advisories—not a guarantee of compatibility.';
+
+const siteUrl = useRuntimeConfig().public.siteUrl;
+
+const image = siteUrl === '' ? undefined : absoluteUrl(siteUrl, '/social-preview.png');
+
+useSeoMeta({
+  title,
+  description,
+  ogType: 'website',
+  ogSiteName: 'Can I Update?',
+  ogTitle: title,
+  ogDescription: description,
+  ogImage: image,
+  ogImageType: image === undefined ? undefined : 'image/png',
+  ogImageWidth: image === undefined ? undefined : 1200,
+  ogImageHeight: image === undefined ? undefined : 630,
+  ogImageAlt:
+    image === undefined
+      ? undefined
+      : 'Compare two versions of one public npm package. The evidence you need to make an informed update decision.',
+  twitterCard: 'summary_large_image',
+  twitterTitle: title,
+  twitterDescription: description,
+  twitterImage: image,
+  twitterImageAlt:
+    image === undefined
+      ? undefined
+      : 'Compare two versions of one public npm package. The evidence you need to make an informed update decision.',
+});
 </script>
 
 <template>

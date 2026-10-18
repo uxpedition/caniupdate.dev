@@ -106,6 +106,8 @@ Wrangler can fall back to dotenv settings. Deleting `.dev.vars` does not prove a
 
 Local hot-module replacement (HMR) and built dev can omit `NUXT_PUBLIC_SITE_URL`; pages then have no canonical link. Set it to the actual local frontend origin when those links are needed. Builds need no origin. If supplied, Nuxt validates it without embedding it in the artifact.
 
+The homepage includes a description and Open Graph and Twitter card metadata in the initial HTML. Its static preview image is served at `/social-preview.png` (1200 × 630 PNG). Image URLs use only the configured runtime origin, never request headers. Without an origin, the description remains but canonical, social page, and image URLs are omitted. The preview describes package-version evidence, not compatibility approval.
+
 ## How do I check the built runtime?
 
 Stop a launcher that owns `.wrangler/state` before starting another. Stop the built dev runtime before rebuilding its output.
@@ -277,9 +279,11 @@ NUXT_PUBLIC_SITE_URL=http://localhost:5273 nub run smoke:built
 
 The scenario uses temporary data and offset ports. It exercises submission, socket completion, a device-shaped Origin, restart, D1 reuse, and reconnect.
 
-Before submission, the scenario also checks literal titles, runtime-origin canonical links, browser revalidation,
-and the one-year edge TTL on the homepage, About, and Privacy pages for browser and Googlebot user agents.
-This checks cacheable response bytes, not a hosted Cloudflare cache HIT.
+Before submission, the scenario checks runtime-origin canonical links, browser revalidation, and the one-year edge TTL
+on the homepage, About, and Privacy pages for browser and Googlebot user agents. On the homepage it also checks that
+Open Graph and Twitter image URLs use the configured origin, and that the preview is a fetchable PNG whose dimensions
+match its metadata. Without a configured origin, those image URLs must be absent.
+This checks cacheable response bytes, not a hosted Cloudflare cache HIT. It does not pin editorial wording.
 
 **Keep the fixture on loopback; do not substitute a real provider.** The script deploys nothing remotely and leaves the normal `.wrangler/state` root untouched. Evidence collection can still contact public package providers, so this is not an offline test.
 
