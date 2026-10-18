@@ -1,6 +1,6 @@
 # Releases and recovery
 
-**Status: reviewed.** This guide records the agreed maintainer release and recovery policy. It separates current capabilities from missing prerequisites. It does not authorize a release or establish the current state of a remote environment.
+This guide describes maintainer release and recovery procedures and their prerequisites. It does not authorize a release or establish the current state of a remote environment.
 
 See [development](development.md) for local checks and [deployment](deployment.md) for environment ownership, credentials, and deploy order.
 
@@ -174,11 +174,11 @@ A Worker rollback does not reverse DO schema changes. Use code compatible with b
 
 ### One-time Drizzle adoption cutover
 
-**This separately approved destructive cutover is not part of the stage hostname or GitLab runtime-settings change.** Routine stage deployments preserve databases, Queues, Durable Objects, and their history. Do not run this cutover for routine staging, domain attachment, or this task.
+**Use this procedure only for a target that still has the pre-Drizzle initial D1 history.** Routine deployments preserve databases, Queues, Durable Objects, and their history. They do not require a reset.
 
-The [accepted Drizzle ADR](../adrs/drizzle-database-layer.md) authorizes replacing the old initial D1 schema/history once, for **local and the existing maintainer stage only**. On 2026-10-05, the user explicitly changed retention to **discard old briefing rows without restoration**.
+The [Drizzle decision](../adrs/drizzle-database-layer.md) defines the one-time exception for local and the existing maintainer stage, including discarded briefing rows and the blocked stage prerequisites. Check its execution status before proceeding; approval is not proof that a target has been migrated.
 
-Retained jobs can refer to discarded results; those old references are not preserved. Production is excluded. Do not delete/recreate databases or reset DO/Queue state. Later migrations remain append-only.
+Production is excluded. Retained jobs can refer to discarded results. Do not delete/recreate databases or reset DO/Queue state. Later migrations remain append-only.
 
 Use the verified checkout and installed `nub exec wrangler`. Before starting:
 
@@ -188,13 +188,13 @@ Use the verified checkout and installed `nub exec wrangler`. Before starting:
 
 Before destruction:
 
-1. Verify config, account, binding, and database identity. Local: `can-i-update-local-briefings`, ID `00000000-0000-0000-0000-000000000001`. Stage: account `8a0be24aad326a55ba610b94b106be81`, database `can-i-update-preview-briefings`, ID `351da802-5296-4e6a-a186-f9d1e99036b6`, briefing config `--env stage`.
+1. Verify config, account, binding, and database identity against the intended target. Use `BRIEFINGS_DB` from the [briefing configuration](../../../workers/briefing/wrangler.jsonc): the root binding for local, or `env.stage` for staging. Check the account and database IDs before any state change.
 2. Stop the actual local launcher and children; never bypass its live lock. For stage, block acceptance through **frontend** Access controls and prove accepted work has finished.
 
    Blocking sockets alone does not block the private submission binding. Zero Queue backlog or a fixed sleep does not prove terminal Durable Object KV job state. Stop if maintenance and settled work cannot be proved. Do not add a pause/admin subsystem as incidental migration work.
 
 3. Inspect tables, indexes, and migration records. The reset SQL below is valid only if `package_briefings` is the sole application table and `d1_migrations` belongs entirely to the replaced history. Reassess unexpected tables/history. If the migration table is absent, omit `DELETE`; do not suppress unrelated SQL errors.
-4. Keep a full D1 backup for recovery. Do not perform row-only export, retention validation, or row restoration for this approved empty cutover. Generated initial and later migrations have already been rehearsed in disposable state.
+4. Keep a full D1 backup for recovery. This cutover discards briefing rows; do not restore them as part of normal completion. Rehearse generated initial and later migrations in disposable state before touching the target.
 
 For local, run sequentially and stop on failure:
 
@@ -207,16 +207,16 @@ nub exec wrangler d1 migrations apply can-i-update-local-briefings --local \
   --config workers/briefing/wrangler.jsonc --persist-to "$LOCAL_PERSIST_TO"
 ```
 
-**Do not run the remote reset commands below without separate authorization and a secure execution path.** They are retained for the one-time cutover, not authorized by the hostname/runtime-settings change. This guide establishes no protected operator path for destructive cutover.
+**Remote reset requires separate authorization and a secure execution path.** Routine deployment or hostname changes do not authorize it. This guide provides no protected operator path for destructive cutover.
 
 Never load a local dotenv file or copy GitLab credentials to a workstation. Ordinary stage deployments use only protected GitLab.
 
 ```bash
-nub exec wrangler d1 info can-i-update-preview-briefings \
+nub exec wrangler d1 info BRIEFINGS_DB \
   --config workers/briefing/wrangler.jsonc --env stage --json
-nub exec wrangler d1 export can-i-update-preview-briefings --remote \
+nub exec wrangler d1 export BRIEFINGS_DB --remote \
   --config workers/briefing/wrangler.jsonc --env stage --output "$CUTOVER_DIR/stage-full.sql"
-nub exec wrangler d1 execute can-i-update-preview-briefings --remote \
+nub exec wrangler d1 execute BRIEFINGS_DB --remote \
   --config workers/briefing/wrangler.jsonc --env stage \
   --command 'DROP TABLE IF EXISTS package_briefings; DELETE FROM d1_migrations;'
 ```

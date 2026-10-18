@@ -34,7 +34,8 @@ guide doesn't cover, search through the source code in `node_modules/effect/src`
 ## Documentation style
 
 - In `README.md` and `docs/`, use plain language for the document's intended audience. Make explanations understandable at any experience level within that audience; explain necessary technical terms and avoid jargon where simpler words work.
-- Keep `README.md` and Markdown files under `docs/` focused on current behavior, decisions in force, and operating procedures—not historical records. Replace outdated explanations instead of appending audit findings or change narratives; use Git history and issue/MR evidence for those. ADRs are the exception: preserve their decision history and mark superseded decisions explicitly.
+- Keep `README.md` and Markdown files under `docs/` focused on current behavior, decisions in force, and operating procedures. Only ADRs and Git history serve as historical records. Replace outdated explanations rather than appending audit findings, change narratives, or former-name explanations. Preserve ADR decision history and mark superseded decisions explicitly.
+- Use **staging** for the current integration environment in prose. Keep exact current selectors such as `stage` and `--env stage` in commands. For resource identities, link to the owning configuration or use a stable binding instead of repeating former environment names. Documentation edits must not invent resource names or rename deployed infrastructure.
 - Prefer short sentences and short paragraphs, with one main idea per paragraph. Use lists when they make information easier to scan.
 - Put optional background and deeper technical detail in endnotes or linked detail sections when helpful. Keep essential meaning, limitations, and safety warnings in the main text beside the relevant explanation or step.
 

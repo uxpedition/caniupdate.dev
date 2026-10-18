@@ -1,6 +1,6 @@
 # Deployment operations
 
-**Status: reviewed.** This guide describes stage and production automation, operator prerequisites, and verification requirements. Deployment existence does not establish release provenance, migration state, or full production readiness.
+This guide describes stage and production automation, operator prerequisites, and verification requirements. Deployment existence does not establish release provenance, migration state, or full production readiness.
 
 See [development](development.md) for local commands and [releases and recovery](releases-and-recovery.md) for promotion, verification, and migrations.
 
@@ -36,7 +36,7 @@ Sources: [frontend config](../../../wrangler.jsonc), [evidence config](../../../
 
 ## How should an account-local configuration be prepared?
 
-Account-local configuration is an agreed requirement, but its setup/generation workflow is not implemented. The inputs and checks below define what that workflow must support. No account-local setup command exists yet.
+There is no account-local setup or configuration-generation command. A contributor deployment needs account-specific configuration with the inputs and checks below.
 
 For each remote target, explicitly select:
 
@@ -126,21 +126,13 @@ Wrangler retains secrets omitted from `--secrets-file`, so sending the complete 
 
 CI deployment and Access credentials stay in their jobs. They never enter Worker secret files or the build. Encrypting a public setting as a Worker secret does not make a `NUXT_PUBLIC_*` value private.
 
-### Migrating logical environment selectors and GitLab scopes
+### Deployment environment and resource identity
 
-Before the first new stage pipeline:
+Use GitLab environment `stage` and Wrangler `--env stage` for staging. Runtime settings and credentials must match the exact scopes in the variable matrix.
 
-1. Stop starting pipelines that can run old `build:preview` / `deploy:preview` jobs. Wait for every queued or running `deploy:preview` to finish before starting a protected-main pipeline with `build-smoke` and `stage:delivery`. The old `preview` lock and new `stage` lock do not coordinate; otherwise they can deploy to the same Workers and database at once.
-2. Create GitLab environment `stage` if needed. Set `NUXT_PUBLIC_SITE_URL` to `https://stage.caniupdate.dev` with exact scope `stage`. After old builds finish, remove its obsolete `stage-build` copy and the unused `stage-build` environment. The shared build has no environment scope.
-3. Move remaining runtime variables and credentials to exact scope `stage`, as listed in the matrix. Remove old `preview` copies.
-4. Delete obsolete variables `BRIEFING_ALLOWED_ORIGIN`, `NUXT_OTEL_ENDPOINT`, and `NUXT_OTEL_HEADERS`. Keep only the shared OTLP input pair under `stage`. Derive briefing Origin from the site URL and use the documented Worker runtime mappings.
-5. Compare the final list with the matrix. Remove obsolete, wildcard, and `stage*` scopes for current variables. Use Wrangler `env.stage` and `--env stage` in all three configs, config readers, and deployment/migration calls.
+Use the Worker names and resource identities from the `env.stage` sections of the [frontend](../../../wrangler.jsonc), [evidence](../../../workers/evidence/wrangler.jsonc), and [briefing](../../../workers/briefing/wrangler.jsonc) configurations. Preserve the configured Queue, D1, Durable Object namespaces, IDs, and bindings unless a resource migration is explicitly authorized.
 
-   Preserve Worker names (`can-i-update-preview`, `can-i-update-preview-evidence`, `can-i-update-preview-briefing`), Queue and D1 names/IDs, Durable Object namespaces, and bindings byte-for-byte. Renaming the logical environment does not rename/recreate physical resources or reset data.
-
-Local commands are `nub run dev` for HMR, `nub run dev:built` (`node scripts/dev/dev.ts --built`) for built dev, and `nub run smoke:built` (`node scripts/smoke/smoke.ts --built`) for built smoke. The CI job is also `smoke:built`. No old command or flag aliases remain.
-
-This is an operator procedure only. The repository update performed no live GitLab or Cloudflare migration, resource recreation, deployment, or other remote change.
+**Before deployment, stop or wait for any pipeline targeting the same resources outside the current `stage` lock.** Different resource-group names do not coordinate deployments.
 
 The credential-free `build-smoke` job has no GitLab environment. It receives build identity, not `NUXT_PUBLIC_SITE_URL` or stage/production runtime settings.
 
@@ -312,7 +304,7 @@ The parent holds the `stage` resource-group lock until the whole child pipeline 
 
 `deploy:stage` is non-interruptible and stops on any failure. Browser checks start only after it succeeds. It reads only `stage`-scoped runtime values and sends each complete allowed list through the owning Worker's temporary secrets file.
 
-Workers retain their names, IDs, and Wrangler `env.stage`; deployment still uses `--env stage`. Immediately before the first state change, [the runner](../../../scripts/deploy/deploy.ts) checks artifact SHA/pipeline identity and the current remote `main`. A superseded or unverifiable revision fails before migration/deployment.
+Stage deployments use Wrangler `env.stage` and `--env stage`. Immediately before the first state change, [the runner](../../../scripts/deploy/deploy.ts) checks artifact SHA/pipeline identity and the current remote `main`. A superseded or unverifiable revision fails before migration/deployment.
 
 Newer deployments wait for the same lock. **Deployment is not atomic: completed steps stay applied if a later step fails. There is no automatic rollback.**
 
@@ -340,9 +332,9 @@ Local checks and dry-runs do not activate hosted automation. Before each live re
 
 Deployment TypeScript entrypoints use Effect computations with typed failures for build hashing/verification, settings and receipt decoding, temporary Wrangler configs, Git checks, subprocesses, and sanitized reports.
 
-The CLI supplies pinned Effect 4.0.0 Node services at its runtime entrypoint. Pure bundle-path and deploy-argument helpers stay synchronous. See the [deployment orchestrator](../../../scripts/deploy/deploy.ts), [artifact identity](../../../scripts/deploy/buildArtifact.ts), [runtime settings](../../../scripts/deploy/runtimeSettings.ts), [rate-limit configuration](../../../scripts/deploy/rateLimitConfig.ts), and [Worker secret handling](../../../scripts/deploy/workerSecrets.ts).
+The CLI supplies Effect's Node services at its runtime entrypoint. Pure bundle-path and deploy-argument helpers stay synchronous. See the [deployment orchestrator](../../../scripts/deploy/deploy.ts), [artifact identity](../../../scripts/deploy/buildArtifact.ts), [runtime settings](../../../scripts/deploy/runtimeSettings.ts), [rate-limit configuration](../../../scripts/deploy/rateLimitConfig.ts), and [Worker secret handling](../../../scripts/deploy/workerSecrets.ts).
 
-Build identity and production receipt JSON use Effect 4.0.0's [`Schema.fromJsonString` and `Schema.decodeUnknownEffect`](https://github.com/Effect-TS/effect/blob/effect%404.0.0/packages/effect/src/Schema.ts). Malformed JSON and invalid fields keep the same sanitized domain failure. GitLab response decoding also uses Effect's error channel.
+Build identity and production receipt JSON use Effect's `Schema.fromJsonString` and `Schema.decodeUnknownEffect`. Malformed JSON and invalid fields produce sanitized domain failures. GitLab response decoding also uses Effect's error channel.
 
 Secrets and generated Wrangler configs live in owner-only OS temporary directories; JSON files use mode `600`. Effect filesystem scopes retain the directories for the Wrangler command, then remove them on success, failure, or interruption.
 
@@ -400,9 +392,9 @@ See [project access tokens](https://docs.gitlab.com/user/project/settings/projec
 
 The production Cloudflare token needs only account Workers Scripts, D1, and Queue edit permissions, plus Zone Read and Workers Routes edit for the active `caniupdate.dev` zone.
 
-Production D1 `can-i-update-production-briefings` (ID `465d4fc6-35ed-4ef6-842f-e67f3a919b87`) and Queue `can-i-update-production-briefings` already exist and are empty. Production Workers, DO namespaces, and domain attachments do not exist yet.
+Before activation, verify the configured production D1 database, Queue, Workers, Durable Object namespaces, and domain attachments in the target account. Source configuration does not establish their existence or migration state.
 
-Correct production `NUXT_PUBLIC_SITE_URL` to `https://caniupdate.dev` before activation. `BRIEFING_PUBLIC_URL` already matches `wss://briefing.caniupdate.dev`.
+Set production `NUXT_PUBLIC_SITE_URL` to `https://caniupdate.dev` and `BRIEFING_PUBLIC_URL` to `wss://briefing.caniupdate.dev`.
 
 If deployment or browser verification fails:
 
@@ -419,15 +411,15 @@ The official stage admits authorized maintainers and approved automation only. D
 
 1. In Cloudflare Zero Trust, add hostname-based **Self-hosted** Access protection for `stage.caniupdate.dev` and `stage-briefing.caniupdate.dev` in the active `caniupdate.dev` zone. Prefer one multi-domain application; otherwise use one per hostname.
 
-   Complete both hosts' protection and policies before attaching public routes. Retain old Worker-development-hostname protection until deployment disables `workers_dev` and `preview_urls` and those endpoints are unreachable. Only then retire the old protection.
+   Complete both hosts' protection and policies before attaching public routes. Keep protection on every reachable Worker-development hostname until deployment disables those endpoints and checks confirm they are unreachable.
 
 2. Add a human **Allow** policy for authorized maintainer groups and a separate **Service Auth** policy for the CI token. Both policies must cover both hosts, whether in one application or two.
 
    Set `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` as protected GitLab variables with exact scope `stage`, as in the matrix.
 
-3. Only after protection exists, deploy the reviewed configuration through protected `main`. Wrangler `env.stage` attaches `stage.caniupdate.dev` to existing `can-i-update-preview` and `stage-briefing.caniupdate.dev` to existing `can-i-update-preview-briefing`, using `custom_domain: true`. It disables `workers_dev` and `preview_urls`.
+3. Only after protection exists, deploy the reviewed configuration through protected `main`. Wrangler `env.stage` attaches `stage.caniupdate.dev` to the configured staging frontend Worker and `stage-briefing.caniupdate.dev` to the staging briefing Worker, using `custom_domain: true`. Worker-development endpoints are disabled.
 
-   Keep `can-i-update-preview-evidence` private, with no public/custom hostname. Preserve all Worker names, resource IDs, bindings, D1, Queue, DO namespaces, and migration history. Do not create/rename Workers, recreate resources, or reset databases.
+   Keep the staging evidence Worker private, with no public/custom hostname. Preserve all Worker names, resource IDs, bindings, D1, Queue, DO namespaces, and migration history. Do not create/rename Workers, recreate resources, or reset databases.
 
    Cloudflare Custom Domains creates the DNS record and certificate; add no separate DNS route. See [Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) and the [frontend](../../../wrangler.jsonc) / [briefing](../../../workers/briefing/wrangler.jsonc) configs.
 
@@ -463,17 +455,7 @@ Queues Free currently includes 10,000 operations/day and 24-hour retention. A su
 
 Paid is compatible if measured needs exceed Free. A smoke response or client latency sample is not Cloudflare CPU accounting.
 
-### Remaining performance work
-
-The remaining investigations are:
-
-- Reduce comparison-page SSR work and measure its CPU separately.
-- Assess whether per-file SHA-256 values are still needed before removing that inspection cost. Keep whole-archive integrity verification.
-- Investigate filtering redundant Effect HTTP response-header trace attributes without losing business headers, spans, or propagation.
-
-These are investigation targets, not proven causes or quantified savings. Deployed checks still need cold/warm work, SSR CPU, concurrency/memory pressure, and relevant quotas.
-
-Cloudflare branch Previews do not provide an isolated three-Worker deployment for this design. Service bindings target production deployments, and branch Previews cannot consume Queues. Use separately deployed resources unless deliberately redesigning the topology. See [Preview resource limitations](https://developers.cloudflare.com/workers/previews/resources/).
+Staging uses separately deployed Workers with its own bindings, Queue, database, and Durable Object state. Keep these resources isolated from production.
 
 ## Outstanding setup and verification
 

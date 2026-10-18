@@ -1,6 +1,6 @@
 # Development operations
 
-**Status: reviewed.** Commands describe this checkout. Policy statements describe the agreed contributor workflow.
+This guide describes local development and the contributor verification workflow.
 
 For remote environments, see [deployment](deployment.md). For verification evidence and state recovery, see [releases and recovery](releases-and-recovery.md).
 
@@ -106,7 +106,7 @@ Wrangler can fall back to dotenv settings. Deleting `.dev.vars` does not prove a
 
 Local hot-module replacement (HMR) and built dev can omit `NUXT_PUBLIC_SITE_URL`; pages then have no canonical link. Set it to the actual local frontend origin when those links are needed. Builds need no origin. If supplied, Nuxt validates it without embedding it in the artifact.
 
-The homepage includes a description and Open Graph and Twitter card metadata in the initial HTML. Its static preview image is served at `/social-preview.png` (1200 × 630 PNG). Image URLs use only the configured runtime origin, never request headers. Without an origin, the description remains but canonical, social page, and image URLs are omitted. The preview describes package-version evidence, not compatibility approval.
+The homepage includes a description and Open Graph and Twitter card metadata in the initial HTML. Its social card image is a static 1200 × 630 PNG. Image URLs use only the configured runtime origin, never request headers. Without an origin, the description remains but canonical, social page, and image URLs are omitted. The image describes package-version evidence, not compatibility approval.
 
 ## How do I check the built runtime?
 
@@ -175,7 +175,7 @@ Jobs use the self-hosted group runner tagged `debian-home-server`, with Docker o
 
 Jobs use a pinned Node image, Nub from the `packageManager` pin, and `nub ci`. They run the existing non-fixing package checks without changing lint severities or adding a coverage threshold.
 
-The test job uses four Vitest workers; the three-CPU runner would default to two. The [sequencer](../../../test/realAlarm.sequencer.ts) starts the two real-time alarm guards first. Other suites share a fresh Worker bundle and use test-only clock control. Production leases, suite discovery, isolated storage/runtimes, and native scheduling guards stay intact. See [runner measurements](#further-detail-runner-measurements) for the measured tradeoffs.
+The test job uses four Vitest workers. The [sequencer](../../../test/realAlarm.sequencer.ts) starts the two real-time alarm guards first. Other suites share a fresh Worker bundle and use test-only clock control. Keep suite discovery, isolated storage/runtimes, and native scheduling guards intact when changing test scheduling.
 
 Required gates cover:
 
@@ -193,7 +193,7 @@ Validation jobs have no deployment credentials or reusable caches. Only `build-s
 
 A passing protected `main` push continues to `stage:delivery`; MRs do not deploy. The child pipeline runs `deploy:stage`, then independent Chromium and Firefox `verify:stage` jobs. Its parent holds the `stage` resource-group lock through deployment and both browser checks, preventing another pipeline from replacing the site mid-test.
 
-Child jobs use environment `stage`. `nub run deploy:stage` still invokes `scripts/deploy/deploy.ts`, and Workers still use Wrangler `--env stage`. Build artifacts and sanitized deployment/verification records have Maintainer-only access and bounded retention.
+Child jobs use environment `stage`. `nub run deploy:stage` invokes `scripts/deploy/deploy.ts`, and Workers use Wrangler `--env stage`. Build artifacts and sanitized deployment/verification records have Maintainer-only access and bounded retention.
 
 Protect all configured variables and use exact scopes:
 
@@ -201,7 +201,7 @@ Protect all configured variables and use exact scopes:
 - Production inputs and credentials: `production`.
 - Access credentials: `stage` only.
 
-Before using the new `stage` resource group, stop or wait for old deployments using `preview`. These differently named locks do not coordinate.
+Before deployment, stop or wait for any pipeline targeting the same resources outside the current `stage` lock. Different resource-group names do not coordinate deployments.
 
 Bootstrap rejects credentials and private runtime settings outside their permitted jobs before dependency installation. Keep unprotected deployment/provider secrets out of project/group variables. Fork pipelines run in the fork, not with parent-project resources. Keep MR access to protected variables/runners restricted.
 
@@ -211,9 +211,7 @@ The GitLab project requires successful pipelines and does not accept skipped pip
 
 These settings live in GitLab, not in YAML. Maintainers must preserve them under **Settings → Merge requests** and **Settings → Repository → Branch rules**, including when recreating or moving the project. See GitLab's [pipeline merge checks](https://docs.gitlab.com/user/project/merge_requests/auto_merge/#require-a-successful-pipeline-for-merge), [merge methods](https://docs.gitlab.com/user/project/merge_requests/methods/), and [fork pipeline controls](https://docs.gitlab.com/ci/pipelines/merge_request_pipelines/#run-pipelines-in-the-parent-project).
 
-Introduce this configuration through an MR. Its source branch supplies `.gitlab-ci.yml` to the MR pipeline even before the file reaches `main`.
-
-Local checks and CI Lint simulations do not prove hosted enforcement. Verify the first hosted MR pipeline, including a deliberately failing check that blocks merge.
+When changing CI configuration or project merge settings, verify hosted enforcement with an MR pipeline, including a deliberately failing check that blocks merge. Local checks and CI Lint simulations do not prove hosted enforcement.
 
 A passing MR does not deploy. After review and normal merge, every protected-main push deploys stage. The blocking manual `release:tag` input becomes available only after required checks and stage Chromium/Firefox verification pass.
 
@@ -287,7 +285,7 @@ The scenario uses temporary data and offset ports. It exercises submission, sock
 
 Before submission, the scenario checks runtime-origin canonical links, browser revalidation, and the one-year edge TTL
 on the homepage, About, and Privacy pages for browser and Googlebot user agents. On the homepage it also checks that
-Open Graph and Twitter image URLs use the configured origin, and that the preview is a fetchable PNG whose dimensions
+Open Graph and Twitter image URLs use the configured origin, and that the social card image is a fetchable PNG whose dimensions
 match its metadata. Without a configured origin, those image URLs must be absent.
 This checks cacheable response bytes, not a hosted Cloudflare cache HIT. It does not pin editorial wording.
 
@@ -411,27 +409,11 @@ Raw SQL is limited to generated migrations, operational metadata, and test fault
 
 Do not treat a storage failure as a cache miss or delete persisted results to make the request succeed. Database changes and recovery follow the [migration policy](releases-and-recovery.md#database-and-stored-data-changes).
 
-## What remains planned?
+## Deployment prerequisites
 
-Portable account-local deployment is still planned.
+Contributor deployments need account-local configuration; there is no setup command to generate it. See [account-local deployment](deployment.md#how-should-an-account-local-configuration-be-prepared).
 
-Managed public-request and new-generation rate limiting are implemented in main. See [limits and configuration](deployment.md#rate-limit-configuration). Local Wrangler defaults use isolated namespaces and conservative limits. Counters are temporary platform state, not D1 migrations.
-
-The manual protected-main release flow, artifact promotion, and receipt-derived production footer identity are implemented in source. Each release requires valid credentials, protected tags/environments, current migrations, and complete hosted verification.
-
-Stage/dev commit identity and automatic main-to-stage deployment are implemented in source. Deployment existence does not prove pipeline provenance or complete hosted verification. See [deployment status](deployment.md#outstanding-setup-and-verification) and [release identity](releases-and-recovery.md#release-identity).
-
-## Further detail: runner measurements
-
-Under three-CPU / six-GiB Docker limits, all 605 tests in 74 files passed in 94 seconds in each of three fresh-container runs:
-
-- Two warm-dependency-store runs peaked at 3.32–3.33 GiB.
-- The cold-install run peaked at 3.71 GiB. Bootstrap plus tests took 107 seconds.
-- Cgroup peaks include filesystem cache, not just process heaps.
-
-The previous four-worker suite took 184 seconds. The six-worker suite took 155 seconds and peaked at 4.5 GiB. These measurements are not timing guarantees.
-
-Dependency-store caching remains disabled. An 11-second cold install fell to 10 seconds including cache restoration, but packing the 254 MB tar.gz archive took 23 seconds.
+Stage and production require valid credentials, protected tags/environments, current migrations, and hosted verification. Deployment existence does not prove pipeline provenance or complete verification. See [deployment prerequisites](deployment.md#outstanding-setup-and-verification) and [release identity](releases-and-recovery.md#release-identity).
 
 ## Further detail: trace relationships
 

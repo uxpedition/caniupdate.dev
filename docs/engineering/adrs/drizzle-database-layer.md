@@ -6,7 +6,7 @@ At the pre-production cutover, reset local and preview D1 databases and restart 
 
 **Status:** Accepted; implementation and local cutover verified. Stage cutover is blocked until maintenance controls are available and work has stopped (quiescence). Approval is not evidence of a reset or rollout.
 
-**Terminology:** Historical decisions and rollout observations below use “preview”, the hosted environment's former name. Current operations use `stage` and Wrangler `--env stage`. Physical resource names and IDs are unchanged; see the [deployment naming procedure](../ops/deployment.md#migrating-logical-environment-selectors-and-gitlab-scopes). Renaming does not execute or authorize the blocked database cutover.
+**Terminology:** Historical decisions and rollout observations below use “preview”, the hosted environment's former name. Current operations use `stage` and Wrangler `--env stage`. Physical resource names and IDs are unchanged; see [deployment environment and resource identity](../ops/deployment.md#deployment-environment-and-resource-identity). Renaming does not execute or authorize the blocked database cutover.
 
 **Exporter retirement (2026-10-09):** The offline briefing exporter and its legacy-import procedure were removed because that transfer workflow is no longer needed. The exporter decisions and checks below describe history, not a tool available today.
 

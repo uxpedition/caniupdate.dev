@@ -96,11 +96,9 @@ The product compares two versions of one public npm package. It does not:
 - Change your dependencies or apply migration steps.
 - Guarantee compatibility.
 
-## Evidence and provenance
+## Implementation references
 
-The product's purpose and priorities were agreed during the documentation review on 2026-10-02.
-
-The source links below support the described interface and evidence limits. They do not prove that every AI explanation is correct.
+These sources define the interface and evidence limits. They do not prove that every AI explanation is correct.
 
 - [Current header and navigation](../../app/components/comparison/ComparisonDetails.vue).
 - [Result explanations and limitations](../../app/pages/[packageName]/comparisonView.ts).

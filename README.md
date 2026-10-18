@@ -63,7 +63,7 @@ The footer identifies the build:
 
 The commit hash links to the full source commit. Stage identifies the commit used for its build, not the latest commit on the branch.
 
-The release flow is implemented, but its external setup and first production deployment remain outstanding.[^release-process]
+Production releases require the protected GitLab workflow and target-specific setup.[^release-process]
 
 For setup and recovery, see [deployment operations](docs/engineering/ops/deployment.md#manual-protected-main-release) and [release recovery](docs/engineering/ops/releases-and-recovery.md).
 

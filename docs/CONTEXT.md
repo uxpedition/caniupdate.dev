@@ -46,7 +46,7 @@ The briefing guide explains how the system validates an RPC result and releases 
 
 Link the two accounts instead of repeating the full contract.
 
-Most published docs describe the current product, code, or procedures. Update them when those things change; replace old instructions rather than appending a history of fixes.
+Published docs describe current behavior, decisions in force, or operating procedures. Replace outdated explanations rather than appending audit findings, dated measurements, change narratives, or former-name explanations. Only ADRs and Git history serve as historical records. Use current terminology according to [repository guidance](../AGENTS.md#documentation-style).
 
 ADRs preserve decision history: what we chose, why, and under which constraints. A decision can change later. Record choices that would be costly to reverse, even when they seem obvious.
 

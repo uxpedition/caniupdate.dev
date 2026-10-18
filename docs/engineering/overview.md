@@ -30,10 +30,6 @@ Provider adapters depend on shared contracts and HTTP libraries, not comparison 
 
 Route-only helpers live in `_internals/`; helpers shared by sibling endpoints use their nearest common `_internals/` directory. Nitro must exclude `**/_internals/**` and `**/*.unit.ts` from route discovery. A leading underscore alone does not hide a helper.
 
-**Design context (2026-10-04):** This split replaced the `server/utils` catch-all. Renaming helpers would not make ownership clear. Broad `clients` or `services` folders would still mix unrelated owners; putting all logic beside endpoints would entangle code shared with Workers.
-
-The cutover changed structure, not public behavior. It retained route contracts, evidence policies, storage formats, and job lifecycles, without compatibility re-exports. A scanner probe at the time confirmed that endpoint directories preserved routes and that `_internals/` required an explicit exclusion.
-
 ## Runtime ownership
 
 A **Worker** runs server code on Cloudflare. A **Durable Object** (DO) owns state for one named identity, such as a package or evidence hash. SQLite stores that object's data; D1 stores shared, permanent briefing results.
