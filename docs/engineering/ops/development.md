@@ -135,6 +135,10 @@ declarations prefetch on a cold comparison request; browser revalidation and edg
 
 For a frontend-only missing-route and protection check, run `nub run smoke:routes:built` after building. It loads the deployable frontend bundle in local Miniflare/workerd. It checks unknown-route `404` responses, existing pages and health, invalid comparison input, exhausted-limit `429` responses, and missing-binding `503` responses. Both HTML and JSON request preferences receive Nitro's sanitized JSON errors. This check needs no credentials, backend Workers, migrations, saved state, or provider calls.
 
+Run `nub run smoke:comparison:built` to check comparison response boundaries against fixed registry fixtures. It checks malformed routes (`400`), unknown packages and versions (`404`), temporary declaration failures (`503`), private error details, and usable declaration HTML (`200`) when measurements fail. CI runs this check against the built frontend. It needs no credentials, backend Workers, migrations, or external provider requests.
+
+For browser recovery, install the pinned Playwright browsers with `nub exec playwright install --with-deps chromium firefox`, then run `nub run smoke:comparison:built --browsers`. Each browser receives an initial `503`, recovers declarations without changing the comparison URL, and reloads successfully with `200`. Missing backend bindings deliberately keep measurements and AI notes unavailable. For manual inspection, `nub run smoke:comparison:built --serve` serves the same fixtures on loopback port `5273`; open `/recovery-fixture/1.0.0...2.0.0` once for the initial failure and client recovery.
+
 Changing `NUXT_PUBLIC_SITE_URL` takes effect on the next built dev start or frontend Worker deployment. No rebuild is needed.
 
 To check that one build works under different origins:

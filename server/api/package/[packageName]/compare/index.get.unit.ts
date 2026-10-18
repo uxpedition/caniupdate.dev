@@ -6,7 +6,7 @@ import type { RegistryVersionManifest } from '#shared/comparison/package/package
 import handler from './index.get';
 
 // Registry stub serving version manifests; the route still decodes each response through its strict manifest schema.
-const registry = { json: vi.fn<(path: string) => Promise<RegistryVersionManifest>>() };
+const registry = { json: vi.fn<(path: string) => Promise<RegistryVersionManifest | Response>>() };
 
 const manifest = (version: string) => ({
   name: 'minimist',
@@ -34,7 +34,9 @@ beforeEach(() => {
     const url = new URL(new Request(input, init).url);
 
     if (url.origin === 'https://registry.npmjs.org' && !url.pathname.includes('/-/')) {
-      return Response.json(await registry.json(url.pathname));
+      const result = await registry.json(url.pathname);
+
+      return result instanceof Response ? result : Response.json(result);
     }
 
     return fetchMock(input, init);
@@ -48,6 +50,25 @@ afterEach(() => {
 });
 
 describe('declaration comparison', () => {
+  it.each([404, 429, 500, 503])('maps registry HTTP %s without exposing upstream errors', async (status) => {
+    registry.json.mockImplementation(async () => new Response('private-provider-marker', { status }));
+
+    const failure = startRequest('1.0.0', '2.0.0');
+    await expect(failure).rejects.toMatchObject({ statusCode: status === 404 ? 404 : 503 });
+    await failure.catch((cause: unknown) => {
+      expect(JSON.stringify(cause)).not.toContain('private-provider-marker');
+      expect(JSON.stringify(cause)).not.toContain('registry.npmjs.org');
+    });
+  });
+
+  it('keeps transport and malformed registry responses retryable', async () => {
+    registry.json.mockRejectedValue(new Error('private-provider-marker'));
+    await expect(startRequest('1.0.0', '2.0.0')).rejects.toMatchObject({ statusCode: 503 });
+
+    registry.json.mockImplementation(async () => Response.json({ error: 'private-provider-marker' }));
+    await expect(startRequest('1.0.0', '2.0.0')).rejects.toMatchObject({ statusCode: 503 });
+  });
+
   it('returns manifest declarations without measurement or release evidence', async () => {
     registry.json.mockImplementation(async (path) => ({
       ...manifest(path.endsWith('/1.0.0') ? '1.0.0' : '2.0.0'),

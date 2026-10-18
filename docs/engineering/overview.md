@@ -158,7 +158,7 @@ The key is not evidence identity, authentication, or anonymization. It never ent
 
 Refusals return sanitized `429`, `Retry-After: 60`, `no-store`, and structured `data.code` (`request-rate-limited` or `generation-rate-limited`) with `retryAfter: 60`. This is conservative retry advice, not a guaranteed reset time. A failed limiter binding fails closed with sanitized `503`.
 
-Nitro returns its sanitized JSON error envelope for both page and API failures, including requests that accept HTML. Unknown routes return `404`; `/sitemap.xml` is not implemented and also returns `404`. The response keeps the original status and public error data. Error rendering does not make another routed request: Nuxt's Vue error renderer would lose Cloudflare bindings on that internal fetch and turn an admitted request's error into a false protection-unavailable `503`.
+Nitro returns its sanitized JSON error envelope for thrown page and API errors, including requests that accept HTML. Unknown routes return `404`; `/sitemap.xml` is not implemented and also returns `404`. The response keeps the original status and public error data. Error rendering does not make another routed request: Nuxt's Vue error renderer would lose Cloudflare bindings on that internal fetch and turn an admitted request's error into a false protection-unavailable `503`.
 
 Browser requests disable transport/query retries for 429, reconnect refetch, and retry-on-mount. Manual retry controls recover comparison, measurements, and notes separately. The existing single briefing retry after 503 stays bounded.
 
@@ -184,6 +184,15 @@ These are factual comparison rules. [Product limitations](../product/meaning-and
 [Page orchestration](../../app/composables/useComparisonPage.ts) creates all reactive queries before awaiting the server's declaration prefetch. The [homepage](../../app/pages/index.vue) may stream HTML as it renders. [Nuxt configuration](../../nuxt.config.ts) disables streaming on non-root routes so comparison SSR can finish optional stored-result and measurement reads before setting headers.
 
 The package description arrives with declaration rows. Crawler user agents are excluded by Nuxt.
+
+Comparison responses distinguish invalid identity from unavailable evidence:
+
+- Malformed comparison routes return `400` before provider requests.
+- A registry `404` for either package/version lookup produces `404` from the declaration API and comparison page.
+- Other declaration failures, including transport errors and invalid registry responses, produce sanitized `503` responses. The page keeps its requested package and versions in HTML.
+- Measurement-only failures do not invalidate the comparison. Available declaration HTML remains `200`.
+
+Failed declaration HTML uses `no-store` for browsers and the edge cache. The server removes the failed declaration query from hydration so the browser can make its existing initial fetch and recover in place. This does not add transport retries or change request limits. Page status changes go through Nuxt's response-status bridge, which targets the renderer's event implementation rather than the application's H3 implementation.
 
 ```mermaid
 sequenceDiagram

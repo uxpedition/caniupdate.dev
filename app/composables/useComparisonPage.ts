@@ -4,14 +4,14 @@ import type { H3Event } from 'h3';
 import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue';
 
-import { useNuxtApp, useRequestEvent, useRequestFetch } from '#imports';
+import { setResponseStatus, useNuxtApp, useRequestEvent, useRequestFetch } from '#imports';
 import type { PackageMeasurementsResponse } from '#shared/comparison/comparison.defs';
 import { rateLimitMessage } from '#shared/request/rateLimit.defs';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
+import { prefetchDeclarations } from '~/composables/comparisonDeclarationsPrefetch';
 import type { ComparisonTierTelemetry } from '~/composables/comparisonPageTelemetry';
 import { prefetchStoredComparison, readStoredComparisonBriefing } from '~/composables/comparisonSsrPrefetch';
 import { packageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
-import type { PackageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
 import {
   packageMeasurementsQueryOptions,
   prefetchPackageMeasurements,
@@ -22,18 +22,6 @@ import { useComparisonRoute } from '~/composables/useComparisonRoute';
 import { resolvedBriefingVersions } from '~/pages/[packageName]/comparisonView';
 
 type NuxtRequestFetch = H3Event$Fetch | $Fetch;
-
-// Declarations must be in the first paint. A failed prefetch is not dehydrated, so drop it and let the client retry
-// from a pending state instead of hydrating an error the server already rendered.
-const prefetchDeclarations = async (queryClient: QueryClient, declarationsOptions: PackageComparisonQueryOptions) => {
-  if (import.meta.server) {
-    await queryClient.query(declarationsOptions).catch(() => undefined);
-
-    if (queryClient.getQueryState(declarationsOptions.queryKey)?.status !== 'success') {
-      queryClient.removeQueries({ queryKey: declarationsOptions.queryKey });
-    }
-  }
-};
 
 const useComparisonMeasurementsQuery = (
   requestFetch: NuxtRequestFetch,
@@ -176,10 +164,14 @@ export const useComparisonPage = async (pageTraceContext?: TraceContext) => {
 
   const convergeIdentity = useComparisonIdentity(queries.declarations, queries.declarationsOptions);
 
-  await prefetchDeclarations(queryClient, queries.declarationsOptions);
+  if (import.meta.server) {
+    const failureStatus = await prefetchDeclarations(queryClient, queries.declarationsOptions);
 
-  if (import.meta.server) await convergeIdentity();
+    // Use Nuxt's status bridge: app-side H3 and Nitro can use different event implementations.
+    if (requestEvent !== undefined && failureStatus !== undefined) setResponseStatus(requestEvent, failureStatus);
 
+    await convergeIdentity();
+  }
   await prefetchComparisonForSsr({
     requestEvent,
     requestFetch,

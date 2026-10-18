@@ -15,6 +15,7 @@
     "dev:built": "node scripts/dev/dev.ts --built",
     "smoke:built": "node scripts/smoke/smoke.ts --built",
     "smoke:routes:built": "node scripts/smoke/routes.ts",
+    "smoke:comparison:built": "node scripts/smoke/comparisonStatus.ts",
     "smoke:deployed": "tsx scripts/smoke-deployed/smoke-deployed.ts",
     "deploy:production": "node scripts/deploy/deploy.ts --target=production",
     "deploy:stage": "node scripts/deploy/deploy.ts --target=stage",

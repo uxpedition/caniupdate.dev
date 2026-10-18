@@ -6,9 +6,14 @@ import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import ComparisonDetails from '~/components/comparison/ComparisonDetails.vue';
 import LoadingMessage from '~/components/element/LoadingMessage.vue';
 import { openComparisonPage } from '~/composables/comparisonPageTelemetry';
+import { isComparisonRouteParams } from '~/composables/comparisonRouteParams';
 import { useComparisonRoute } from '~/composables/useComparisonRoute';
 
-definePageMeta({ layout: 'site' });
+definePageMeta({
+  layout: 'site',
+  validate: (route) =>
+    isComparisonRouteParams(route.params) || { statusCode: 400, statusMessage: 'Invalid comparison route' },
+});
 
 const route = useRoute();
 
