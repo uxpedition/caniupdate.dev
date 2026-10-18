@@ -125,6 +125,12 @@ NUXT_PUBLIC_SITE_URL=http://localhost:5173 nub run dev:built
 
 **Local `dev:built` does not select the remote Wrangler `stage` environment or create remote resources.** It uses the root config, where Workers Cache is disabled. It can verify rendered HTML and policy headers, but not hosted edge-cache hits, eviction, or cache invalidation after deployment.
 
+Pages use buffered SSR so title and canonical tags are literal HTML for both browsers and crawlers. Do not enable
+[Nuxt SSR streaming](https://nuxt.com/docs/4.x/guide/going-further/experimental-features#ssrstreaming) while sharing
+edge-cached HTML between user agents. Streaming can deliver page metadata only as JavaScript patches. Nuxt's crawler
+exclusion applies at the origin, not when a crawler receives a browser-warmed cache entry. Buffering waits for the
+declarations prefetch on a cold comparison request; browser revalidation and edge TTLs remain unchanged.
+
 Changing `NUXT_PUBLIC_SITE_URL` takes effect on the next built dev start or frontend Worker deployment. No rebuild is needed.
 
 To check that one build works under different origins:
@@ -264,6 +270,10 @@ NUXT_PUBLIC_SITE_URL=http://localhost:5273 nub run smoke:built
 `smoke:built` invokes `node scripts/smoke/smoke.ts --built`; `dev:built` uses the same `--built` mode in the local launcher. Local HMR remains `nub run dev`.
 
 The scenario uses temporary data and offset ports. It exercises submission, socket completion, a device-shaped Origin, restart, D1 reuse, and reconnect.
+
+Before submission, the scenario also checks literal titles, runtime-origin canonical links, browser revalidation,
+and the one-year edge TTL on the homepage, About, and Privacy pages for browser and Googlebot user agents.
+This checks cacheable response bytes, not a hosted Cloudflare cache HIT.
 
 **Keep the fixture on loopback; do not substitute a real provider.** The script deploys nothing remotely and leaves the normal `.wrangler/state` root untouched. Evidence collection can still contact public package providers, so this is not an offline test.
 

@@ -43,8 +43,9 @@ export default defineNuxtConfig({
   experimental: {
     // Firefox can preload modules from HTTP Link headers before the entry import map is registered.
     entryImportMap: false,
-    // Stream the shell before the awaited declarations prefetch resolves; Nuxt excludes crawler user agents.
-    ssrStreaming: true,
+    // Shared edge caches must serve literal metadata regardless of the warming request's user agent.
+    // Streaming sends page head tags as JS patches; crawler exclusion only applies on an origin miss.
+    ssrStreaming: false,
   },
   devtools: { enabled: true },
   ignore: ['**/*.unit.ts'],

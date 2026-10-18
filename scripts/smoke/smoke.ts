@@ -32,6 +32,7 @@ import {
 } from './_internals/defs.ts';
 import { startLauncher, portsAreFree, waitForHealth, type Launcher } from './_internals/launcher.ts';
 import { runMeasurements } from './_internals/measure.ts';
+import { verifyMetadata } from './_internals/metadata.ts';
 import { describeFrames, submit, submitColdPair, submitFromDevice, waitForAvailable } from './_internals/submission.ts';
 
 const isScalarString = Schema.is(Schema.String);
@@ -99,6 +100,7 @@ const runScenario = async (built: boolean, persistTo: string, provider: Provider
   try {
     await waitForHealth(launcher, HEALTH_TIMEOUT_MS);
     log(`frontend healthy on ${FRONTEND_ORIGIN}`);
+    await verifyMetadata();
 
     const eventsUrl = await submitColdPair(SETTLED_FROM, SETTLED_TO, provider);
     await submitFromDevice();
