@@ -1,6 +1,7 @@
 import { createError, mockEvent } from 'h3';
 import { describe, expect, it, vi } from 'vitest';
 
+import * as telemetry from './telemetry';
 import {
   createServerDiagnosticSend,
   isServerDiagnosticReportable,
@@ -72,6 +73,27 @@ describe('server diagnostics privacy and outcomes', () => {
     await reportServerDiagnostic(event, { send, body: 'runtime.error', source: 'nuxt', error: aborted, status: 500 });
     await reportServerDiagnostic(event, { send, body: 'runtime.error', source: 'nuxt', error: undefined });
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('keeps diagnostic runtime rejection details out of console output and request outcomes', async () => {
+    const failure = new Error('Authorization: Bearer fixture-secret for gina@example.com');
+    failure.stack = 'private runtime stack fixture';
+    const runtimeSpy = vi.spyOn(telemetry, 'runWithTelemetry').mockRejectedValueOnce(failure);
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const send = createServerDiagnosticSend(mockEvent('/'), {
+        enabled: true,
+        endpoint: 'http://127.0.0.1:4318',
+        headers: {},
+      });
+
+      await expect(send('runtime.error', { 'error.source': 'nuxt' })).resolves.toBeUndefined();
+      expect(consoleSpy).not.toHaveBeenCalled();
+    } finally {
+      consoleSpy.mockRestore();
+      runtimeSpy.mockRestore();
+    }
   });
 
   it('creates a disabled-off runtime send that never disturbs request handling', async () => {

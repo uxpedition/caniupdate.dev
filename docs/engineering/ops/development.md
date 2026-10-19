@@ -411,7 +411,7 @@ Only reviewed exception type, source, and filtered code locations are sent. Exce
 
 Server diagnostics use the same bounded pipeline. Nitro handler failures produce `can-i-update-nuxt` `runtime.error` with `error.source` `nuxt`. Nuxt server-side rendering (SSR) failures use `nuxt.vue` and `nuxt.ssr`, with the same request-scoped deduplication.
 
-Telemetry routes (`/api/telemetry/*`), expected outcomes below 500, and aborted requests are excluded to avoid recursion and noise. Sending runs separately from the request, ignores disabled destinations, and absorbs its own failures. Diagnostics never change the request outcome.
+Telemetry routes (`/api/telemetry/*`), expected outcomes below 500, and aborted requests are excluded to avoid recursion and noise. Sending runs separately from the request, ignores disabled destinations, and absorbs its own failures without logging raw runtime errors. Diagnostics never change the request outcome.
 
 For partial-page loading, filter `comparison.tier.settled` by `operation` (`declarations` or `measurements`), `outcome`, and `reason`:
 

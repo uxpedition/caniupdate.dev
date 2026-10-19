@@ -58,8 +58,8 @@ export const createServerDiagnosticSend =
         headers: telemetry.headers,
       },
       telemetryWaitUntil(event.context),
-    ).catch((error) => {
-      console.error('smoke-diag-send-failure', error);
+    ).catch(() => {
+      // Sink failures stay quiet: raw runtime errors may contain private configuration.
     });
   };
 
