@@ -19,12 +19,9 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - when: never
 
-# Both runner pools can validate; delivery keeps the home-only default from ci-bootstrap.yml.
 .validation:
   stage: verify
   interruptible: true
-  tags:
-    - saas-linux-small-amd64
 
 merge-request-title:
   extends: .validation

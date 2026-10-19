@@ -196,26 +196,6 @@ Git hooks check lint, types, formatting, and commit messages. They do not run te
 
 [`.gitlab-ci.yml`](../../../.gitlab-ci.yml) validates merge requests (MRs) and pushes to `main`. Other branch pushes do not create duplicate pipelines.
 
-The five validation jobs—MR title, quality, unit tests, build, and built smoke—use the
-`saas-linux-small-amd64` tag. Both GitLab-hosted small Linux/amd64 runners and the home-server group runner can
-accept these jobs. Jobs use either pool as capacity permits; there is no hosted-first preference.
-
-Keep both `debian-home-server` and `saas-linux-small-amd64` on the home runner in GitLab's runner settings.
-Keep **Run untagged jobs** disabled. A replacement home runner needs Docker on Linux/amd64 and both tags.
-Do not put both tags on validation jobs: GitLab requires a runner to match
-[every job tag](https://docs.gitlab.com/ci/runners/configure_runners/#how-the-runner-uses-tags).
-The shared tag also makes this group runner eligible for matching jobs in other projects in the group.
-
-Deployment, hosted-stage browser checks, and release jobs keep the home-only `debian-home-server` default.
-Their credentials and environment scopes do not move to hosted validation jobs. Pipeline trigger jobs coordinate
-delivery without occupying a runner.
-
-GitLab enforces the top-level namespace's shared compute quota. When it is exhausted, hosted runners stop accepting
-new work; the home group runner is not subject to that quota. Hosted jobs already running can continue under
-[GitLab's grace-period rules](https://docs.gitlab.com/ci/pipelines/instance_runner_compute_minutes/#enforcement).
-This setup does not purchase minutes, poll quota usage, or guarantee uninterrupted progress if the home runner is
-unavailable. Quota exhaustion and hosted-job completion are controlled by GitLab, not repository scripts.
-
 New commits on the same branch or MR cancel superseded validation jobs, including running builds and smoke checks.
 The workflow uses [`on_new_commit: interruptible`](https://docs.gitlab.com/ci/yaml/#workflowauto_cancelon_new_commit);
 only validation jobs opt into interruption. Delivery triggers, deployments, stage browser checks, and releases remain
