@@ -95,4 +95,6 @@ Start with the [development guide](docs/engineering/ops/development.md). Local v
 
 Published under the [MIT License](LICENSE).
 
+Third-party agent skills and their supporting material retain their upstream notices. See [skill sources and license notices](.agents/skills/THIRD_PARTY_NOTICES.md).
+
 [^release-process]: A Maintainer chooses the production version in the manual `release:tag` job after main-branch checks and stage browser checks pass. Production uses those exact checked bundles without rebuilding. This does not change `package.json` or create a release branch or merge request.
