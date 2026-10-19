@@ -9,7 +9,7 @@ import { Effect } from 'effect';
 import { PRIVATE_CI_KEYS } from '../deploy/configurationKeys.ts';
 import { ReleaseAutomationFailure } from './version.ts';
 
-const GITLAB_SSH_REMOTE = 'git@gitlab.com:uxpedition/can-i-npm-update.git';
+const GITLAB_SSH_REMOTE = 'git@gitlab.com:uxpedition/caniupdate.dev.git';
 const GITLAB_ED25519_FINGERPRINT = 'SHA256:eUXGGm1YGsMAS7vkcx6JOJdOGHPem5gQp4taiCfCLB8';
 const SSH_SETUP_FAILURE = 'GitLab SSH trust setup failed; provider output was suppressed';
 

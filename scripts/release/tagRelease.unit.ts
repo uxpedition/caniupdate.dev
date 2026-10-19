@@ -120,7 +120,7 @@ function tagContext(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessE
   return {
     CI_SERVER_HOST: 'gitlab.com',
     CI_PROJECT_ID: '86537464',
-    CI_PROJECT_PATH: 'uxpedition/can-i-npm-update',
+    CI_PROJECT_PATH: 'uxpedition/caniupdate.dev',
     CI_PIPELINE_SOURCE: 'push',
     CI_COMMIT_BRANCH: 'main',
     CI_COMMIT_REF_PROTECTED: 'true',

@@ -39,8 +39,8 @@ See [product meaning and limitations](docs/product/meaning-and-limitations.md) f
 Use Node 26 and Nub 0.9.6, the project's package manager.
 
 ```bash
-git clone https://gitlab.com/uxpedition/can-i-npm-update.git
-cd can-i-npm-update
+git clone https://gitlab.com/uxpedition/caniupdate.dev.git
+cd caniupdate.dev
 nub ci
 nub run dev
 ```
@@ -77,7 +77,7 @@ For setup and recovery, see [deployment operations](docs/engineering/ops/deploym
 
 ## Contributing
 
-Contributions are welcome. Report bugs and discuss changes through [GitLab issues](https://gitlab.com/uxpedition/can-i-npm-update/-/issues), or submit a merge request.
+Contributions are welcome. Report bugs and discuss changes through [GitLab issues](https://gitlab.com/uxpedition/caniupdate.dev/-/work_items), or submit a merge request.
 
 Start with the [development guide](docs/engineering/ops/development.md). Local verification is sufficient to contribute; deploying your own instance is not required. Never commit credentials or local state.
 
