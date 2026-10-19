@@ -1,6 +1,6 @@
 ---
 name: documentation-and-adrs
-description: Documents decisions and maintained system knowledge. Use when making an expensive-to-reverse technical choice, changing a public contract, shipping behavior that needs explanation, or updating API, operations, agent, or user documentation. Use when current docs no longer match verified behavior.
+description: Write or revise documentation, GitLab/glab issues, and other issue-tracker content. Use for public contract changes, consequential decisions, or docs that no longer match verified behavior.
 ---
 
 # Documentation and ADRs
@@ -17,8 +17,23 @@ Document decisions and durable knowledge, not just code. The highest-value recor
 - Shipping a feature whose setup, limits, or operation future users need to know
 - Changing current system behavior, support policy, or recovery procedure
 - Repeatedly explaining a constraint or known gotcha to contributors or agents
+- Writing or revising issue titles and descriptions, including through glab
 
 **When not to use:** Do not write comments or documents that merely restate obvious code. Do not publish an exploratory prototype, unapproved decision, or temporary execution plan as maintained documentation.
+
+## Plain language, including issues
+
+Write for the human reader, even when an AI agent will implement the work. Use familiar words, short sentences, and one main idea per paragraph. Explain necessary technical terms on first use; preserve exact API names, commands, and safety constraints where they matter.
+
+For issues, including GitLab issues created or edited through glab:
+- Give the title a concrete action and outcome: “Decide whether to add usage measurement,” rather than “Review aggregate comparison-outcome instrumentation.”
+- Lead with why the work matters in one or two plain sentences.
+- State what to do and observable completion criteria. Use “Why,” “What to do” (or “What to decide”), and “Done when” when no required template exists.
+- State timing and real dependencies separately. Distinguish a prerequisite to start work, a requirement before release, and optional work after launch.
+- For decision issues, name the choices and current recommendation. Distinguish choosing an approach from authorizing implementation, data collection, or deployment.
+- Put necessary technical detail below the plain-language explanation. Include only constraints that affect correctness, safety, scope, or verification; link to existing procedures instead of repeating boilerplate.
+
+Before publishing, read the title and opening as someone unfamiliar with the plan. They must explain what is wanted and why without another ELI5 explanation. Check the remaining text tells that reader what action to take, how to recognize completion, and whether anything is actually blocked. Simplify wording without dropping requirements or changing issue state.
 
 ## Process
 
