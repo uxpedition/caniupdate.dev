@@ -101,11 +101,19 @@ Each run attempts to write owner-only `.data/deployed-verification/report.json` 
 The report is also printed in CI output. For browser failures, inspect `browsers[].browserErrors`.
 It contains the total error count and the first 20 console errors or uncaught JavaScript errors.
 Each entry includes its kind, a filtered message of at most 1,000 characters, and a source location when available.
-Line and column numbers start at 1. The total can exceed the number of saved entries.
+Uncaught JavaScript errors include up to 12 stack lines. Line and column numbers start at 1.
+The total can exceed the number of saved entries.
 
-Messages redact known Access credentials, credential-like assignments, email addresses, long opaque values, and structured
-payload text. Source URLs omit credentials, queries, and fragments; URLs outside the two configured application origins
-are replaced. Console argument objects, HTTP headers, response bodies, and full stacks are not collected.
+`browserErrors.network` records the first 50 failed requests and HTTP responses with status 400 or higher.
+Each record includes the resource URL, current page URL, method, resource type, failure reason, and HTTP status
+when available. Requests blocked by the smoke origin policy are identified explicitly. `networkTotal` counts
+all network records, including any beyond the saved limit. These records provide context; they do not change
+the existing console-error and uncaught-error failure gate.
+
+URLs retain their origin and path, including external resource addresses, but omit credentials, queries, and
+fragments. Asset names and integrity hashes are retained so resource-loading failures can be investigated.
+Messages redact known Access credentials, credential-like assignments, authorization values, JWTs, email
+addresses, and structured payload text. Console argument objects, HTTP headers, and response bodies are not collected.
 
 Label these outcomes separately:
 
