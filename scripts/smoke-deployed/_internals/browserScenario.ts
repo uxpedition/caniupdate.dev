@@ -9,6 +9,7 @@ import {
 } from '../../../shared/comparison/briefing/briefingJob.defs.ts';
 import { parseBuildIdentity } from '../../../shared/site/buildIdentity.ts';
 import { installScopedBrowserAccess, playwrightCall } from './browserAccess.ts';
+import { captureBrowserErrors, type BrowserDiagnostics } from './browserDiagnostics.ts';
 import type { SmokeConfig } from './config.ts';
 import {
   decodePackageDeclarationsResponse,
@@ -49,6 +50,7 @@ export type BrowserOutcome = {
   browser: BrowserName;
   outcome: 'passed' | 'failed';
   blockedBriefingPosts: number;
+  browserErrors: BrowserDiagnostics;
   failureStage?: string;
 };
 
@@ -386,15 +388,8 @@ const exercisePage = (
   outcome: BrowserOutcome,
 ): Effect.Effect<void, SmokeFailure> =>
   Effect.gen(function* () {
-    let errors = 0;
-
     yield* Effect.sync(() => {
-      page.on('pageerror', () => {
-        errors += 1;
-      });
-      page.on('console', (message) => {
-        if (message.type() === 'error') errors += 1;
-      });
+      captureBrowserErrors(page, config, outcome.browserErrors);
       page.setDefaultTimeout(30_000);
     });
 
@@ -407,7 +402,7 @@ const exercisePage = (
       page.screenshot({ path: resolve(output, `${outcome.browser}-comparison.png`), fullPage: true }),
     );
 
-    if (errors !== 0) return yield* Effect.fail(new SmokeFailure('browser-errors'));
+    if (outcome.browserErrors.total !== 0) return yield* Effect.fail(new SmokeFailure('browser-errors'));
   });
 
 const exerciseBrowser = (
@@ -444,7 +439,12 @@ export const runBrowser = (
   config: SmokeConfig,
   output: string,
 ): Effect.Effect<BrowserOutcome, SmokeFailure> => {
-  const outcome: BrowserOutcome = { browser: name, outcome: 'failed', blockedBriefingPosts: 0 };
+  const outcome: BrowserOutcome = {
+    browser: name,
+    outcome: 'failed',
+    blockedBriefingPosts: 0,
+    browserErrors: { total: 0, entries: [] },
+  };
 
   return Effect.acquireUseRelease(
     playwrightCall('configuration-or-response', () => browsers[name].launch({ headless: true })),

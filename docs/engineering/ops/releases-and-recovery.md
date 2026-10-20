@@ -98,6 +98,15 @@ Deployed smoke uses Effect HTTP, configuration, and filesystem services. HTTP ad
 
 Each run attempts to write owner-only `.data/deployed-verification/report.json` on success, failure, defects, or graceful cancellation. Failure to write the report fails the command. Forced process termination cannot guarantee a report.
 
+The report is also printed in CI output. For browser failures, inspect `browsers[].browserErrors`.
+It contains the total error count and the first 20 console errors or uncaught JavaScript errors.
+Each entry includes its kind, a filtered message of at most 1,000 characters, and a source location when available.
+Line and column numbers start at 1. The total can exceed the number of saved entries.
+
+Messages redact known Access credentials, credential-like assignments, email addresses, long opaque values, and structured
+payload text. Source URLs omit credentials, queries, and fragments; URLs outside the two configured application origins
+are replaced. Console argument objects, HTTP headers, response bodies, and full stacks are not collected.
+
 Label these outcomes separately:
 
 - **Fixture generation:** exercised lifecycle with a test provider.
