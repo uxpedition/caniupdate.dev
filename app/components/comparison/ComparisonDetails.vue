@@ -5,6 +5,8 @@ import { computed, nextTick, ref } from 'vue';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import BriefingPanel from '~/components/comparison/BriefingPanel.vue';
 import ComparisonFactSources from '~/components/comparison/ComparisonFactSources.vue';
+import DependencyChanges from '~/components/comparison/DependencyChanges.vue';
+import DependencyTable from '~/components/comparison/DependencyTable.vue';
 import EvidencePanel from '~/components/comparison/EvidencePanel.vue';
 import RowHelp from '~/components/comparison/RowHelp.vue';
 import LoadingMessage from '~/components/element/LoadingMessage.vue';
@@ -426,8 +428,31 @@ const revealCitation = async (event: MouseEvent) => {
                   </td>
                 </tr>
                 <tr v-if="item.expandable" v-show="expanded.has(item.anchor)" :id="`details-${item.anchor}`">
-                  <td colspan="3" class="bg-muted p-4.5">
+                  <td
+                    colspan="3"
+                    :class="
+                      item.row.sourceId === 'comparison.dependencies' || item.row.sourceId === 'comparison.peers'
+                        ? 'p-0'
+                        : 'rounded-[6px] bg-muted p-4.5'
+                    "
+                  >
+                    <DependencyChanges
+                      v-if="item.row.sourceId === 'comparison.dependencies' || item.row.sourceId === 'comparison.peers'"
+                      :changes="
+                        item.row.sourceId === 'comparison.peers'
+                          ? declarations.comparison.peers
+                          : declarations.comparison.dependencies
+                      "
+                    />
                     <div
+                      v-if="item.row.sourceId === 'comparison.dependencies' || item.row.sourceId === 'comparison.peers'"
+                      class="grid grid-cols-2 items-start gap-5 max-[700px]:grid-cols-1"
+                    >
+                      <DependencyTable :version="declarations.from" :peers="item.row.sourceId === 'comparison.peers'" />
+                      <DependencyTable :version="declarations.to" :peers="item.row.sourceId === 'comparison.peers'" />
+                    </div>
+                    <div
+                      v-else
                       class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-7 max-[700px]:grid-cols-[minmax(0,1fr)] max-[700px]:gap-5"
                     >
                       <div>
@@ -447,7 +472,14 @@ const revealCitation = async (event: MouseEvent) => {
                           >{{ item.row.to }}</pre>
                       </div>
                     </div>
-                    <p v-if="item.row.detail" class="mt-4 text-xs leading-[1.7] text-muted-foreground">
+                    <p
+                      v-if="
+                        item.row.detail &&
+                        item.row.sourceId !== 'comparison.dependencies' &&
+                        item.row.sourceId !== 'comparison.peers'
+                      "
+                      class="mt-4 text-xs leading-[1.7] text-muted-foreground"
+                    >
                       {{ item.row.detail }}
                     </p>
                   </td>

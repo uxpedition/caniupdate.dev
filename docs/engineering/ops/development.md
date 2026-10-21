@@ -292,6 +292,20 @@ On homepage load or reload, the form fades in and rises 12 px over 400 ms after 
 
 On comparison-page entry, the navigation header and footer use the content's 180 ms fade and 16 px rise after a 120 ms delay. The site layout owns these shared transition styles. Other site pages do not animate their header or footer on load.
 
+Expanded dependency and peer dependency sections show one table per version, side by side on wide screens and stacked on compact screens. Each header shows the package version and dependency count. Rows show package names, declared version ranges, and an “Optional” badge where applicable. Check both sections with optional entries and empty declarations when changing these tables.
+
+Above each table pair, a padded summary bar with a muted background counts updated, removed, and added dependencies separately. Updates include changes to a declared version range or optional status. The tables themselves have no shared background or outer padding.
+
+Expanded blocks with background colors use the same 6 px corner radius as the AI notes and dependency tables. This includes the dependency changes bar.
+
+Hover over, focus, or tap a nonzero updated count to see each updated dependency and its old and new declared version ranges. Each dependency appears on its own line. Links compare the lowest published release matching each range on the current site. Package metadata loads when the panel opens. If metadata is unavailable or a range has no matching release, the row explains why no link is available. The panel supports keyboard navigation and Escape to close.
+
+Removed and added counts open separate panels. Removed entries show the old declared range; added entries show the new range. Zero counts are plain text and do not open a panel.
+
+Hover panels close shortly after the pointer leaves both the count and the panel. Moving from the count into the panel keeps it open so comparison links remain clickable.
+
+Tables and hover-panel lists show at most six dependency entries before scrolling. Table version headers remain visible while scrolling. The limit uses rendered row heights so wrapped names and version ranges do not cut a row in half. Longer lists can also be focused and scrolled by keyboard.
+
 When changing this interface, exercise submission, reset, Back/Forward, fragment links, compact layouts, and reduced motion.
 
 Comparison-route recognition uses an Effect Schema shape check: `packageName` and `versionPair` must be strings; unrelated params are allowed. The route composable handles each separately. A missing or non-string value becomes `''` without discarding the other valid param.
