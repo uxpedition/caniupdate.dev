@@ -4,7 +4,8 @@ Start with the question you want answered. Product docs explain what results mea
 
 | Location                              | Reader's question                              | What to keep here                                                                                                 |
 | ------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [README](../README.md)                | What is this, and how do I try it?             | Introduction, quick start, and links to more detail.                                                              |
+| [README](../README.md)                | What is this product, and what does it show?   | Brief product overview, limits, and links to more detail.                                                         |
+| [Contributing](../CONTRIBUTING.md)    | How do I develop and contribute?               | Local setup, contribution guidance, and links to engineering and operations details.                              |
 | `docs/product/`                       | What do the product and its results mean?      | Features, limits, and clearly labelled intent.                                                                    |
 | `docs/engineering/<document-name>.md` | How does the system work now?                  | Current contracts, flows, ownership, and failure handling.                                                        |
 | `docs/engineering/adrs/<adr-name>.md` | What did we choose, and why?                   | Context, tradeoffs, and evidence. If a choice changes, mark the old decision superseded and link its replacement. |
