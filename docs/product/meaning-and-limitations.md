@@ -75,6 +75,10 @@ A changed Node requirement means the package lists a different supported range. 
 
 A dependency change means a listed requirement changed. It does not tell us which dependency versions your project will install.
 
+Changed dependency links compare the lowest published release matching each declared range. Opening a dependency list does not look up those releases; activating a link does. You can copy the link or open it in another tab.
+
+The published-version list can be cached for thirty minutes. A range with no matching release is different from a temporary metadata failure; the resolver reports those separately. These links do not predict the versions a package manager or lockfile will select.
+
 ### Bundle estimates
 
 A bundle estimate compares the package on its own, not inside your application. It cannot prove that your application will exceed a size limit. Incomplete builds cannot be compared.

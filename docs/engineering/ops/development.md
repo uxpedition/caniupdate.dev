@@ -164,6 +164,8 @@ For browser recovery, install the pinned Playwright browsers with `nub exec play
 The browser option also checks hydrated measurement facts and home/Back navigation in Chromium and Firefox.
 It writes screenshots to an operating-system temporary directory and prints their paths.
 
+The comparison smoke also checks dependency resolution with the real frontend and evidence Workers and fixed registry fixtures. It verifies non-cacheable redirects to the lowest matching published releases, shared metadata reuse, no-match responses, and recovery from temporary metadata failures. With `--browsers`, Chromium and Firefox open the changed-dependency popover, check that hovering makes no dependency metadata request, and follow copied links in a new tab and links activated with the keyboard.
+
 Changing `NUXT_PUBLIC_SITE_URL` takes effect on the next built dev start or frontend Worker deployment. No rebuild is needed.
 
 To check that one build works under different origins:

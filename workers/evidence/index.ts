@@ -13,7 +13,7 @@ import {
 import type { ComparisonEvidenceServices } from '../../server/comparison/evidence/services';
 import type { BriefingEvidence } from '../../shared/comparison/briefing/briefing.defs';
 import type { PackageMeasurementsResponse } from '../../shared/comparison/comparison.defs';
-import { PackageNameSchema } from '../../shared/comparison/package/package.defs';
+import { PackageMetadataRequestSchema, PackageNameSchema } from '../../shared/comparison/package/package.defs';
 import { runWithTelemetry } from '../../shared/telemetry/telemetry';
 import { comparisonTelemetryAttributes } from '../../shared/telemetry/telemetryComparison';
 import { decodeTelemetryHeaders } from '../../shared/telemetry/telemetryConfig.defs';
@@ -26,6 +26,7 @@ import {
   BoundedResponseAdmission,
   ResponseCapacityError,
 } from './admission';
+import { getCachedPackageMetadata } from './metadata';
 import { SqlEvidenceCache } from './store';
 
 // These globals belong to workerd; keep their types local instead of replacing Node's globals.
@@ -192,7 +193,7 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
   ): Promise<Response> {
     const path = new URL(request.url).pathname;
 
-    if (request.method !== 'POST' || (path !== '/measurements' && path !== '/briefing-evidence')) {
+    if (request.method !== 'POST' || !['/measurements', '/briefing-evidence', '/metadata'].includes(path)) {
       return jsonError('Not found', 404);
     }
 
@@ -205,6 +206,9 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
     const headersError = validateEvidenceHeaders(request);
 
     if (headersError !== null) return headersError;
+
+    if (path === '/metadata') return this.#metadata(request);
+
     const input = await readEvidenceInput(request);
 
     if (input instanceof Response) return input;
@@ -215,6 +219,17 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
     Object.assign(identity, comparisonTelemetryAttributes(result));
 
     return Response.json(result, { headers: { 'content-type': 'application/json; charset=utf-8' } });
+  }
+
+  async #metadata(request: Request): Promise<Response> {
+    const input = await readMetadataInput(request);
+
+    if (input instanceof Response) return input;
+
+    // Never bypass durable storage with a provider fallback.
+    if (this.#cache === undefined) return jsonError('Evidence storage unavailable', 503);
+
+    return Response.json(await getCachedPackageMetadata(this.#cache, input.packageName, responseAdmission));
   }
 
   // Provider requests never carry the caller's traceparent; only the private evidence request is traced across services.
@@ -394,6 +409,18 @@ async function readEvidenceInput(request: Request): Promise<EvidenceRequest | Re
     return decodeEvidenceRequest(JSON.parse(body));
   } catch {
     return jsonError('Invalid evidence request', 400);
+  }
+}
+
+async function readMetadataInput(request: Request) {
+  try {
+    const body = await request.text();
+
+    if (textEncoder.encode(body).byteLength > MAX_REQUEST_BYTES) return jsonError('Request is too large', 413);
+
+    return Schema.decodeUnknownSync(Schema.fromJsonString(PackageMetadataRequestSchema))(body);
+  } catch {
+    return jsonError('Invalid metadata request', 400);
   }
 }
 

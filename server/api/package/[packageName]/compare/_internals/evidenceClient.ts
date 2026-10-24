@@ -17,7 +17,11 @@ import type {
   PackageEvidenceResponseBody,
 } from '#shared/comparison/evidence/packageEvidence.defs';
 import { isExactSemver } from '#shared/comparison/package/compareSemver';
-import { PackageNameSchema } from '#shared/comparison/package/package.defs';
+import {
+  PackageNameSchema,
+  ParsedPackageMetadataSchema,
+  type ParsedPackageMetadata,
+} from '#shared/comparison/package/package.defs';
 import { formatTraceparent } from '#shared/telemetry/traceContext.defs';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
@@ -246,4 +250,39 @@ export async function getBriefingEvidence(
   if (isExactSemver(request.to) && evidence.to !== request.to) throw new PackageEvidenceClientError('protocol');
 
   return evidence;
+}
+
+export async function getPackageMetadata(
+  namespace: PackageEvidenceNamespace | undefined,
+  packageName: string,
+): Promise<ParsedPackageMetadata> {
+  Schema.decodeUnknownSync(PackageNameSchema)(packageName);
+
+  if (namespace === undefined) throw new PackageEvidenceClientError('binding-unavailable');
+
+  try {
+    const object = namespace.get(namespace.idFromName(packageName));
+
+    const response = await object.fetch('https://package-evidence/metadata', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ packageName }),
+    });
+
+    if (!response.ok) {
+      await cancelBody(response);
+      throw new PackageEvidenceClientError('upstream', response.status);
+    }
+
+    const metadata = Schema.decodeUnknownSync(Schema.fromJsonString(ParsedPackageMetadataSchema))(
+      await readText(response),
+    );
+
+    if (metadata.name !== packageName) throw new PackageEvidenceClientError('protocol');
+
+    return metadata;
+  } catch (error) {
+    if (error instanceof PackageEvidenceClientError) throw error;
+    throw new PackageEvidenceClientError('protocol');
+  }
 }

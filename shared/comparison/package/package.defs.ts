@@ -18,6 +18,8 @@ export const PackageNameSchema = Schema.String.check(
   ),
 );
 
+export const PackageMetadataRequestSchema = Schema.Struct({ packageName: PackageNameSchema });
+
 const RegistryPackageDistSchema = Schema.Struct({
   tarball: Schema.String,
   shasum: Schema.String,
@@ -42,7 +44,7 @@ export const RegistryPackageMetadataSchema = Schema.Struct({
 
 export type RegistryPackageMetadata = typeof RegistryPackageMetadataSchema.Type;
 
-const ParsedPackageMetadataSchema = Schema.Struct({
+export const ParsedPackageMetadataSchema = Schema.Struct({
   name: Schema.String,
   modified: Schema.String,
   distTags: Schema.Record(Schema.String, Schema.String),

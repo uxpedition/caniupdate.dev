@@ -8,9 +8,9 @@ The [architecture overview](overview.md) explains the wider system and request s
 
 A **Durable Object** is a Cloudflare service with its own stored state. The server selects one with `PACKAGE_EVIDENCE.idFromName(packageName)`. Its identity is the validated package name, not the version pair. All versions of one package therefore share a `PackageEvidence` object and its SQLite storage.
 
-The object has two internal POST paths: `/measurements` and `/briefing-evidence`. The Worker's ordinary `fetch` handler returns 404. See the [evidence client](../../server/api/package/[packageName]/compare/_internals/evidenceClient.ts), [object implementation](../../workers/evidence/index.ts), and [package-name schema](../../shared/comparison/package/package.defs.ts).
+The object has three internal POST paths: `/metadata`, `/measurements`, and `/briefing-evidence`. The Worker's ordinary `fetch` handler returns 404. See the [evidence client](../../server/api/package/[packageName]/compare/_internals/evidenceClient.ts), [object implementation](../../workers/evidence/index.ts), and [package-name schema](../../shared/comparison/package/package.defs.ts).
 
-Both paths accept JSON with `packageName`, `from`, and `to`. The shared npm-name schema validates the package name. Each version/tag is trimmed and limited to 1–256 characters.
+`/metadata` accepts JSON with `packageName`. The other paths also require `from` and `to`. The shared npm-name schema validates the package name. Each version/tag is trimmed and limited to 1–256 characters.
 
 The object rejects:
 
@@ -21,8 +21,9 @@ The object rejects:
 
 The request-capacity check happens first, so it also covers requests that later fail validation.
 
-The two paths return different data:
+The paths return different data:
 
+- `/metadata` returns the parsed npm package index used by the public package-metadata API and dependency resolver. The index includes published versions, distribution tags, modification time, and the latest release's deprecation notice when present. Both provider and binding responses must pass shared schemas and match the requested package. Missing bindings and storage failures have no direct-registry fallback.
 - `/measurements` returns the browser-facing `PackageMeasurementsResponse`: provider and advisory comparisons, a tarball summary (`status`, reasons, URL, file count, and changelog count), and bounded bundled-type evidence for each version. A tarball is the package's compressed archive. File inventories, hashes, link targets, and changelog bodies are removed. The Nuxt [measurements route](../../server/api/package/[packageName]/compare/measurements/index.get.ts) calls the binding; the [response types](../../shared/comparison/comparison.defs.ts) and [comparison page](../../app/components/comparison/ComparisonDetails.vue) use this compact result.
 - `/briefing-evidence` returns an internal evidence packet, not the tarball object or rendered browser data. `getComparisonFacts` gives the builder full archive inventories and captured changelog text. The resulting packet is limited to 48 KiB of serialized data and 64 sources. It may include selected, bounded changelog prose, but never the file inventory. See the [packet builder](../../server/comparison/briefing/evidence/build.ts), [packer](../../server/comparison/briefing/evidence/packing.ts), and [shared packet schema](../../shared/comparison/briefing/briefing.defs.ts). [Briefing](briefing.md) covers the service and display of cited sources.
 
@@ -154,17 +155,18 @@ A successful but empty/unmatched listing can be partial. A failed listing with a
 
 The [cache lifetime decision](adrs/evidence-cache-lifetimes.md) explains the freshness/reuse tradeoff. A time-to-live (TTL) controls expiry, not total storage size.
 
-The object supplies cache and capacity-check services to the collector; the collector has no process-global cache. Keys are SHA-256 digests of JSON-serialized scope inputs. Each package object's SQLite cache reuses that package's provider results and archive inspections. It is not a separate global cache.
+The object supplies cache and capacity-check services to the collector; the collector has no process-global cache. Comparison evidence keys are SHA-256 digests of JSON-serialized scope inputs. The metadata index uses a versioned key containing the package name. Each package object's SQLite cache reuses that package's provider results and archive inspections across users and frontend instances.
 
-| Evidence             | Key inputs                                                                                                                | Expiry and write rule                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| npm manifest         | `comparison-evidence-v1`, package name, requested version/tag                                                             | 300,000 ms; every schema-valid manifest          |
-| OSV pair             | `comparison-evidence-v1`, package name, resolved from/to versions                                                         | 300,000 ms; only when both sides are `available` |
-| Bundlephobia version | `comparison-evidence-v1`, package name, resolved version                                                                  | 300,000 ms; only `available`                     |
-| GitHub release notes | `comparison-evidence-v1`, package name and both full resolved manifests                                                   | 300,000 ms; only `available`                     |
-| Inspected archive    | `archive-inspector-v3`, package name, and integrity policy (exact SRI string when present, otherwise SHA-1 shasum policy) | No expiry; `available` and `partial` only        |
+| Evidence             | Key inputs                                                                                                                | Expiry and write rule                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| npm metadata index   | `package-metadata-v1`, package name                                                                                       | 1,800,000 ms (30 minutes); schema-valid matching package only |
+| npm manifest         | `comparison-evidence-v1`, package name, requested version/tag                                                             | 300,000 ms; every schema-valid manifest                       |
+| OSV pair             | `comparison-evidence-v1`, package name, resolved from/to versions                                                         | 300,000 ms; only when both sides are `available`              |
+| Bundlephobia version | `comparison-evidence-v1`, package name, resolved version                                                                  | 300,000 ms; only `available`                                  |
+| GitHub release notes | `comparison-evidence-v1`, package name and both full resolved manifests                                                   | 300,000 ms; only `available`                                  |
+| Inspected archive    | `archive-inspector-v3`, package name, and integrity policy (exact SRI string when present, otherwise SHA-1 shasum policy) | No expiry; `available` and `partial` only                     |
 
-Mutable entries expire after five minutes and are deleted on cache access. Errors and non-cacheable partial/unavailable results are not saved. Later requests retry them instead of keeping a failed refresh.
+Mutable comparison evidence expires after five minutes; the package metadata index expires after thirty minutes. Expired entries are deleted on cache access. Errors and non-cacheable partial/unavailable results are not saved. Later explicit requests can retry failed refreshes.
 
 Archive keys follow verified content identity and package identity, not a version or tarball URL. Package identity constrains the accepted archive root. Matching integrity policies within a package can share a successful/partial inspection; the returned value gets the caller's manifest URL. Failed inspections are retried. SRI and SHA-1 policies cannot collide. A changed inspector revision creates a new key for changed inspection rules.
 
@@ -177,6 +179,7 @@ Complete measurement responses and briefing packets are not cached. They are ass
 - The DO keeps one promise per identical `(path, decoded request)`, removing it after success or failure.
 - The SQLite cache shares loads by evidence key.
 - Collector branches share request-local manifest effects.
+- Metadata requests share in-flight SQLite loads by package key. Only cache misses take a response-collection permit.
 
 Versions with matching archive content can share inspection within one package object. Unrelated request paths remain separate.
 

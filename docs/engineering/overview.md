@@ -127,6 +127,12 @@ The declaration-query owner also replaces the URL after successful client resolu
 
 The page uses the exact returned versions for later queries. The API routes share parameter validation; they do not require browser inputs to already be exact versions.
 
+Dependency-change links use a separate rule: select the **lowest published release** matching each declared range. Hovering or focusing a dependency list does not fetch metadata. Each link is a native anchor to `/resolve/{encodedPackageName}?from=…&to=…`, so copying it or opening it in another tab preserves resolution on activation.
+
+The resolver reads the cached package-metadata API and redirects to the exact, ordered comparison with a non-cacheable `302`. It uses the published version index, not a guessed minimum; wildcard and compound ranges follow semver rules. A missing match returns `404`. Unavailable metadata returns a sanitized `503` with manual reload advice, not a claim that no release exists. It makes no automatic retries.
+
+`GET /api/package/{encodedPackageName}` obtains schema-validated metadata through the private evidence binding. Successful package indexes are shared across users in the per-package SQLite object for thirty minutes. Failed reads are not cached. This does not change the highest-match rule used by ordinary comparison selectors or the five-minute manifest cache.
+
 | Route                                                                    | Result and boundary                                                                                                                                                                                                  |
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /api/package/{encodedPackageName}/compare?from=…&to=…`              | Resolves manifests and compares declarations: dependencies, peers, Node requirements, modules/exports/types, licenses, and install scripts. No evidence binding, GitHub calls, archive inspection, or inference.     |
