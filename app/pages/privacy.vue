@@ -65,7 +65,7 @@ useSeoMeta({ title: 'Privacy · Can I Update?' });
     <h2>Contact us</h2>
     <p>
       For questions about privacy, open an issue on our
-      <a href="https://gitlab.com/uxpedition/caniupdate.dev/-/work_items">GitLab repository</a>.
+      <a href="https://gitlab.com/uxpedition-oss/caniupdate.dev/-/work_items">GitLab repository</a>.
     </p>
 
     <h2>Changes</h2>

@@ -81,8 +81,8 @@ useSeoMeta({
     <h2>Get in touch</h2>
     <p>
       For questions or feedback, open an issue on our
-      <a href="https://gitlab.com/uxpedition/caniupdate.dev/-/work_items">GitLab repository</a>. You can also
-      <a href="https://gitlab.com/uxpedition/caniupdate.dev">browse the source code</a>.
+      <a href="https://gitlab.com/uxpedition-oss/caniupdate.dev/-/work_items">GitLab repository</a>. You can also
+      <a href="https://gitlab.com/uxpedition-oss/caniupdate.dev">browse the source code</a>.
     </p>
   </article>
 </template>

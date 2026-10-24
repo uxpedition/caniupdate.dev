@@ -48,7 +48,7 @@ const commit =
       >
         <a href="/privacy">Privacy</a>
         <a href="/about">About</a>
-        <a href="https://gitlab.com/uxpedition/caniupdate.dev/-/work_items">Issues</a>
+        <a href="https://gitlab.com/uxpedition-oss/caniupdate.dev/-/work_items">Issues</a>
       </nav>
     </div>
   </footer>

@@ -1,6 +1,6 @@
 # Contributing
 
-Contributions are welcome. Report bugs and discuss changes through [GitLab issues](https://gitlab.com/uxpedition/caniupdate.dev/-/work_items), or submit a merge request.
+Contributions are welcome. Report bugs and discuss changes through [GitLab issues](https://gitlab.com/uxpedition-oss/caniupdate.dev/-/work_items), or submit a merge request.
 
 ## Getting started
 
@@ -15,7 +15,7 @@ Choose where to clone from:
 Cloning gives you a local checkout; it does not grant permission to push to this project.
 
 ```bash
-git clone https://gitlab.com/uxpedition/caniupdate.dev.git
+git clone https://gitlab.com/uxpedition-oss/caniupdate.dev.git
 cd caniupdate.dev
 nub ci
 nub run dev
@@ -36,7 +36,7 @@ See the [development guide](docs/engineering/ops/development.md) for configurati
 1. Create a branch for your change.
 2. Make your changes and run the relevant checks from the [development guide](docs/engineering/ops/development.md).
 3. Commit and push your branch to your fork, or to this project if you have upstream write access.
-4. Open a merge request from your branch to `main` in `uxpedition/caniupdate.dev`, not to your fork's `main`. Explain the change and the verification you performed.
+4. Open a merge request from your branch to `main` in `uxpedition-oss/caniupdate.dev`, not to your fork's `main`. Explain the change and the verification you performed.
 
 ## AI assistance
 

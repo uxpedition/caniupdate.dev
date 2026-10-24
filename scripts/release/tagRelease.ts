@@ -53,7 +53,7 @@ export function assertReleaseTagContext(environment: NodeJS.ProcessEnv): Effect.
     const expected: Readonly<Record<string, string>> = {
       CI_SERVER_HOST: 'gitlab.com',
       CI_PROJECT_ID: '86537464',
-      CI_PROJECT_PATH: 'uxpedition/caniupdate.dev',
+      CI_PROJECT_PATH: 'uxpedition-oss/caniupdate.dev',
       CI_PIPELINE_SOURCE: 'push',
       CI_COMMIT_BRANCH: 'main',
       CI_COMMIT_REF_PROTECTED: 'true',
