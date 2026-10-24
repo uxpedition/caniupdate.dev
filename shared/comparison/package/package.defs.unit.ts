@@ -1,7 +1,12 @@
 import { Schema } from 'effect';
 import { describe, expect, it } from 'vitest';
 
-import { RegistryVersionManifestSchema, toPackageVersion } from './package.defs';
+import {
+  RegistryPackageMetadataSchema,
+  RegistryVersionManifestSchema,
+  toPackageMetadata,
+  toPackageVersion,
+} from './package.defs';
 
 const curate = (fixture: Schema.Json) =>
   toPackageVersion(Schema.decodeUnknownSync(RegistryVersionManifestSchema)(fixture, { errors: 'all' }));
@@ -220,5 +225,44 @@ describe('toPackageVersion', () => {
     expect(() => curate({ ...vueManifest, dist: { ...vueManifest.dist, unpackedSize: '2374183' } })).toThrow(
       Schema.SchemaError,
     );
+  });
+});
+
+describe('latest release metadata', () => {
+  const metadata = {
+    name: '@types/example',
+    modified: '2026-10-22T00:00:00.000Z',
+    'dist-tags': { latest: '1.0.0', next: '2.0.0' },
+    versions: {
+      '1.0.0': { name: '@types/example', version: '1.0.0', dist: vueManifest.dist, deprecated: 'Use bundled types.' },
+      '2.0.0': { name: '@types/example', version: '2.0.0', dist: vueManifest.dist },
+    },
+  };
+
+  it('preserves the deprecation notice for the latest tag, not the highest version', () => {
+    const result = toPackageMetadata(Schema.decodeUnknownSync(RegistryPackageMetadataSchema)(metadata));
+    expect(result.latestRelease).toEqual({ version: '1.0.0', deprecated: 'Use bundled types.' });
+  });
+
+  it('does not transfer an older release warning to a nondeprecated latest release', () => {
+    const result = toPackageMetadata(
+      Schema.decodeUnknownSync(RegistryPackageMetadataSchema)({
+        ...metadata,
+        'dist-tags': { latest: '2.0.0' },
+      }),
+    );
+
+    expect(result.latestRelease).toEqual({ version: '2.0.0' });
+  });
+
+  it('does not guess a latest release when the tagged manifest is unavailable', () => {
+    const result = toPackageMetadata(
+      Schema.decodeUnknownSync(RegistryPackageMetadataSchema)({
+        ...metadata,
+        'dist-tags': { latest: '3.0.0' },
+      }),
+    );
+
+    expect(result.latestRelease).toBeUndefined();
   });
 });

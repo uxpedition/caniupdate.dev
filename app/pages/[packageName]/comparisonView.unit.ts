@@ -42,6 +42,7 @@ const makeMeasuredVersion = (
   overrides: Partial<MeasuredPackageVersion> = {},
 ): MeasuredPackageVersion => ({
   ...makeDeclaredVersion(version),
+  bundledTypes: { status: 'available', matchedTargetCount: 0 },
   vulnerabilities: { status: 'available', count: 0, advisories: [] },
   bundleSize: {
     provider: 'bundlephobia',

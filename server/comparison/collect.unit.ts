@@ -22,7 +22,7 @@ const manifest = (version: string) => ({
   dist: { tarball: `https://registry.npmjs.org/minimist/-/minimist-${version}.tgz`, shasum: 'abc' },
 });
 
-const validTarball = async (): Promise<Buffer> => {
+const validTarball = async (includeTypes = false): Promise<Buffer> => {
   const archive = pack();
   const chunks: Buffer[] = [];
 
@@ -36,6 +36,11 @@ const validTarball = async (): Promise<Buffer> => {
   });
 
   archive.entry({ name: 'package/index.js', type: 'file', size: 11 }, Buffer.from('hello world'));
+
+  if (includeTypes) {
+    archive.entry({ name: 'package/index.d.ts', type: 'file', size: 10 }, Buffer.from('export {};'));
+  }
+
   archive.finalize();
 
   return complete;
@@ -265,8 +270,8 @@ describe('comparison evidence cache services', () => {
     expect(requests.filter((url) => url.hostname === 'registry.npmjs.org')).toHaveLength(4);
   });
 
-  it('reuses one verified archive for versions with the same digest', async () => {
-    const body = await validTarball();
+  it('reuses one verified archive while matching each release’s own entry targets', async () => {
+    const body = await validTarball(true);
     const shasum = createHash('sha1').update(body).digest('hex');
     registry.json.mockImplementation(async (path) => {
       const version = path.endsWith('/1.0.0') ? '1.0.0' : '2.0.0';
@@ -274,6 +279,7 @@ describe('comparison evidence cache services', () => {
       return {
         name: 'widget',
         version,
+        exports: version === '1.0.0' ? './index.js' : './missing.js',
         dist: {
           tarball: `https://registry.npmjs.org/widget/-/widget-${version}.tgz`,
           shasum,
@@ -298,8 +304,10 @@ describe('comparison evidence cache services', () => {
 
     const cache = new RecordingCache();
     const result = await startMeasurements('1.0.0', '2.0.0', { cache }, 'widget');
-    expect(result.from.tarball.fileCount).toBe(1);
-    expect(result.to.tarball.fileCount).toBe(1);
+    expect(result.from.tarball.fileCount).toBe(2);
+    expect(result.to.tarball.fileCount).toBe(2);
+    expect(result.from.bundledTypes).toEqual({ status: 'available', matchedTargetCount: 1 });
+    expect(result.to.bundledTypes).toEqual({ status: 'available', matchedTargetCount: 0 });
     expect([...cache.loaderCalls].filter(([key]) => key.startsWith('archive:'))).toHaveLength(1);
   });
 

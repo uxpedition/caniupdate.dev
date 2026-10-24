@@ -82,6 +82,7 @@ const makeMeasuredVersion = (version: string, omitted: string[] = []): MeasuredP
 
   return {
     ...makeDeclaredVersion(version),
+    bundledTypes: { status: 'available', matchedTargetCount: 0 },
     vulnerabilities: { status: 'available', count: 0, advisories: [] },
     bundleSize: omitted.length === 0 ? bundleSize : { ...bundleSize, ignoredMissingDependencies: omitted },
     tarball: {

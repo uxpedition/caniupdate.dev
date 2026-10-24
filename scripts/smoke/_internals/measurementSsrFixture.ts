@@ -12,6 +12,7 @@ const version = (name, release, bytes, partial) => ({
   name, version: release, dist: { tarball: 'https://registry.npmjs.org/fixture.tgz' },
   licenses: [], deprecated: false, engines: {}, dependencies: {}, peerDependencies: {},
   optionalDependencies: {}, optionalPeers: [], installScripts: [], installScriptCommands: {}, moduleFormat: {},
+  bundledTypes: { status: partial ? 'partial' : 'available', matchedTargetCount: 0 },
   vulnerabilities: partial ? { status: 'unavailable', count: null, advisories: [] }
     : { status: 'available', count: 0, advisories: [] },
   bundleSize: { provider: 'bundlephobia', status: 'available', name, version: release,

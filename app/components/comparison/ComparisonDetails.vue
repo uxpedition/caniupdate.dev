@@ -8,6 +8,8 @@ import ComparisonFactSources from '~/components/comparison/ComparisonFactSources
 import DependencyChanges from '~/components/comparison/DependencyChanges.vue';
 import DependencyTable from '~/components/comparison/DependencyTable.vue';
 import EvidencePanel from '~/components/comparison/EvidencePanel.vue';
+import { buildPackageSurface } from '~/components/comparison/packageSurface';
+import PackageSurface from '~/components/comparison/PackageSurface.vue';
 import RowHelp from '~/components/comparison/RowHelp.vue';
 import LoadingMessage from '~/components/element/LoadingMessage.vue';
 import { useComparisonPage } from '~/composables/useComparisonPage';
@@ -59,6 +61,12 @@ const rows = computed(() =>
     : [],
 );
 
+const surface = computed(() =>
+  declarations.value
+    ? buildPackageSurface(declarations.value.from, declarations.value.to, measurements.value)
+    : undefined,
+);
+
 const overviewRows = computed(() => ({
   dependencies: rows.value.find(({ row }) => row.sourceId === 'comparison.dependencies'),
   gzip: rows.value.find(({ row }) => row.sourceId === 'comparison.sizes-gzip'),
@@ -67,7 +75,7 @@ const overviewRows = computed(() => ({
 
 const groups = computed(() => [
   { title: 'Dependencies & runtime', rows: rows.value.slice(0, 3) },
-  { title: 'Package surface', rows: rows.value.slice(3, 8) },
+  { title: 'Package surface', rows: rows.value.slice(6, 8) },
   { title: 'Size & provenance', rows: rows.value.slice(8) },
 ]);
 
@@ -109,6 +117,14 @@ const preventBriefingToggle = (event: MouseEvent) => {
   if (isBriefingPending.value) event.preventDefault();
 };
 
+const surfaceDetailAnchors = ['comparison-exports', 'comparison-module-format', 'comparison-types'];
+
+const scrollToCitation = (id: string) => {
+  const target = document.getElementById(id);
+  target?.closest('details')?.setAttribute('open', '');
+  target?.scrollIntoView({ block: 'center' });
+};
+
 const revealCitation = async (event: MouseEvent) => {
   const target = event.target;
 
@@ -121,9 +137,11 @@ const revealCitation = async (event: MouseEvent) => {
 
   if (row?.expandable) expanded.value.add(row.anchor);
 
+  if (surfaceDetailAnchors.includes(id)) expanded.value.add('comparison-exports');
+
   if (id.startsWith('evidence-')) showSources.value = true;
   await nextTick();
-  document.getElementById(id)?.scrollIntoView({ block: 'center' });
+  scrollToCitation(id);
 };
 </script>
 
@@ -365,6 +383,12 @@ const revealCitation = async (event: MouseEvent) => {
                   {{ group.title }}
                 </th>
               </tr>
+              <PackageSurface
+                v-if="group.title === 'Package surface' && surface"
+                :surface="surface"
+                :open="expanded.has('comparison-exports')"
+                @toggle="toggleRow('comparison-exports')"
+              />
               <template v-for="item in group.rows" :key="item.anchor">
                 <tr :id="item.anchor" class="scroll-mt-6">
                   <th

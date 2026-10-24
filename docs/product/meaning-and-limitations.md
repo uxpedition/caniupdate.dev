@@ -91,6 +91,28 @@ A release-note finding reports a relevant change described by the maintainer. Th
 
 An export or type declaration change means the published metadata changed. We do not fully analyze the package's API behavior or implementation.
 
+**Package surface** keeps exports, loading styles, and type declarations in one expandable row. When collapsed, it shows each version’s explicit path count and evidence badges: ESM for ES module files, CJS for CommonJS files, and TYPES for TypeScript declarations. These describe package-level evidence, not which syntax works for every path.
+
+A tick marks the strongest metadata evidence: an explicit JavaScript file extension, a `.js` target with an explicit package format, or a declared type entry. A circled question mark marks weaker indications, such as legacy JavaScript conventions or compiler-version type mappings. No badge means no indication was found, not that support is ruled out. Metadata alone does not verify published files or runtime compatibility, and nested package rules may differ.
+
+All badges use the same readable text color. Icons and help text distinguish evidence strength; uncertain badges are not disabled controls.
+
+Archive measurements can add a question-mark TYPES badge when a published JavaScript entry target has a matching declaration file beside it: `.js` with `.d.ts`, `.mjs` with `.d.mts`, or `.cjs` with `.d.cts`. Both must be regular files in that release’s archive. Wildcard routes and links are not expanded or followed. These matches do not verify type resolution, correctness, or coverage of every export. They reuse the archive inspection already needed for measurements; declaration rendering does not wait for them.
+
+The browser can also check whether the corresponding public `@types` package exists. A match adds an uncertain TYPES badge and links to that package on npmx. Its existence does not establish compatibility with either compared version. An unavailable lookup adds no external-types indication. Declared bundled types and exact-release file matches take precedence over this external hint.
+
+If the latest `@types` release is deprecated, its external TYPES badge shows a warning triangle instead. Badge help identifies that release, quotes the maintainer’s notice, and asks you to check whether the package version in that column needs external types. This warning does not establish whether older `@types` releases are suitable or whether every version of the main package includes its own types. It does not replace a declared-types tick or a matching-file question mark.
+
+Expand the row for a change summary and a separate import-path tree for each version. Trees sit side by side on wider screens and stack on narrow screens. Hover over, focus, or tap a path to see loading syntax, target files, conditions, and types for that version. Folder-only rows group paths; they are not importable entries.
+
+The summary uses a compact row, with counting limits in its help popover. JavaScript fields, package-level types, and compiler-version rules sit in a separate **Package details** disclosure, closed by default.
+
+The summary counts unchanged, changed, new, and removed export declarations, not verified API additions or removals. Wildcards count as patterns rather than a list of files. Blocked entries do not count as exports. An absent or incomplete export map leaves path totals and change counts uncertain, not zero: older file-resolution rules may still allow imports.
+
+Loading examples show syntax, not tested compatibility. Conditions and fallback targets remain in declaration order; the interface does not resolve them for your runtime. In particular, an ES module declaration alone does not establish whether `require()` works. Non-JavaScript targets need file-specific loading rules.
+
+TypeScript type entries and compiler-version mappings describe where tools may look for types. Missing declarations do not prove that types are absent, and changed paths do not prove that the types themselves changed.
+
 **Missing or incomplete evidence means uncertainty, not “nothing changed.”**
 
 ## Scope

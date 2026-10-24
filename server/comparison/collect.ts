@@ -34,6 +34,7 @@ import type { PackageEvidenceFailure } from './evidence/errors';
 import { getPackageReleaseNotes } from './evidence/releaseNotes';
 import type { ComparisonEvidenceServices } from './evidence/services';
 import { cachedTarball } from './evidence/tarball';
+import { getBundledTypeEvidence } from './measurements/bundledTypes';
 import { getVersionBundleSize } from './measurements/bundleSize';
 import { compareMeasurements } from './measurements/compare';
 import { getPackageVulnerabilities } from './measurements/vulnerabilities';
@@ -282,6 +283,7 @@ const toTarballSummary = ({ status, reasons, url, files, changelogs }: PackageTa
 
 const toMeasuredVersion = ({ tarball, ...version }: ComparisonVersion): MeasuredPackageVersion => ({
   ...version,
+  bundledTypes: getBundledTypeEvidence(version.moduleFormat, tarball),
   tarball: toTarballSummary(tarball),
 });
 

@@ -3,6 +3,7 @@ import { Schema } from 'effect';
 import { PackageBundleSizeSchema, type PackageBundleSize } from './evidence/bundlephobia.defs';
 import { PackageAdvisorySchema, PackageVulnerabilitiesSchema, type PackageVulnerabilities } from './evidence/osv.defs';
 import { PackageTarballSchema, type PackageTarball } from './evidence/tarball.defs';
+import { BundledTypeEvidenceSchema } from './evidence/types.defs';
 import { ParsedPackageVersionSchema, type ParsedPackageVersion } from './package/package.defs';
 
 export type ComparisonVersion = ParsedPackageVersion & {
@@ -203,6 +204,7 @@ const MeasuredPackageVersionSchema = Schema.Struct({
   vulnerabilities: PackageVulnerabilitiesSchema,
   bundleSize: PackageBundleSizeSchema,
   tarball: TarballSummarySchema,
+  bundledTypes: BundledTypeEvidenceSchema,
 });
 
 /**

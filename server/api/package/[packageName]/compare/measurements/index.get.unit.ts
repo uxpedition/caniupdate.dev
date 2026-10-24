@@ -37,6 +37,7 @@ const measuredVersion = (version: string): MeasuredPackageVersion => ({
   installScripts: [],
   installScriptCommands: {},
   moduleFormat: {},
+  bundledTypes: { status: 'available', matchedTargetCount: 0 },
   vulnerabilities: { status: 'unavailable', count: null, advisories: [] },
   bundleSize: {
     provider: 'bundlephobia',

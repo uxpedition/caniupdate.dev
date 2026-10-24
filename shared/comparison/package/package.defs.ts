@@ -30,6 +30,7 @@ const RegistryPackageVersionSchema = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
   dist: RegistryPackageDistSchema,
+  deprecated: Schema.optionalKey(Schema.String),
 });
 
 export const RegistryPackageMetadataSchema = Schema.Struct({
@@ -46,20 +47,47 @@ const ParsedPackageMetadataSchema = Schema.Struct({
   modified: Schema.String,
   distTags: Schema.Record(Schema.String, Schema.String),
   versions: Schema.Array(Schema.String),
+  latestRelease: Schema.optionalKey(
+    Schema.Struct({
+      version: Schema.String,
+      deprecated: Schema.optionalKey(Schema.String),
+    }),
+  ),
 });
 
 export type ParsedPackageMetadata = typeof ParsedPackageMetadataSchema.Type;
+
+type PackageMetadataResult = { -readonly [Key in keyof ParsedPackageMetadata]: ParsedPackageMetadata[Key] };
+
+type LatestPackageRelease = {
+  -readonly [Key in keyof NonNullable<ParsedPackageMetadata['latestRelease']>]: NonNullable<
+    ParsedPackageMetadata['latestRelease']
+  >[Key];
+};
 
 export function toPackageMetadata(response: RegistryPackageMetadata): ParsedPackageMetadata {
   const versions = Object.values(response.versions).map(({ version }) => version);
   sortSemverDescendingInPlace(versions);
 
-  return {
+  const latestVersion = response['dist-tags'].latest;
+  const latest = latestVersion === undefined ? undefined : response.versions[latestVersion];
+
+  const metadata: PackageMetadataResult = {
     name: response.name,
     modified: response.modified,
     distTags: response['dist-tags'],
     versions,
   };
+
+  if (latest) {
+    const latestRelease: LatestPackageRelease = { version: latest.version };
+
+    if (latest.deprecated !== undefined) latestRelease.deprecated = latest.deprecated;
+
+    metadata.latestRelease = latestRelease;
+  }
+
+  return metadata;
 }
 
 const RegistryPackageLicenseSchema = Schema.Struct({
