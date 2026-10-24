@@ -304,11 +304,11 @@ Above each dependency table pair, a padded summary bar with a muted background c
 
 Expanded blocks with background colors use the same 6 px corner radius as the AI notes and dependency tables. This includes the dependency changes bar.
 
-Hover over, focus, or tap a nonzero updated count to see each updated dependency and its old and new declared version ranges. Each dependency appears on its own line. Links compare the lowest published release matching each range on the current site. Package metadata loads when the panel opens. If metadata is unavailable or a range has no matching release, the row explains why no link is available. The panel supports keyboard navigation and Escape to close.
+Hover over, click, tap, or focus and press Enter on a nonzero updated count to see each updated dependency and its old and new declared version ranges. Each dependency appears on its own line. Links compare the lowest published release matching each range on the current site. Package metadata loads when the panel opens. If metadata is unavailable or a range has no matching release, the row explains why no link is available. The panel supports keyboard navigation and Escape to close.
 
 Removed and added counts open separate panels. Removed entries show the old declared range; added entries show the new range. Zero counts are plain text and do not open a panel.
 
-Hover panels close shortly after the pointer leaves both the count and the panel. Moving from the count into the panel keeps it open so comparison links remain clickable.
+Dependency and advisory summaries share the generic [`HoverPopover`](../../../app/components/element/HoverPopover.vue) interaction. Callers own their labels, content, and which group is open. Hover panels close after 150 ms outside both the count and panel; moving into the panel keeps links clickable. Touch does not open a hover panel. Click, tap, and keyboard-opened panels remain open when the pointer leaves. Focusing content also keeps it open. Escape returns focus to the count; clicking or tapping outside dismisses the panel. Opening another count replaces the open panel within that summary. Verify these interactions in Chromium and Firefox, including touch at 320 px and 390 px.
 
 Tables and hover-panel lists show at most six dependency entries before scrolling. Table version headers remain visible while scrolling. The limit uses rendered row heights so wrapped names and version ranges do not cut a row in half. Longer lists can also be focused and scrolled by keyboard.
 
