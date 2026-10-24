@@ -169,8 +169,34 @@ describe('buildComparisonSummaries', () => {
       fromNote: '',
       toNote: 'Incomplete estimate',
     });
+    expect(gzip?.expandable).toBe(false);
+    expect(unpacked?.expandable).toBe(false);
+    expect(minified?.expandable).toBe(false);
     expect(unpacked).toMatchObject({ from: '100 B', to: '120 B', note: '+20 B (+20%)', fromNote: '', toNote: '' });
     expect(minified).toMatchObject({ from: '1 kB', to: '1.3 kB', fromNote: '', toNote: 'Incomplete estimate' });
+  });
+
+  it('shows tarball counts and partial coverage without an expandable panel', () => {
+    const partialMeasurements = {
+      ...measurements,
+      to: {
+        ...measurements.to,
+        tarball: { ...measurements.to.tarball, status: 'partial' as const },
+      },
+    };
+
+    const rows = buildComparisonRows(declarations, partialMeasurements);
+
+    const summaries = buildComparisonSummaries(
+      { declarations, measurements: partialMeasurements, measurementsUnavailable: false },
+      rows,
+    );
+
+    expect(summaries.find(({ row }) => row.sourceId === 'comparison.tarball')).toMatchObject({
+      from: '2 files',
+      to: '3 files · partial coverage',
+      expandable: false,
+    });
   });
 
   it('collapses measurement rows as unavailable without hiding declaration changes', () => {

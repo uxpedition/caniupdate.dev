@@ -83,6 +83,10 @@ A bundle estimate compares the package on its own, not inside your application. 
 
 An advisory difference means OSV found different matches for the two versions. This is not an independent security review or a scan of your project.
 
+Expand **Security advisories** to see a table for each version. Each match links to its specific OSV record and includes a summary when available. The tables show coverage separately: no known matches with complete coverage is different from missing or incomplete results. Matches remain linked even when their details could not be retrieved.
+
+The summary above the tables shows matches **only in previous**, **only in new**, and **present in both**. Open a nonzero count to see which advisories it includes. Records identified as the same issue count once in this summary. If coverage is incomplete, one-sided matches are labelled **unconfirmed** instead. Confirmed shared matches still appear, but the list may not include every shared issue.
+
 An issue matched only to the target version does not, by itself, prove that version introduced it. **Missing or incomplete coverage cannot prove that an issue was fixed or that a package is safe.**
 
 ### Release notes, exports, and types

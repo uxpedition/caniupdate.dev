@@ -3,6 +3,8 @@ import { ChevronDown, LoaderCircle, Minus, Plus } from '@lucide/vue';
 import { computed, nextTick, ref } from 'vue';
 
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
+import AdvisoryChanges from '~/components/comparison/AdvisoryChanges.vue';
+import AdvisoryTable from '~/components/comparison/AdvisoryTable.vue';
 import BriefingPanel from '~/components/comparison/BriefingPanel.vue';
 import ComparisonFactSources from '~/components/comparison/ComparisonFactSources.vue';
 import DependencyChanges from '~/components/comparison/DependencyChanges.vue';
@@ -455,7 +457,9 @@ const revealCitation = async (event: MouseEvent) => {
                   <td
                     colspan="3"
                     :class="
-                      item.row.sourceId === 'comparison.dependencies' || item.row.sourceId === 'comparison.peers'
+                      item.row.sourceId === 'comparison.dependencies' ||
+                      item.row.sourceId === 'comparison.peers' ||
+                      item.row.sourceId === 'comparison.advisories'
                         ? 'p-0'
                         : 'rounded-[6px] bg-muted p-4.5'
                     "
@@ -468,12 +472,26 @@ const revealCitation = async (event: MouseEvent) => {
                           : declarations.comparison.dependencies
                       "
                     />
+                    <AdvisoryChanges
+                      v-if="item.row.sourceId === 'comparison.advisories' && measurements"
+                      :comparison="measurements.comparison.advisories"
+                    />
                     <div
                       v-if="item.row.sourceId === 'comparison.dependencies' || item.row.sourceId === 'comparison.peers'"
                       class="grid grid-cols-2 items-start gap-5 max-[700px]:grid-cols-1"
                     >
                       <DependencyTable :version="declarations.from" :peers="item.row.sourceId === 'comparison.peers'" />
                       <DependencyTable :version="declarations.to" :peers="item.row.sourceId === 'comparison.peers'" />
+                    </div>
+                    <div
+                      v-else-if="item.row.sourceId === 'comparison.advisories' && measurements"
+                      class="grid grid-cols-2 items-start gap-5 max-[700px]:grid-cols-1"
+                    >
+                      <AdvisoryTable
+                        :version="displayFromVersion"
+                        :vulnerabilities="measurements.from.vulnerabilities"
+                      />
+                      <AdvisoryTable :version="displayToVersion" :vulnerabilities="measurements.to.vulnerabilities" />
                     </div>
                     <div
                       v-else
@@ -500,7 +518,8 @@ const revealCitation = async (event: MouseEvent) => {
                       v-if="
                         item.row.detail &&
                         item.row.sourceId !== 'comparison.dependencies' &&
-                        item.row.sourceId !== 'comparison.peers'
+                        item.row.sourceId !== 'comparison.peers' &&
+                        item.row.sourceId !== 'comparison.advisories'
                       "
                       class="mt-4 text-xs leading-[1.7] text-muted-foreground"
                     >

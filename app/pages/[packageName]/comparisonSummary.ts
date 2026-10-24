@@ -192,11 +192,14 @@ const summaryAnchor = (row: ComparisonRow): string =>
   row.sourceId === 'comparison.sizes-unpacked' ? 'comparison-sizes' : row.id;
 
 const isExpandable = (row: ComparisonRow, presentation: { from: string; to: string }): boolean =>
-  presentation.from !== row.from ||
-  presentation.to !== row.to ||
-  row.detail.length > 0 ||
-  row.from.includes('\n') ||
-  row.to.includes('\n');
+  row.sourceId !== 'comparison.sizes-unpacked' &&
+  row.sourceId !== 'comparison.tarball' &&
+  !isBundleRow(row) &&
+  (presentation.from !== row.from ||
+    presentation.to !== row.to ||
+    row.detail.length > 0 ||
+    row.from.includes('\n') ||
+    row.to.includes('\n'));
 
 export function buildComparisonSummaries(input: ComparisonSummaryInput, rows: readonly ComparisonRow[]) {
   const sizes = measurementSizes(input.measurements);

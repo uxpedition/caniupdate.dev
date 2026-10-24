@@ -292,9 +292,15 @@ On homepage load or reload, the form fades in and rises 12 px over 400 ms after 
 
 On comparison-page entry, the navigation header and footer use the content's 180 ms fade and 16 px rise after a 120 ms delay. The site layout owns these shared transition styles. Other site pages do not animate their header or footer on load.
 
+The unpacked package size, estimated minified bundle, estimated gzip bundle, and published tarball rows do not expand. They show values and comparison notes inline, with definitions available from their info controls. The tarball row shows file counts and inspection coverage. Check that measurement loading, unavailable values, and incomplete estimates remain visible without a detail panel.
+
 Expanded dependency and peer dependency sections show one table per version, side by side on wide screens and stacked on compact screens. Each header shows the package version and dependency count. Rows show package names, declared version ranges, and an “Optional” badge where applicable. Check both sections with optional entries and empty declarations when changing these tables.
 
-Above each table pair, a padded summary bar with a muted background counts updated, removed, and added dependencies separately. Updates include changes to a declared version range or optional status. The tables themselves have no shared background or outer padding.
+The expanded security advisories section uses the same two-table layout and six-row scrolling limit. Each version's table lists matched advisory IDs linked to their OSV records, with summaries where available. Headers show counts and coverage. Missing details retain the advisory link; partial or unavailable coverage must not look like a complete list with no matches.
+
+Above the advisory tables, a summary counts matches “only in previous,” “only in new,” and “present in both” when coverage is complete. Nonzero counts open popovers with links to the matching OSV records. Hover, click, tap, or use Enter to open them; Escape closes them. Lists scroll after six entries. Counts reuse the comparison's alias groups, so records describing the same issue count once. With incomplete coverage, one-sided matches appear as “unconfirmed,” not as proven differences. Confirmed shared matches remain available, but their list may be incomplete; an empty shared list says “No shared matches confirmed.”
+
+Above each dependency table pair, a padded summary bar with a muted background counts updated, removed, and added dependencies separately. Updates include changes to a declared version range or optional status. The tables themselves have no shared background or outer padding.
 
 Expanded blocks with background colors use the same 6 px corner radius as the AI notes and dependency tables. This includes the dependency changes bar.
 
