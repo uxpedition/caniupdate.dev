@@ -221,6 +221,41 @@ describe('toPackageVersion', () => {
     expect(curate({ ...coffeeScriptManifest, description: '   ' }).description).toBeUndefined();
   });
 
+  it.each<Schema.Json>([{ type: 'WTFPL2' }, { type: 'WTFPL2', url: 'http://sam.zoy.org/wtfpl/COPYING' }])(
+    'preserves a historical license object: %j',
+    (license) => {
+      expect(curate({ ...vueManifest, license, licenses: [{ type: 'MIT' }] }).licenses).toEqual(['WTFPL2']);
+    },
+  );
+
+  it.each(['WTFPL2', ' MIT ', ''])('preserves a declared license string verbatim: %j', (license) => {
+    expect(curate({ ...vueManifest, license, licenses: [{ type: 'ISC' }] }).licenses).toEqual([license]);
+  });
+
+  it('distinguishes absent licenses from an explicitly empty license declaration', () => {
+    const manifest = { name: 'inherits', version: '2.0.0', dist: vueManifest.dist };
+    const decoded = Schema.decodeUnknownSync(RegistryVersionManifestSchema)(manifest);
+
+    expect(decoded).not.toHaveProperty('license');
+    expect(decoded).not.toHaveProperty('licenses');
+    expect(toPackageVersion(decoded).licenses).toEqual([]);
+    expect(curate({ ...manifest, license: { type: '' } }).licenses).toEqual(['']);
+    expect(curate({ ...manifest, licenses: [{ type: 'WTFPL2' }] }).licenses).toEqual(['WTFPL2']);
+  });
+
+  it.each<Schema.Json>([
+    null,
+    42,
+    [],
+    {},
+    { url: 'https://example.com/license' },
+    { type: null },
+    { type: 42 },
+    { type: 'MIT', url: 42 },
+  ])('rejects malformed license metadata: %j', (license) => {
+    expect(() => curate({ ...vueManifest, license })).toThrow(Schema.SchemaError);
+  });
+
   it('rejects a version manifest whose published size is not a number', () => {
     expect(() => curate({ ...vueManifest, dist: { ...vueManifest.dist, unpackedSize: '2374183' } })).toThrow(
       Schema.SchemaError,

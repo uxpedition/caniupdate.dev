@@ -39,6 +39,11 @@ A **manifest** is the registry's metadata for one package version. The collector
 
 Each successful HTTP response must decode as a `RegistryVersionManifest`. Transport, status, JSON, or schema failure becomes `RegistryRequestError`, not an unavailable measurement. Both manifests are required for a comparison. Registry requests have a five-minute timeout. See [registry transport](../../server/httpDependencies/npm/registry.ts) and [comparison facts](../../server/comparison/collect.ts).
 
+The manifest boundary accepts `license` as a string or an object with a string `type` and an optional string `url`.
+Comparison licenses preserve the string or object’s `type` exactly, without correcting license identifiers.
+A declared `license` takes precedence over the legacy `licenses` array. When neither is present, the comparison
+has no declared licenses. Malformed license values still fail manifest decoding.
+
 Within a request, each manifest is fetched once and shared across declarations, measurements, and release notes. The from/to manifests resolve concurrently.
 
 - If both requested strings are exact semantic versions, OSV and Bundlephobia can start before manifests finish. Otherwise they wait and use the resolved `version` values.

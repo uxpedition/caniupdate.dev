@@ -1,4 +1,4 @@
-import { Schema } from 'effect';
+import { Predicate, Schema } from 'effect';
 
 import { sortSemverDescendingInPlace } from './compareSemver';
 
@@ -105,7 +105,7 @@ export const RegistryVersionManifestSchema = Schema.Struct({
   repository: Schema.optionalKey(Schema.Unknown),
   gitHead: Schema.optionalKey(Schema.Unknown),
   dist: RegistryPackageDistSchema,
-  license: Schema.optionalKey(Schema.String),
+  license: Schema.optionalKey(Schema.Union([Schema.String, RegistryPackageLicenseSchema])),
   licenses: Schema.optionalKey(Schema.Array(RegistryPackageLicenseSchema)),
   deprecated: Schema.optionalKey(Schema.String),
   engines: Schema.optionalKey(Schema.Union([Schema.Record(Schema.String, Schema.String), Schema.Array(Schema.String)])),
@@ -194,7 +194,7 @@ const toEngines = (engines: RegistryVersionManifest['engines']): Record<string, 
 
 const toLicenses = (manifest: RegistryVersionManifest): readonly string[] => {
   if (manifest.license !== undefined) {
-    return [manifest.license];
+    return [Predicate.isString(manifest.license) ? manifest.license : manifest.license.type];
   }
 
   return (manifest.licenses ?? []).map(({ type }) => type).filter((type) => type.length > 0);
