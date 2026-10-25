@@ -6,10 +6,23 @@ variables:
   PIN_NUB_VERSION: '0.9.6'
   NUB_ARCHIVE: 'nub-linux-x64.tar.gz'
   NUB_ARCHIVE_SHA256: '77220dc6deb6ebbdb0a282c61b80a157e32016e088f3632d8fb4bf74a931e4ce'
+  npm_config_store_dir: '$CI_PROJECT_DIR/.cache/nub/store'
+  NUB_DOWNLOAD_CACHE_POLICY: pull
 
 default:
   tags: []
   image: node:26.8.1@sha256:f5d1cc40abc10c2843339a2134d07817cf33c405cb16bfd052b0ed790254c3a3
+  cache:
+    key:
+      prefix: 'nub-download-v1-node-$PIN_NODE_VERSION-nub-$PIN_NUB_VERSION-linux-x64-$CI_COMMIT_REF_PROTECTED-$CI_COMMIT_REF_SLUG'
+      files:
+        - nub.lock
+        - patches/drizzle-orm@1.0.0-rc.5-ab785fc.patch
+    paths:
+      - .cache/nub/store/v1/files/
+      - .cache/nub/store/v1/index/
+    policy: $NUB_DOWNLOAD_CACHE_POLICY
+    when: on_success
   before_script:
     - node scripts/deploy/ci-environment.ts
     - test "$(tr -d '[:space:]' < .node-version)" = "$PIN_NODE_VERSION"
@@ -21,4 +34,9 @@ default:
     - tar -xzf "$NUB_ARCHIVE" -C "$HOME/.local/nub"
     - export PATH="$HOME/.local/nub/bin:$PATH"
     - nub --version | grep -qxF "v$PIN_NUB_VERSION"
+    - |
+      if ! nub store status; then
+        printf '%s\n' 'Discarding invalid Nub download cache; nub ci will download it again.'
+        rm -rf .cache/nub/store/v1/files .cache/nub/store/v1/index
+      fi
     - nub ci

@@ -205,6 +205,44 @@ non-interruptible. A newer commit therefore cannot interrupt a started delivery 
 
 Jobs use a pinned Node image, Nub from the `packageManager` pin, and `nub ci`. They run the existing non-fixing package checks without changing lint severities or adding a coverage threshold.
 
+### Dependency download cache
+
+The [shared bootstrap](../../../scripts/deploy/ci-bootstrap.yml) sets `npm_config_store_dir` to
+`$CI_PROJECT_DIR/.cache/nub/store`. Nub 0.9.6 uses this supported `storeDir` setting for its
+[content-addressed package store](https://github.com/nubjs/nub/blob/v0.9.6/vendor/aube/crates/aube-store/src/lib.rs).
+This is not npm's cache. Nub's separate `NUB_CACHE_DIR` controls metadata and policy caches, not downloaded package contents.
+
+GitLab saves only `store/v1/files/` and `store/v1/index/`: downloaded package files and their integrity-keyed indices.
+It does not save `node_modules`, linked or built packages, Nuxt output, browser binaries, runtime state, configuration,
+or credentials. Every job still runs `nub ci`, including lifecycle scripts, patch application, and Nub's normal
+integrity checks. Before installing, bootstrap runs
+[`nub store status`](https://github.com/nubjs/nub/blob/v0.9.6/vendor/aube/docs/cli/store/status.md) to verify every indexed
+file's BLAKE3 hash. If validation fails, bootstrap discards both cached directories and lets `nub ci` download them again.
+This is necessary because Nub 0.9.6's warm install samples stored files rather than checking every file.
+The cache is optional, not an install artifact; installation failures still fail the job without a retry.
+
+Only `build-smoke` uploads a cache, after success. All other bootstrapped jobs, including deployment and browser child
+jobs, only download it. Parallel validation jobs do not wait for a cache writer; a first pipeline may install cold in
+several jobs. This avoids an extra setup stage and repeated uploads. Later pipelines and child jobs can reuse a completed
+cache. A cancelled or failed build leaves cache population to a later successful build.
+
+Keys include the Node and Nub pins, Linux/x64 platform, ref and protection status, and hashes of `nub.lock` and the
+Drizzle patch. Keep the explicit patch input current when adding or renaming patches. Update the platform segment when
+changing runner architecture or image platform; bump `nub-download-v1` when changing the stored layout or clearing a
+suspect cache. No fallback keys are configured. Keep GitLab's
+[separate caches for protected branches](https://docs.gitlab.com/ci/caching/#cache-key-names) enabled, never enable
+`cache:unprotect`, and do not configure `CACHE_FALLBACK_KEY`. Ref isolation keeps maintainer-started MR caches separate
+from `main` even when GitLab assigns both its protected suffix.
+
+Nub 0.9.6 indices contain absolute store paths. A cache restored under a different checkout path can miss and download
+packages again; it is not a portable installed dependency tree. Do not rewrite those indices or cache linked packages to
+work around this. Confirm reuse in GitLab job logs and compare cache transfer time with install time before broadening
+the policy. Local timings do not establish runner-minute savings. Shared runner storage or distributed caching is a
+[GitLab runner prerequisite](https://docs.gitlab.com/ci/caching/#good-caching-practices), not something this repository
+configures.
+
+### Required validation
+
 The required `quality` job checks `CI_MERGE_REQUEST_TITLE` with `nub run commitlint` in MR pipelines, using the same [`commitlint.config.mjs`](../../../commitlint.config.mjs) as the commit-message hook. It reuses the job's dependency installation before running the other quality checks. Use a Conventional Commit title, such as `fix(comparison): preserve missing evidence`, so it can become the squash commit subject. Push pipelines skip title validation, and MR pipelines do not check every commit on the source branch.
 
 After editing a title, start a new pipeline from the MR's **Pipelines → Run pipeline** action before merging. A title edit alone does not trigger an [MR pipeline](https://docs.gitlab.com/ci/pipelines/merge_request_pipelines/). A passing pipeline validates the title supplied to that pipeline, not later title edits. Keep the final squash commit subject consistent with the validated title.
@@ -224,7 +262,7 @@ This is not a hosted-stage check or an offline check: public evidence providers 
 
 `build-smoke` has ten minutes. Quality, unit tests, and `smoke:built` each have five minutes, including bootstrap and dependency installation. These limits do not guarantee runner queueing time or total pipeline duration. If a job exceeds its limit, investigate the bottleneck rather than silently extending the timeout or skipping checks.
 
-Validation jobs have no deployment credentials or reusable caches. Only `build-smoke` uploads `.output/`, retained for seven days. It has no GitLab environment and receives no site origin, private Worker runtime settings, or deployment credentials.
+Validation jobs have no deployment credentials. Their reusable dependency cache is limited to the download-store paths above. Only `build-smoke` uploads `.output/`, retained for seven days. It has no GitLab environment and receives no site origin, private Worker runtime settings, or deployment credentials.
 
 A passing protected `main` push continues to `stage:delivery`; MRs do not deploy. The child pipeline runs `deploy:stage`, then independent Chromium and Firefox `verify:stage` jobs. Its parent holds the `stage` resource-group lock through deployment and both browser checks, preventing another pipeline from replacing the site mid-test.
 

@@ -47,6 +47,7 @@ build-smoke:
   extends: .validation
   timeout: 10m
   variables:
+    NUB_DOWNLOAD_CACHE_POLICY: pull-push
     NUXT_BUILD_COMMIT_SHA: '$CI_COMMIT_SHA'
     NUXT_BUILD_REPOSITORY_URL: '$CI_PROJECT_URL'
   script:
