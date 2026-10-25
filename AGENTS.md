@@ -8,15 +8,15 @@ Before any response or task action on a new user task—including clarifying que
 
 Reuse skills already loaded in the current context; reload after context loss. Respect user-only invocation restrictions and existing authorization boundaries. Use the harness's skill loader when available, otherwise read the local files directly.
 
-## Learning more about Effect
+## Required Effect programming model
 
-This repository uses the Effect Typescript library.
+Implement application logic and computations using Effect across all runtimes: browser, server, Workers, and shared modules. This includes pure synchronous calculations, transformations, validation, and orchestration, not only I/O. This is a project convention, not a per-function cost-benefit choice.
 
-Before writing any Effect code, first read `node_modules/effect/AGENTS.md`
-**completely**, and follow the links in the file when required.
+Use Effect's typed composition, failure handling, schemas, and data utilities throughout the implementation. A token import or an outer `Effect.sync` wrapper around an otherwise unchanged imperative implementation does not satisfy this requirement. Being pure, synchronous, small, or expressible without Effect is not an exception.
 
-If you need to learn more about particular Effect apis and concepts that the
-guide doesn't cover, search through the source code in `node_modules/effect/src`.
+The only exception is a concrete incompatibility with a framework or library integration, such as a Vue composable's requirements. Keep unavoidable native code at the smallest integration point, document the specific incompatibility beside it, and keep the remaining logic in Effect. Being inside a Vue component, `computed`, or composable is not itself an exception. Preserve the existing Vue Query and reactive-state ownership rules in [CODE_CONVENTIONS.md](CODE_CONVENTIONS.md#state-has-one-owner).
+
+Before implementing or reviewing application logic, read `node_modules/effect/AGENTS.md` **completely**, and follow its links when required. For APIs and concepts it does not cover, consult `node_modules/effect/src`.
 
 ## Navigation
 
