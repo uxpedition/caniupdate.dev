@@ -1,0 +1,60 @@
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - when: never
+
+stages: [verify, publish]
+
+.browser-image-build:
+  image:
+    name: moby/buildkit:v0.25.2-rootless@sha256:a02f6571999693089dc928e9bbb64836c21703b214195d8637c011f1a7025ef6
+    entrypoint: ['']
+  tags: []
+  timeout: 30m
+  before_script: []
+  cache: []
+  variables:
+    BUILDKITD_FLAGS: --oci-worker-no-process-sandbox
+
+browser-image:verify:
+  extends: .browser-image-build
+  stage: verify
+  interruptible: true
+  script:
+    - >-
+      buildctl-daemonless.sh build --frontend dockerfile.v0
+      --local context=scripts/browser-image --local dockerfile=scripts/browser-image
+      --opt platform=linux/amd64
+      --output type=oci,dest=/tmp/browser-image.tar
+
+browser-image:publish:
+  extends: .browser-image-build
+  stage: publish
+  interruptible: false
+  resource_group: browser-image-publication
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: manual
+      allow_failure: true
+    - when: never
+  environment:
+    name: browser-image
+    action: prepare
+  script:
+    - test -n "$CI_REGISTRY" && test -n "$CI_REGISTRY_IMAGE"
+    - umask 077
+    - export DOCKER_CONFIG="$(mktemp -d)"
+    - trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+    - AUTH="$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')"
+    - printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$CI_REGISTRY" "$AUTH" > "$DOCKER_CONFIG/config.json"
+    - >-
+      buildctl-daemonless.sh build --frontend dockerfile.v0
+      --local context=scripts/browser-image --local dockerfile=scripts/browser-image
+      --opt platform=linux/amd64
+      --output "type=image,name=$CI_REGISTRY_IMAGE:browser-$CI_COMMIT_SHA-$CI_PIPELINE_ID,push=true"
+      --metadata-file browser-image-metadata.json
+  artifacts:
+    access: maintainer
+    expire_in: 30 days
+    paths:
+      - browser-image-metadata.json

@@ -31,6 +31,7 @@ quality:
       if [ "$CI_PIPELINE_SOURCE" = "merge_request_event" ]; then
         printf '%s\n' "$CI_MERGE_REQUEST_TITLE" | nub run commitlint --verbose
       fi
+    - node scripts/browser-image/check-pins.mjs
     - nub run type-check
     - nub run lint:check
     - nub run format:check
@@ -71,6 +72,32 @@ smoke:built:
     - nub run smoke:routes:built
     - nub run smoke:comparison:built
     - nub run smoke:built
+
+browser-image:
+  stage: verify
+  needs: [quality]
+  inherit:
+    default: false
+    variables: false
+  rules:
+    - changes:
+        - scripts/browser-image/**/*
+        - scripts/deploy/ci-browser-*.yml
+        - scripts/deploy/ci-bootstrap.yml
+        - .node-version
+        - package.json
+        - nub.lock
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: manual
+      allow_failure: true
+    - when: never
+  trigger:
+    include:
+      - local: scripts/deploy/ci-browser-image.yml
+    strategy: mirror
+    forward:
+      yaml_variables: false
+      pipeline_variables: false
 
 .stage-main:
   rules:

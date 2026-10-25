@@ -347,6 +347,57 @@ The HTTP proxy requests gzip, deflate, or Brotli only. Its Playwright fetch/fulf
 
 Local checks and dry-runs do not activate hosted automation. Before each live release, authorized operators must verify the credentials, protected environments/tags, Cloudflare resources, and runtime origins for that target.
 
+### Browser CI image publication and activation
+
+The [image maintenance procedure](development.md#browser-ci-image-maintenance) describes the build inputs
+and local verification. Live browser jobs still use ordinary bootstrap and installation. Do not switch them
+to an image tag that has not been published and verified.
+
+Before enabling the image workflow, confirm an isolated amd64 runner supports rootless BuildKit user
+namespaces and mounts. The workflow uses the pinned BuildKit rootless image, not privileged Docker-in-Docker
+or a host Docker socket. [GitLab's rootless build instructions](https://docs.gitlab.com/ci/docker/using_buildkit/)
+describe the runner requirements. The selected `--oci-worker-no-process-sandbox` mode weakens isolation
+within the builder container; use a fresh disposable builder per job, never a shared daemon.
+See the [versioned BuildKit security caveats](https://github.com/moby/buildkit/blob/v0.25.2/docs/rootless.md#docker).
+If the runner blocks those operations, stop and arrange an approved runner rather than enabling privileged mode.
+
+Publication requires separate operator authorization:
+
+1. Enable this project's GitLab container registry. Protect GitLab environment `browser-image` for Maintainers.
+   Keep all application and deployment secrets scoped to their existing environments; give this environment none.
+   Protect registry tags matching `^browser-.*$` with Maintainer minimum roles for push and deletion.
+   [Registry tag protection](https://docs.gitlab.com/user/packages/container_registry/protected_container_tags/)
+   is separate from environment protection; the manual job alone does not restrict other registry clients.
+2. Run `browser-image` on a reviewed protected-default-branch pipeline. Input changes select it automatically;
+   otherwise start its optional manual maintenance action. Its verification job builds and exercises both browsers.
+3. After verification succeeds, an authorized Maintainer may start the child `browser-image:publish` job.
+   It authenticates using GitLab's short-lived `CI_REGISTRY_USER` and `CI_REGISTRY_PASSWORD`, publishing to
+   `CI_REGISTRY_IMAGE:browser-$CI_COMMIT_SHA-$CI_PIPELINE_ID`. No custom registry hostname or permanent push token is needed.
+   It rebuilds from the same pinned inputs and reruns both fixture checks; MR pipelines cannot select publication.
+4. Save `containerimage.digest` from the Maintainer-only `browser-image-metadata.json` artifact and the image's
+   source commit. Verify a pull by that digest, tool versions, and both fixture checks on the intended runner.
+   Confirm that CI can pull the private project image before any job script executes. Do not expose push
+   credentials to MRs; use the runner's supported job-token pull authentication and project allowlist.
+5. In a reviewed activation change, include `scripts/deploy/ci-browser-bootstrap.yml` from both
+   `ci-stage.yml` and `ci-production.yml`, supplying its required `image` input as the actual
+   `CI_REGISTRY_IMAGE` path followed by `@sha256:` and the verified digest. The input has no default and
+   rejects unpinned tags. Extend `.browser-runtime` only from `verify:stage` and `verify:production`.
+   Keep ordinary `ci-bootstrap.yml` for all other jobs. Do not change either Chromium/Firefox matrix.
+6. In that same activation change, remove the `playwright install --with-deps` subprocess and its failure
+   handling from `scripts/smoke-deployed/ci-run.ts`. Keep its environment decoding, private-key filtering,
+   smoke invocation, and failure reporting unchanged. The browser template checks image metadata against
+   the repository pins before its own frozen `nub ci`; it neither downloads Nub nor installs OS/browser packages.
+7. Verify the resolved GitLab configuration and run authorized staging Chromium and Firefox checks.
+   Confirm bootstrap uses the recorded digest, all versions match, and no browser or apt installation occurs.
+   Only then use the same digest for production verification. Preserve the deployment locks and release gates.
+
+No image has been published or digest selected by the checked-in configuration. The unused browser template
+is intentionally not included in live pipelines. Publication, runner compatibility, authenticated pulls,
+and the activation change are prerequisites, not implicit fallbacks or claims of hosted verification.
+For an update, repeat the same procedure with synchronized pins and a new digest. To roll back after activation,
+restore the previously verified digest only when its tooling still matches the repository; otherwise revert
+the matching tooling change too. Retain active and rollback digests in the registry cleanup policy.
+
 ### Effect runtime for deployment scripts
 
 Deployment TypeScript entrypoints use Effect computations with typed failures for build hashing/verification, settings and receipt decoding, temporary Wrangler configs, Git checks, subprocesses, and sanitized reports.

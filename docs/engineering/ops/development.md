@@ -292,6 +292,55 @@ input becomes available only after required checks and stage Chromium/Firefox ve
 
 The selected version creates an immutable tag and receipt, not a version commit or MR. Production uses that receipt to promote the exact build-smoke artifact without rebuilding. Ordinary merges never deploy production. See [manual protected-main release](deployment.md#manual-protected-main-release) for prerequisites.
 
+#### Browser CI image maintenance
+
+The [browser image Dockerfile](../../../scripts/browser-image/Dockerfile) builds an amd64 toolchain
+with the same pinned Node and Nub as ordinary jobs, plus Playwright's Chromium and Firefox binaries and
+OS libraries. It does not contain the application, application dependencies, credentials, or runtime state.
+The application Playwright package still comes from each job's frozen `nub ci`.
+The browser bootstrap preserves the shared download-cache policy and verifies the restored store before installation.
+
+**The image is not active in browser jobs.** Registry publication and a verified digest are prerequisites.
+The existing deployed checks still install their selected browser. See
+[publication and activation](deployment.md#browser-ci-image-publication-and-activation) before switching them.
+
+The `browser-image` child pipeline builds on image inputs, package manifest/lockfile, Node pin, or ordinary
+bootstrap changes. Other protected-main pipelines expose an optional manual maintenance action.
+MR image verification does not authenticate to the registry, publish, upload an image, or use a shared cache.
+Publication is a separate protected manual action, not a consequence of a passing build.
+
+Keep these inputs synchronized when upgrading the toolchain:
+
+- `.node-version`, the ordinary bootstrap image/version, and the Dockerfile's Node image/version.
+- `packageManager`, bootstrap Nub version/checksum, and Dockerfile Nub version/checksum.
+- The exact Playwright dependency, locked `playwright-core` integrity, and Dockerfile Playwright version/integrity.
+- The dated Debian snapshot. Advancing it picks up reviewed OS security fixes without floating package repositories.
+- The digest-pinned BuildKit version in the image child workflow.
+
+`node scripts/browser-image/check-pins.mjs` rejects toolchain drift in the quality job.
+The image build uses a [Debian snapshot](https://snapshot.debian.org/) to freeze OS package selection;
+it retains apt signature checks while allowing expired snapshot dates. This pins inputs, not a claim of
+byte-identical OCI output: build timestamps and image metadata may still differ.
+
+To build without publishing, on an amd64 host with Docker BuildKit:
+
+```bash
+node scripts/browser-image/check-pins.mjs
+docker build --platform linux/amd64 --no-cache -t browser-ci:local scripts/browser-image
+docker run --rm --init --network none browser-ci:local sh -ec 'node --version; nub --version; cat /opt/browser-ci/versions.json'
+```
+
+The Dockerfile launches both installed browsers against a loopback HTML fixture. Each must load HTTP `200`,
+read the expected title, click a button, and observe its changed text. Build logs print the browser version and
+`fixture interaction verified` for Chromium and Firefox. The temporary Playwright package and fixture are
+not retained in the resulting image. Missing browsers or libraries fail the build; there is no download fallback.
+
+The build context allows only the Dockerfile and fixture script. Do not change it to the repository root or
+pass runtime settings as build arguments, secrets, or environment variables. The [Playwright Docker guide](https://playwright.dev/docs/docker)
+requires the browser release to match the project's Playwright package. Its
+[1.64.0 Dockerfile](https://github.com/microsoft/playwright/blob/v1.64.0/utils/docker/Dockerfile.noble)
+also installs browsers separately from the application package.
+
 ### Test harnesses
 
 [`vitest.config.ts`](../../../vitest.config.ts) controls test discovery and runtime settings. Keep `.unit.ts` suites beside their implementation. Root `test/` holds shared helpers, not discovered suites.

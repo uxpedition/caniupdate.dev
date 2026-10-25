@@ -1,0 +1,22 @@
+spec:
+  inputs:
+    image:
+      description: Published browser image in this project's registry, pinned by digest
+      type: string
+      regex: '^[^\s@]+@sha256:[a-f0-9]{64}$'
+---
+.browser-runtime:
+  image: '$[[ inputs.image ]]'
+  variables:
+    PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  before_script:
+    - node scripts/deploy/ci-environment.ts
+    - node scripts/browser-image/check-runtime.mjs
+    - nub --version | grep -qxF "v$PIN_NUB_VERSION"
+    - |
+      if ! nub store status; then
+        printf '%s\n' 'Discarding invalid Nub download cache; nub ci will download it again.'
+        rm -rf .cache/nub/store/v1/files .cache/nub/store/v1/index
+      fi
+    - nub ci
