@@ -32,7 +32,12 @@ type CacheIdentity =
       readonly fromVersion: string;
       readonly toVersion: string;
     }
-  | { readonly revision: string; readonly integrity: { readonly algorithm: string; readonly value: string } }
+  | {
+      readonly revision: string;
+      readonly packageName: string;
+      readonly scripts: Readonly<Record<string, string>>;
+      readonly integrity: { readonly algorithm: string; readonly value: string };
+    }
   | {
       readonly revision: string;
       readonly packageName: string;

@@ -35,6 +35,10 @@ function version(version: string, overrides: Partial<ComparisonVersion> = {}): C
       reasons: [],
       files: [],
       changelogs: [],
+      installInspection: {
+        analysis: { status: 'unavailable', reasons: [], uninspectedPackages: [], scripts: [], findings: [] },
+        files: [],
+      },
     },
     ...overrides,
   };

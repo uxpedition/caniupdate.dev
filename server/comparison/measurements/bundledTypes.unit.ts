@@ -9,6 +9,10 @@ const archive = (paths: readonly string[], status: PackageTarball['status'] = 'a
   reasons: [],
   url: 'https://registry.npmjs.org/example.tgz',
   changelogs: [],
+  installInspection: {
+    analysis: { status: 'unavailable', reasons: [], uninspectedPackages: [], scripts: [], findings: [] },
+    files: [],
+  },
   files: paths.map((path) => ({ path, type: 'file', size: 1, sha256: 'digest' })),
 });
 

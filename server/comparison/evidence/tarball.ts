@@ -4,54 +4,58 @@ import { HttpClient } from 'effect/http';
 import { PackageTarballSchema, type PackageTarball } from '../../../shared/comparison/evidence/tarball.defs';
 import type { RegistryVersionManifest } from '../../../shared/comparison/package/package.defs';
 import { getPackageTarball } from '../../httpDependencies/npm/tarball';
+import { analyzeInstallScripts } from '../installScripts/analyze';
 import { cacheKey, runCached } from './cacheLookup';
 import { toPackageEvidenceFailure, type PackageEvidenceFailure } from './errors';
 import type { ComparisonEvidenceServices } from './services';
 
-const ARCHIVE_INSPECTOR_REVISION = 'archive-inspector-v3';
+const ARCHIVE_INSPECTOR_REVISION = 'archive-inspector-v4-install-analysis-v4';
 
-const safeTarballUrl = (url: string): boolean => {
-  try {
-    const parsed = new URL(url);
-
-    return (
-      parsed.origin === 'https://registry.npmjs.org' &&
-      parsed.username === '' &&
-      parsed.password === '' &&
-      parsed.hash === ''
-    );
-  } catch {
-    return false;
-  }
-};
+const safeTarballUrl = (url: string): Effect.Effect<boolean> =>
+  Effect.try(() => new URL(url)).pipe(
+    Effect.map(
+      (parsed) =>
+        parsed.origin === 'https://registry.npmjs.org' &&
+        parsed.username === '' &&
+        parsed.password === '' &&
+        parsed.hash === '',
+    ),
+    Effect.catch(() => Effect.succeed(false)),
+  );
 
 const withArchiveAdmission = (
   manifest: RegistryVersionManifest,
   services: ComparisonEvidenceServices | undefined,
 ): Effect.Effect<PackageTarball, PackageEvidenceFailure, HttpClient.HttpClient> => {
-  const inspect = getPackageTarball(manifest).pipe(Effect.mapError(toPackageEvidenceFailure));
+  const inspect = getPackageTarball(manifest, (files, sources) =>
+    analyzeInstallScripts(manifest.scripts ?? {}, files, sources),
+  ).pipe(Effect.mapError(toPackageEvidenceFailure));
+
   const admission = services?.archiveAdmission;
 
   return admission === undefined ? inspect : admission.withPermit(inspect);
 };
 
-export const cachedTarball = (
+export const cachedTarball = Effect.fnUntraced(function* (
   manifest: RegistryVersionManifest,
   services?: ComparisonEvidenceServices,
-): Effect.Effect<PackageTarball, PackageEvidenceFailure, HttpClient.HttpClient> => {
-  const validUrl = safeTarballUrl(manifest.dist.tarball);
+): Effect.fn.Return<PackageTarball, PackageEvidenceFailure, HttpClient.HttpClient> {
+  const validUrl = yield* safeTarballUrl(manifest.dist.tarball);
 
-  const inspect = (validUrl ? withArchiveAdmission(manifest, services) : getPackageTarball(manifest)).pipe(
-    Effect.mapError(toPackageEvidenceFailure),
-  );
+  const inspect = (
+    validUrl
+      ? withArchiveAdmission(manifest, services)
+      : getPackageTarball(manifest, (files, sources) => analyzeInstallScripts(manifest.scripts ?? {}, files, sources))
+  ).pipe(Effect.mapError(toPackageEvidenceFailure));
 
-  if (services?.cache === undefined || !validUrl) return inspect;
+  if (services?.cache === undefined || !validUrl) return yield* inspect;
 
-  return runCached(
+  return yield* runCached(
     'tarball',
     cacheKey('archive', {
       revision: ARCHIVE_INSPECTOR_REVISION,
       packageName: manifest.name,
+      scripts: manifest.scripts ?? {},
       integrity:
         manifest.dist.integrity === undefined
           ? { algorithm: 'sha1', value: manifest.dist.shasum }
@@ -65,4 +69,4 @@ export const cachedTarball = (
       isValid: Schema.is(PackageTarballSchema),
     },
   ).pipe(Effect.map((value) => ({ ...value, url: manifest.dist.tarball })));
-};
+});

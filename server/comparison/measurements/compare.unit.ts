@@ -21,7 +21,17 @@ function version(overrides: Partial<ComparisonVersion> = {}): ComparisonVersion 
       size: null,
       gzip: null,
     },
-    tarball: { status: 'unavailable', url: '', reasons: [], files: [], changelogs: [] },
+    tarball: {
+      status: 'unavailable',
+      url: '',
+      reasons: [],
+      files: [],
+      changelogs: [],
+      installInspection: {
+        analysis: { status: 'unavailable', reasons: [], uninspectedPackages: [], scripts: [], findings: [] },
+        files: [],
+      },
+    },
     ...overrides,
   };
 }
@@ -53,6 +63,10 @@ describe('measurement and advisory comparison rules', () => {
         url: '',
         reasons: ['truncated changelog'],
         changelogs: [],
+        installInspection: {
+          analysis: { status: 'unavailable', reasons: [], uninspectedPackages: [], scripts: [], findings: [] },
+          files: [],
+        },
         files: [
           { path: 'a.js', type: 'file', size: 120, sha256: 'abc' },
           { path: 'link', type: 'symlink', size: 9, sha256: null, linkTarget: 'a.js' },

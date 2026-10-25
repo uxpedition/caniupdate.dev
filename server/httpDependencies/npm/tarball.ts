@@ -2,11 +2,13 @@ import { Buffer } from 'node:buffer';
 import { createHash, timingSafeEqual, type Hash } from 'node:crypto';
 import { posix } from 'node:path';
 
-import { Effect } from 'effect';
+import { Array, Effect, Exit, Order } from 'effect';
 import { type Header } from 'tar-stream';
 
+import type { InstallInspection } from '../../../shared/comparison/evidence/installScripts.defs';
 import type { PackageTarball, PublishedFile, ShippedChangelog } from '../../../shared/comparison/evidence/tarball.defs';
 import type { RegistryVersionManifest } from '../../../shared/comparison/package/package.defs';
+import { ArchiveSources } from './archiveSources';
 import { inspectTarball, toTarballError, type TarParser } from './tarballStreaming';
 
 const MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024;
@@ -22,6 +24,11 @@ const MAX_CHANGELOG_TOTAL_BYTES = 1024 * 1024;
 const TIMEOUT_MS = 10_000;
 
 const CHANGELOG_NAME = /^(changelog|changes|history)(\.(md|markdown|txt|rst))?$/i;
+
+type InstallInspector = (
+  files: readonly PublishedFile[],
+  sources: ReadonlyMap<string, string>,
+) => Effect.Effect<InstallInspection>;
 
 type InspectedTarball = Omit<PackageTarball, 'url'>;
 
@@ -52,6 +59,7 @@ type EntryInspectionState = {
   tasks: Array<Promise<Outcome<EntryResult>>>;
   changelogBytes: number;
   firstTaskFailure: unknown;
+  sources: ArchiveSources;
 };
 
 function verifyIntegrity(body: Buffer, dist: Pick<RegistryVersionManifest['dist'], 'integrity' | 'shasum'>): void {
@@ -287,6 +295,7 @@ function createEntryState(packageRoot: string): EntryInspectionState {
     tasks: [],
     changelogBytes: 0,
     firstTaskFailure: undefined,
+    sources: new ArchiveSources(),
   };
 }
 
@@ -296,22 +305,35 @@ function changelogAllowance(file: PublishedFile, isChangelog: boolean, reserved:
   return Math.min(MAX_CHANGELOG_BYTES, MAX_CHANGELOG_TOTAL_BYTES - reserved, file.size);
 }
 
-function inspectEntry(
+const inspectEntry = Effect.fnUntraced(function* (
   entry: TarEntry,
   state: EntryInspectionState,
   parser: TarParser,
   signal: AbortSignal,
-): Promise<Outcome<EntryResult>> {
-  signal.throwIfAborted();
+): Effect.fn.Return<Promise<Outcome<EntryResult>>, Error> {
+  const file = yield* Effect.try({
+    try: () => {
+      signal.throwIfAborted();
 
-  if (state.paths.size >= MAX_ENTRIES) throw new Error('Tarball exceeds entry limit');
-  const file = inspectHeader(entry.header, state);
+      if (state.paths.size >= MAX_ENTRIES) throw new Error('Tarball exceeds entry limit');
+      const file = inspectHeader(entry.header, state);
 
-  if (state.paths.has(file.path)) throw new Error('Duplicate tarball path');
-  state.paths.add(file.path);
+      if (state.paths.has(file.path)) throw new Error('Duplicate tarball path');
+      state.paths.add(file.path);
+
+      return file;
+    },
+    catch: toTarballError,
+  });
+
   const isChangelog = file.type === 'file' && CHANGELOG_NAME.test(posix.basename(file.path));
-  const allowance = changelogAllowance(file, isChangelog, state.changelogBytes);
-  state.changelogBytes += allowance;
+
+  const allowance = Math.max(
+    changelogAllowance(file, isChangelog, state.changelogBytes),
+    yield* state.sources.allowance(file),
+  );
+
+  if (isChangelog) state.changelogBytes += allowance;
 
   const task: Promise<Outcome<EntryResult>> = inspectContent(entry, file, allowance, signal).then(
     ({ text, sha256 }): Outcome<EntryResult> => ({
@@ -327,24 +349,35 @@ function inspectEntry(
   );
 
   return task;
-}
+});
 
-async function collectEntryResults(
+const collectEntryResults = Effect.fnUntraced(function* (
   parser: TarParser,
   signal: AbortSignal,
   state: EntryInspectionState,
-): Promise<Array<Outcome<EntryResult>>> {
-  for await (const entry of parser) state.tasks.push(inspectEntry(entry, state, parser, signal));
+): Effect.fn.Return<Array<Outcome<EntryResult>>, Error> {
+  const iterator = parser[Symbol.asyncIterator]();
 
-  return Promise.all(state.tasks);
-}
+  for (;;) {
+    const next = yield* Effect.tryPromise({ try: () => iterator.next(), catch: toTarballError });
 
-function finalizeEntries(results: Array<Outcome<EntryResult>>, state: EntryInspectionState): InspectionResult {
+    if (next.done) break;
+    state.tasks.push(yield* inspectEntry(next.value, state, parser, signal));
+  }
+
+  return yield* Effect.tryPromise({ try: () => Promise.all(state.tasks), catch: toTarballError });
+});
+
+const finalizeEntries = Effect.fnUntraced(function* (
+  results: Array<Outcome<EntryResult>>,
+  state: EntryInspectionState,
+): Effect.fn.Return<Omit<InspectionResult, 'installInspection'>, Error> {
   for (const result of results) {
-    if (!result.ok) throw result.cause;
+    if (!result.ok) return yield* Effect.fail(toTarballError(result.cause));
     const { file, text, isChangelog } = result.value;
 
     if (file.path) state.files.push(file);
+    yield* state.sources.capture(file, text);
 
     if (isChangelog) {
       const changelog = decodeChangelog(file, text, state.reasons);
@@ -353,25 +386,39 @@ function finalizeEntries(results: Array<Outcome<EntryResult>>, state: EntryInspe
     }
   }
 
-  state.files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  state.changelogs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const byPath = Order.mapInput(Order.String, (file: PublishedFile | ShippedChangelog) => file.path);
 
-  return { files: state.files, changelogs: state.changelogs, reasons: [...state.reasons] };
-}
+  return {
+    files: Array.sort(state.files, byPath),
+    changelogs: Array.sort(state.changelogs, byPath),
+    reasons: Array.fromIterable(state.reasons),
+  };
+});
 
-async function inspectEntries(parser: TarParser, signal: AbortSignal, packageRoot: string): Promise<InspectionResult> {
+const inspectEntries = Effect.fnUntraced(function* (
+  parser: TarParser,
+  signal: AbortSignal,
+  packageRoot: string,
+  inspectInstall: InstallInspector,
+): Effect.fn.Return<InspectionResult, Error> {
   const state = createEntryState(packageRoot);
 
-  try {
-    const results = await collectEntryResults(parser, signal, state);
+  return yield* Effect.gen(function* () {
+    const results = yield* collectEntryResults(parser, signal, state);
+    const inspected = yield* finalizeEntries(results, state);
+    const installInspection = yield* inspectInstall(inspected.files, state.sources.files);
 
-    return finalizeEntries(results, state);
-  } catch (cause) {
-    parser.destroy(toTarballError(state.firstTaskFailure ?? cause));
-    await Promise.all(state.tasks);
-    throw state.firstTaskFailure ?? cause;
-  }
-}
+    return { ...inspected, installInspection };
+  }).pipe(
+    Effect.onExit((exit) => {
+      if (Exit.isSuccess(exit)) return Effect.void;
+
+      return Effect.sync(() => parser.destroy(toTarballError(state.firstTaskFailure ?? exit.cause))).pipe(
+        Effect.andThen(Effect.promise(() => Promise.all(state.tasks))),
+      );
+    }),
+  );
+});
 
 const unavailableTarball = (url: string, cause: unknown): PackageTarball => ({
   url,
@@ -379,12 +426,23 @@ const unavailableTarball = (url: string, cause: unknown): PackageTarball => ({
   reasons: [cause instanceof Error ? cause.message : 'Tarball inspection failed'],
   files: [],
   changelogs: [],
+  installInspection: {
+    analysis: {
+      status: 'unavailable',
+      reasons: ['The package archive could not be inspected'],
+      uninspectedPackages: [],
+      scripts: [],
+      findings: [],
+    },
+    files: [],
+  },
 });
 
 const inspectPackageTarball = (
   url: string,
   dist: RegistryVersionManifest['dist'],
   packageRoot: string,
+  inspectInstall: InstallInspector,
 ): Effect.Effect<InspectedTarball, Error> =>
   Effect.tryPromise({
     try: async (signal) => {
@@ -395,23 +453,30 @@ const inspectPackageTarball = (
     },
     catch: toTarballError,
   }).pipe(
-    Effect.flatMap((body) => inspectTarball(body, (parser, signal) => inspectEntries(parser, signal, packageRoot))),
+    Effect.flatMap((body) =>
+      // The stream lifecycle adapter accepts a Promise callback, not an Effect.
+      inspectTarball(body, (parser, signal) =>
+        Effect.runPromise(inspectEntries(parser, signal, packageRoot, inspectInstall), { signal }),
+      ),
+    ),
     Effect.map((result): InspectedTarball => ({ status: result.reasons.length ? 'partial' : 'available', ...result })),
     Effect.timeout(TIMEOUT_MS),
   );
 
-export const getPackageTarball = (manifest: RegistryVersionManifest): Effect.Effect<PackageTarball> => {
+export const getPackageTarball = Effect.fnUntraced(function* (
+  manifest: RegistryVersionManifest,
+  inspectInstall: InstallInspector,
+): Effect.fn.Return<PackageTarball> {
   const url = manifest.dist.tarball;
-  let normalizedUrl: string;
 
-  try {
-    normalizedUrl = normalizeSafeTarballUrl(url);
-  } catch (cause) {
-    return Effect.succeed(unavailableTarball(url, cause));
-  }
-
-  return inspectPackageTarball(normalizedUrl, manifest.dist, posix.basename(manifest.name)).pipe(
+  return yield* Effect.try({
+    try: () => normalizeSafeTarballUrl(url),
+    catch: toTarballError,
+  }).pipe(
+    Effect.flatMap((normalizedUrl) =>
+      inspectPackageTarball(normalizedUrl, manifest.dist, posix.basename(manifest.name), inspectInstall),
+    ),
     Effect.map((result) => ({ ...result, url })),
     Effect.catch((cause) => Effect.succeed(unavailableTarball(url, cause))),
   );
-};
+});

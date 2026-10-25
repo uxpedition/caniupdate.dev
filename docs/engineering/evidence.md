@@ -117,6 +117,10 @@ Analysis is a cold Effect computation: each run owns its traversal state, caches
 
 Pure classification and ordering use Effect data utilities. Acorn's synchronous visitor is the only native execution adapter; it runs composed visitors without retaining the walker's reused ancestor array.
 
+Archive inspection temporarily captures complete UTF-8 source files: at most 128 files, 256 KiB per file, and 2 MiB in total. It selects `.js`, `.cjs`, `.mjs`, `.json`, and `.gyp` regular files; only files reached from an install command are analyzed. Full source and syntax trees are discarded after inspection.
+
+Each archive owns an Effect reference for source-capture reservations. Entry collection, source decoding, and analysis compose in the inspection workflow. The Promise adapter passes through cancellation, and failed or interrupted inspections destroy the parser and join outstanding entry tasks.
+
 Each result keeps at most 64 reached-file fingerprints, 64 findings, 64 uninspected package names, and 32 other coverage reasons. Imports from the same package share one package entry, even when their subpaths differ. A finding has a package-relative path, line numbers, and an excerpt of at most 600 characters. Command expansion, import tracing, and syntax-tree traversal also have work limits. Unsupported shell syntax, external modules, computed imports, parsing failures, missing files, and reached limits make coverage incomplete rather than silently meaning “nothing found.” Install coverage is separate from archive-inventory coverage.
 
 ### OSV advisories
@@ -178,18 +182,18 @@ The [cache lifetime decision](adrs/evidence-cache-lifetimes.md) explains the fre
 
 The object supplies cache and capacity-check services to the collector; the collector has no process-global cache. Comparison evidence keys are SHA-256 digests of JSON-serialized scope inputs. The metadata index uses a versioned key containing the package name. Each package object's SQLite cache reuses that package's provider results and archive inspections across users and frontend instances.
 
-| Evidence             | Key inputs                                                                                                                | Expiry and write rule                                         |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| npm metadata index   | `package-metadata-v1`, package name                                                                                       | 1,800,000 ms (30 minutes); schema-valid matching package only |
-| npm manifest         | `comparison-evidence-v1`, package name, requested version/tag                                                             | 300,000 ms; every schema-valid manifest                       |
-| OSV pair             | `comparison-evidence-v1`, package name, resolved from/to versions                                                         | 300,000 ms; only when both sides are `available`              |
-| Bundlephobia version | `comparison-evidence-v1`, package name, resolved version                                                                  | 300,000 ms; only `available`                                  |
-| GitHub release notes | `comparison-evidence-v1`, package name and both full resolved manifests                                                   | 300,000 ms; only `available`                                  |
-| Inspected archive    | `archive-inspector-v3`, package name, and integrity policy (exact SRI string when present, otherwise SHA-1 shasum policy) | No expiry; `available` and `partial` only                     |
+| Evidence             | Key inputs                                                                                                                                                      | Expiry and write rule                                         |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| npm metadata index   | `package-metadata-v1`, package name                                                                                                                             | 1,800,000 ms (30 minutes); schema-valid matching package only |
+| npm manifest         | `comparison-evidence-v1`, package name, requested version/tag                                                                                                   | 300,000 ms; every schema-valid manifest                       |
+| OSV pair             | `comparison-evidence-v1`, package name, resolved from/to versions                                                                                               | 300,000 ms; only when both sides are `available`              |
+| Bundlephobia version | `comparison-evidence-v1`, package name, resolved version                                                                                                        | 300,000 ms; only `available`                                  |
+| GitHub release notes | `comparison-evidence-v1`, package name and both full resolved manifests                                                                                         | 300,000 ms; only `available`                                  |
+| Inspected archive    | `archive-inspector-v4-install-analysis-v4`, package name, declared scripts, and integrity policy (exact SRI string when present, otherwise SHA-1 shasum policy) | No expiry; `available` and `partial` only                     |
 
 Mutable comparison evidence expires after five minutes; the package metadata index expires after thirty minutes. Expired entries are deleted on cache access. Errors and non-cacheable partial/unavailable results are not saved. Later explicit requests can retry failed refreshes.
 
-Archive keys follow verified content identity and package identity, not a version or tarball URL. Package identity constrains the accepted archive root. Matching integrity policies within a package can share a successful/partial inspection; the returned value gets the caller's manifest URL. Failed inspections are retried. SRI and SHA-1 policies cannot collide. A changed inspector revision creates a new key for changed inspection rules.
+Archive keys follow verified content identity, package identity, and declared scripts, not a version or tarball URL. Package identity constrains the accepted archive root. Matching integrity policies and scripts within a package can share a successful/partial inspection; the returned value gets the caller's manifest URL. Failed inspections are retried. SRI and SHA-1 policies cannot collide. A changed inspector revision creates a new key for changed inspection rules.
 
 Archive cache revisions do not invalidate stored AI briefings. Briefings remain tied to the evidence packet used to generate them; fresh measurements can contain evidence that a stored briefing does not describe.
 

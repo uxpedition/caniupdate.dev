@@ -20,7 +20,17 @@ function version(overrides: Partial<ComparisonVersion> = {}): ComparisonVersion 
       size: null,
       gzip: null,
     },
-    tarball: { status: 'unavailable', url: '', reasons: [], files: [], changelogs: [] },
+    tarball: {
+      status: 'unavailable',
+      url: '',
+      reasons: [],
+      files: [],
+      changelogs: [],
+      installInspection: {
+        analysis: { status: 'unavailable', reasons: [], uninspectedPackages: [], scripts: [], findings: [] },
+        files: [],
+      },
+    },
     ...overrides,
   };
 }

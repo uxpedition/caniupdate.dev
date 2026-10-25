@@ -6,7 +6,11 @@ import { pack, type Header } from 'tar-stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { RegistryVersionManifest } from '../../../shared/comparison/package/package.defs';
-import { getPackageTarball } from './tarball';
+import { analyzeInstallScripts } from '../../comparison/installScripts/analyze';
+import { getPackageTarball as inspectPackageTarball } from './tarball';
+
+const getPackageTarball = (manifest: RegistryVersionManifest) =>
+  inspectPackageTarball(manifest, (files, sources) => analyzeInstallScripts(manifest.scripts ?? {}, files, sources));
 
 async function archive(
   entries: { name: string; body?: string | Uint8Array; type?: Header['type']; linkname?: string }[],
@@ -53,6 +57,55 @@ function getPair(from: RegistryVersionManifest, to: RegistryVersionManifest) {
 }
 
 describe('published tarball evidence', () => {
+  it('keeps the verified inventory when install source exceeds its separate capture limit', async () => {
+    const body = await archive([{ name: 'package/install.js', body: `/*${'x'.repeat(256 * 1024)}*/` }]);
+    const metadata = { ...manifest(body), scripts: { postinstall: 'node install.js' } };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(body)),
+    );
+    const result = await Effect.runPromise(getPackageTarball(metadata));
+    expect(result.status).toBe('available');
+    expect(result.files).toEqual([expect.objectContaining({ path: 'install.js', size: 256 * 1024 + 4 })]);
+    expect(result.installInspection.analysis.status).toBe('partial');
+    expect(result.installInspection.analysis.findings).toEqual([]);
+  });
+
+  it('keeps an invalid-UTF8 install file as an analysis gap, not a failed archive', async () => {
+    const body = await archive([{ name: 'package/install.js', body: Buffer.from([255, 254]) }]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(body)),
+    );
+
+    const result = await Effect.runPromise(
+      getPackageTarball({ ...manifest(body), scripts: { install: 'node install.js' } }),
+    );
+
+    expect(result.status).toBe('available');
+    expect(result.installInspection.analysis).toMatchObject({ status: 'partial', findings: [] });
+  });
+
+  it('reports install-time calls from shipped code without executing that code', async () => {
+    const body = await archive([
+      {
+        name: 'package/install.js',
+        body: 'const fs = require("node:fs");\nfs.writeFileSync("built.txt", "data");\nthrow new Error("never execute");',
+      },
+    ]);
+
+    const metadata = { ...manifest(body), scripts: { postinstall: 'node install.js' } };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(body)),
+    );
+    const result = await Effect.runPromise(getPackageTarball(metadata));
+    expect(result).toHaveProperty(
+      'installInspection.analysis.findings',
+      expect.arrayContaining([expect.objectContaining({ kind: 'file-write', path: 'install.js', line: 2 })]),
+    );
+  });
+
   it('starts both downloads before either finishes and inspects bytes without executing scripts', async () => {
     const body = await archive([
       { name: 'package/index.js', body: 'throw new Error("must not execute");' },
@@ -101,6 +154,7 @@ describe('published tarball evidence', () => {
       { name: `${root}/current`, type: 'symlink', linkname: 'index.d.ts' },
       { name: `${root}/copy`, type: 'link', linkname: `${root}/index.d.ts` },
     ]);
+
     const metadata = manifest(body);
     metadata.name = '@example/widget';
     metadata.dist.tarball = 'https://registry.npmjs.org/@example/widget/-/widget-1.0.0.tgz';

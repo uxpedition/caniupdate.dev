@@ -1,5 +1,7 @@
 import { Schema } from 'effect';
 
+import { InstallInspectionSchema } from './installScripts.defs';
+
 const PublishedFileSchema = Schema.Struct({
   path: Schema.String,
   type: Schema.Literals(['file', 'directory', 'symlink', 'link']),
@@ -24,6 +26,7 @@ export const PackageTarballSchema = Schema.Struct({
   url: Schema.String,
   files: Schema.Array(PublishedFileSchema),
   changelogs: Schema.Array(ShippedChangelogSchema),
+  installInspection: InstallInspectionSchema,
 });
 
 export type PackageTarball = typeof PackageTarballSchema.Type;
