@@ -190,7 +190,7 @@ nub run test
 
 `prepare` generates Nuxt configuration and installs Git hooks. Type checking covers Nuxt and both standalone Workers. Unit tests sit beside their implementation with the `.unit.ts` suffix. Use `nub run test:watch` while iterating.
 
-`lint:check` and `format:check` leave files unchanged. The `lint` and `format` scripts modify files; use them intentionally. Both lint commands fail on warnings as well as errors, so a successful run has no remaining diagnostics. Fix the reported code rather than suppressing a rule or reducing its severity.
+`lint:check` and `format:check` leave files unchanged. The `lint` and `format` scripts modify files; use them intentionally. Lint rule severities are defined in [`.oxlintrc.json`](../../../.oxlintrc.json). Fix the reported code rather than suppressing a rule or reducing its severity.
 
 Git hooks check lint, types, formatting, and commit messages. They do not run tests; run those separately.
 
