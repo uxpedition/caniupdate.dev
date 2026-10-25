@@ -205,7 +205,7 @@ non-interruptible. A newer commit therefore cannot interrupt a started delivery 
 
 Jobs use a pinned Node image, Nub from the `packageManager` pin, and `nub ci`. They run the existing non-fixing package checks without changing lint severities or adding a coverage threshold.
 
-The required `merge-request-title` job checks `CI_MERGE_REQUEST_TITLE` with `nub run commitlint`, using the same [`commitlint.config.mjs`](../../../commitlint.config.mjs) as the commit-message hook. Use a Conventional Commit title, such as `fix(comparison): preserve missing evidence`, so it can become the squash commit subject. This job runs only in MR pipelines; it does not check every commit on the source branch.
+The required `quality` job checks `CI_MERGE_REQUEST_TITLE` with `nub run commitlint` in MR pipelines, using the same [`commitlint.config.mjs`](../../../commitlint.config.mjs) as the commit-message hook. It reuses the job's dependency installation before running the other quality checks. Use a Conventional Commit title, such as `fix(comparison): preserve missing evidence`, so it can become the squash commit subject. Push pipelines skip title validation, and MR pipelines do not check every commit on the source branch.
 
 After editing a title, start a new pipeline from the MR's **Pipelines → Run pipeline** action before merging. A title edit alone does not trigger an [MR pipeline](https://docs.gitlab.com/ci/pipelines/merge_request_pipelines/). A passing pipeline validates the title supplied to that pipeline, not later title edits. Keep the final squash commit subject consistent with the validated title.
 

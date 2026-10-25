@@ -23,18 +23,14 @@ workflow:
   stage: verify
   interruptible: true
 
-merge-request-title:
-  extends: .validation
-  timeout: 5m
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-  script:
-    - printf '%s\n' "$CI_MERGE_REQUEST_TITLE" | nub run commitlint --verbose
-
 quality:
   extends: .validation
   timeout: 5m
   script:
+    - |
+      if [ "$CI_PIPELINE_SOURCE" = "merge_request_event" ]; then
+        printf '%s\n' "$CI_MERGE_REQUEST_TITLE" | nub run commitlint --verbose
+      fi
     - nub run type-check
     - nub run lint:check
     - nub run format:check
