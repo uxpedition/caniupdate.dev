@@ -38,6 +38,7 @@ const measuredVersion = (version: string): MeasuredPackageVersion => ({
   installScriptCommands: {},
   moduleFormat: {},
   bundledTypes: { status: 'available', matchedTargetCount: 0 },
+  installAnalysis: { status: 'available', reasons: [], uninspectedPackages: [], scripts: [], findings: [] },
   vulnerabilities: { status: 'unavailable', count: null, advisories: [] },
   bundleSize: {
     provider: 'bundlephobia',
@@ -60,6 +61,7 @@ const measurementResponse = (): PackageMeasurementsResponse => ({
   from: measuredVersion('1.0.0'),
   to: measuredVersion('2.0.0'),
   comparison: {
+    installImplementation: { status: 'available', changedFiles: [] },
     sizes: {
       unpacked: {
         status: 'unavailable',

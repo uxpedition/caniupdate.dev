@@ -284,6 +284,7 @@ const toTarballSummary = ({ status, reasons, url, files, changelogs }: PackageTa
 const toMeasuredVersion = ({ tarball, ...version }: ComparisonVersion): MeasuredPackageVersion => ({
   ...version,
   bundledTypes: getBundledTypeEvidence(version.moduleFormat, tarball),
+  installAnalysis: tarball.installInspection.analysis,
   tarball: toTarballSummary(tarball),
 });
 

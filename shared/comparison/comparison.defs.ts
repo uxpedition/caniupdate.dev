@@ -1,6 +1,7 @@
 import { Schema } from 'effect';
 
 import { PackageBundleSizeSchema, type PackageBundleSize } from './evidence/bundlephobia.defs';
+import { InstallAnalysisSchema, InstallImplementationComparisonSchema } from './evidence/installScripts.defs';
 import { PackageAdvisorySchema, PackageVulnerabilitiesSchema, type PackageVulnerabilities } from './evidence/osv.defs';
 import { PackageTarballSchema, type PackageTarball } from './evidence/tarball.defs';
 import { BundledTypeEvidenceSchema } from './evidence/types.defs';
@@ -189,6 +190,7 @@ const MeasurementComparisonSchema = Schema.Struct({
     }),
   }),
   advisories: AdvisoryComparisonSchema,
+  installImplementation: InstallImplementationComparisonSchema,
 });
 
 const TarballSummarySchema = Schema.Struct({
@@ -205,6 +207,7 @@ const MeasuredPackageVersionSchema = Schema.Struct({
   bundleSize: PackageBundleSizeSchema,
   tarball: TarballSummarySchema,
   bundledTypes: BundledTypeEvidenceSchema,
+  installAnalysis: InstallAnalysisSchema,
 });
 
 /**

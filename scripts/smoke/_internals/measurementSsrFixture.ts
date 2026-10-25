@@ -13,6 +13,7 @@ const version = (name, release, bytes, partial) => ({
   licenses: [], deprecated: false, engines: {}, dependencies: {}, peerDependencies: {},
   optionalDependencies: {}, optionalPeers: [], installScripts: [], installScriptCommands: {}, moduleFormat: {},
   bundledTypes: { status: partial ? 'partial' : 'available', matchedTargetCount: 0 },
+  installAnalysis: { status: partial ? 'partial' : 'available', reasons: [], uninspectedPackages: [], scripts: [], findings: [] },
   vulnerabilities: partial ? { status: 'unavailable', count: null, advisories: [] }
     : { status: 'available', count: 0, advisories: [] },
   bundleSize: { provider: 'bundlephobia', status: 'available', name, version: release,
@@ -35,6 +36,7 @@ export class Evidence extends DurableObject {
     return Response.json({ packageName,
       from: version(packageName, from, 12340, partial), to: version(packageName, to, 24680, partial),
       comparison: {
+        installImplementation: { status: partial ? 'partial' : 'available', changedFiles: [] },
         sizes: { unpacked: { ...size(10000, 20000), sources: { from: 'registry', to: 'registry' } },
           bundle: { provider: 'bundlephobia', methodology: 'provider-estimate',
             minified: size(12340, 24680), gzip: size(6170, 12340) } },

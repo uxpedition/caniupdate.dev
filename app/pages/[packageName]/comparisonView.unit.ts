@@ -43,6 +43,7 @@ const makeMeasuredVersion = (
 ): MeasuredPackageVersion => ({
   ...makeDeclaredVersion(version),
   bundledTypes: { status: 'available', matchedTargetCount: 0 },
+  installAnalysis: { status: 'available', reasons: [], uninspectedPackages: [], scripts: [], findings: [] },
   vulnerabilities: { status: 'available', count: 0, advisories: [] },
   bundleSize: {
     provider: 'bundlephobia',
@@ -82,6 +83,7 @@ const declarationsComparison: DeclarationComparison = {
 };
 
 const measurementsComparison: MeasurementComparison = {
+  installImplementation: { status: 'available', changedFiles: [] },
   sizes: {
     unpacked: {
       status: 'available',

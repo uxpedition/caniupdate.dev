@@ -311,6 +311,46 @@ describe('comparison evidence cache services', () => {
     expect([...cache.loaderCalls].filter(([key]) => key.startsWith('archive:'))).toHaveLength(1);
   });
 
+  it('keeps script-dependent analysis distinct for identical archive bytes and reuses compact results', async () => {
+    const body = await validTarball();
+    const shasum = createHash('sha1').update(body).digest('hex');
+    registry.json.mockImplementation(async (path) => {
+      const version = path.endsWith('/1.0.0') ? '1.0.0' : '2.0.0';
+      const scripts: Record<string, string> = version === '1.0.0' ? { postinstall: 'node index.js' } : {};
+
+      return {
+        name: 'widget',
+        version,
+        scripts,
+        dist: { tarball: `https://registry.npmjs.org/widget/-/widget-${version}.tgz`, shasum },
+      };
+    });
+    let downloads = 0;
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = new URL(new Request(input, init).url);
+
+      if (url.hostname === 'registry.npmjs.org') {
+        downloads++;
+
+        return new Response(new Uint8Array(body));
+      }
+
+      if (url.hostname === 'api.osv.dev') return Response.json({ results: [{}, {}] });
+
+      return new Response(null, { status: 503 });
+    });
+    const services = { cache: new RecordingCache() };
+    const result = await startMeasurements('1.0.0', '2.0.0', services, 'widget');
+    expect(result.from.installAnalysis.scripts).toEqual([
+      { name: 'postinstall', command: 'node index.js', origin: 'declared', files: ['index.js'] },
+    ]);
+    expect(result.to.installAnalysis.scripts).toEqual([]);
+    const reused = await startMeasurements('1.0.0', '2.0.0', services, 'widget');
+    expect(reused.from.installAnalysis).toEqual(result.from.installAnalysis);
+    expect(downloads).toBe(2);
+    expect(JSON.stringify(result)).not.toMatch(/sha256|installInspection|hello world/);
+  });
+
   it('keys archives by exact SRI policy instead of falling back to SHA-1', async () => {
     let integrity: string | undefined = 'malformed-sri';
     registry.json.mockImplementation(async (path) => {

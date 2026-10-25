@@ -83,6 +83,7 @@ const makeMeasuredVersion = (version: string, omitted: string[] = []): MeasuredP
   return {
     ...makeDeclaredVersion(version),
     bundledTypes: { status: 'available', matchedTargetCount: 0 },
+    installAnalysis: { status: 'available', reasons: [], uninspectedPackages: [], scripts: [], findings: [] },
     vulnerabilities: { status: 'available', count: 0, advisories: [] },
     bundleSize: omitted.length === 0 ? bundleSize : { ...bundleSize, ignoredMissingDependencies: omitted },
     tarball: {
@@ -96,6 +97,7 @@ const makeMeasuredVersion = (version: string, omitted: string[] = []): MeasuredP
 };
 
 const measurementComparison: MeasurementComparison = {
+  installImplementation: { status: 'available', changedFiles: [] },
   sizes: {
     unpacked: {
       status: 'available',

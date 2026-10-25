@@ -8,6 +8,8 @@ import type {
 } from '#shared/comparison/comparison.defs';
 import type { PackageAdvisory, PackageVulnerabilities } from '#shared/comparison/evidence/osv.defs';
 
+import { compareInstallImplementation } from '../installScripts/compare';
+
 type UnpackedSize = { value: number | null; source: 'registry' | 'tarball' | null };
 
 function unpackedSize(version: ComparisonVersion): UnpackedSize {
@@ -198,5 +200,6 @@ export function compareMeasurements(from: ComparisonVersion, to: ComparisonVersi
   return {
     sizes: compareSizes(from, to),
     advisories: compareAdvisories(from.vulnerabilities, to.vulnerabilities),
+    installImplementation: compareInstallImplementation(from.tarball.installInspection, to.tarball.installInspection),
   };
 }
