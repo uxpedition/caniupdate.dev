@@ -40,6 +40,8 @@
     "@nuxt/fonts": "^0.14.0",
     "@pinojs/redact": "0.4.0",
     "@tanstack/vue-query": "^5.102.8",
+    "acorn": "8.17.0",
+    "acorn-walk": "8.3.5",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",

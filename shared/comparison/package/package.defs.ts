@@ -127,6 +127,16 @@ export const RegistryVersionManifestSchema = Schema.Struct({
 
 export type RegistryVersionManifest = typeof RegistryVersionManifestSchema.Type;
 
+// An unused manifest field must not prevent resolving a different, valid mapping.
+export const PublishedModuleManifestSchema = Schema.Struct({
+  name: Schema.optionalKey(Schema.Json),
+  main: Schema.optionalKey(Schema.Json),
+  exports: Schema.optionalKey(Schema.Json),
+  imports: Schema.optionalKey(Schema.Json),
+});
+
+export type PublishedModuleManifest = typeof PublishedModuleManifestSchema.Type;
+
 const INSTALL_SCRIPT_NAMES = ['preinstall', 'install', 'postinstall'] as const;
 
 const ParsedPackageDistSchema = Schema.Struct({

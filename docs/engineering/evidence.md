@@ -103,6 +103,22 @@ Each version’s [bundled-type result](../../shared/comparison/evidence/types.de
 
 Only archive summaries and these derived counts reach the measurements response. Full inventories and per-file hashes stay internal. Selected changelog paths may appear as briefing source labels; bounded excerpts may reach the browser when cited. The [changelog source builder](../../server/comparison/briefing/evidence/changelog.ts), [briefing source selection](../../server/comparison/briefing/evidence/build.ts), and [source panel](../../app/components/comparison/EvidencePanel.vue) preserve and display those fields.
 
+### Install-script analysis
+
+The [analyzer](../../server/comparison/installScripts/analyze.ts) starts from `preinstall`, `install`, and `postinstall` in the published manifest. It follows supported literal Node commands, package-local `npm run` references, and literal JavaScript imports or `require` calls. A root `binding.gyp` also records npm's implicit native build when neither `preinstall` nor `install` is declared.
+
+Literal imports can use relative paths, the package's own name, or private `#` aliases. The [resolver](../../server/comparison/installScripts/resolve.ts) reads captured `package.json` files and follows [Node's package mappings](https://nodejs.org/api/packages.html#self-referencing-a-package-using-its-name). It uses the nearest package scope, exact entries before matching patterns, and the first matching condition in declaration order. Conditions use Node defaults and the call's `import` or `require` mode; custom runtime flags are not evaluated. CommonJS directory imports can use a local `main` entry or index file.
+
+Resolution stays inside the inspected archive and excludes dependency directories and linked files. A private alias pointing to another package records that dependency without following it. Missing metadata, blocked mappings, and unresolved files leave explicit coverage gaps. Import resolution has an 8,192-step work budget and a 32-level condition limit.
+
+Acorn parses JavaScript without executing it. Binding and scope checks distinguish known Node APIs from shadowed names. Findings describe network requests, other programs, file access, environment reads, runtime-created code, and native builds. They are code patterns, not proof that a branch or function runs during installation. The analyzer does not evaluate application logic or inspect dependencies.
+
+Analysis is a cold Effect computation: each run owns its traversal state, caches, and work budgets. Resolver helpers share that run's manifest cache and resolution budget. Shell syntax, parser failures, and resolution limits use typed failure handling to preserve incomplete coverage.
+
+Pure classification and ordering use Effect data utilities. Acorn's synchronous visitor is the only native execution adapter; it runs composed visitors without retaining the walker's reused ancestor array.
+
+Each result keeps at most 64 reached-file fingerprints, 64 findings, 64 uninspected package names, and 32 other coverage reasons. Imports from the same package share one package entry, even when their subpaths differ. A finding has a package-relative path, line numbers, and an excerpt of at most 600 characters. Command expansion, import tracing, and syntax-tree traversal also have work limits. Unsupported shell syntax, external modules, computed imports, parsing failures, missing files, and reached limits make coverage incomplete rather than silently meaning “nothing found.” Install coverage is separate from archive-inventory coverage.
+
 ### OSV advisories
 
 OSV supplies security advisories. The collector sends one `/v1/querybatch` request for both resolved versions, then fetches details once per unique advisory ID across the pair. At most five detail requests run concurrently.
@@ -259,5 +275,4 @@ The related test suites are:
 - Manifests, cache keys, and provider scheduling: [collect.unit.ts](../../server/comparison/collect.unit.ts).
 - Provider outcomes: [bundleSize.unit.ts](../../server/comparison/measurements/bundleSize.unit.ts), [vulnerabilities.unit.ts](../../server/comparison/measurements/vulnerabilities.unit.ts), and [releaseNotes.unit.ts](../../server/comparison/evidence/releaseNotes.unit.ts).
 - Archive validation and limits: [tarball.unit.ts](../../server/httpDependencies/npm/tarball.unit.ts) and [tarballStreaming.unit.ts](../../server/httpDependencies/npm/tarballStreaming.unit.ts).
-- Binding protocol and failures: [evidenceClient.unit.ts](../../server/api/package/[packageName]/compare/_internals/evidenceClient.unit.ts).
-- Capacity and cache-storage failures: [admission.unit.ts](../../workers/evidence/admission.unit.ts) and [store.workerd.unit.ts](../../workers/evidence/store.workerd.unit.ts).
+- Binding p
