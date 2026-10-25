@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, type Schema } from 'effect';
 import { describe, expect, it } from 'vitest';
 
 import type { GitLabClient } from './gitlabApi.ts';
@@ -7,13 +7,21 @@ import { assertReleaseTagContext, createReleaseTag, type ReleaseTagInput } from 
 import { ReleaseAutomationFailure } from './version.ts';
 
 const COMMIT_SHA = 'a'.repeat(40);
+
 const OTHER_SHA = 'b'.repeat(40);
+
 const PIPELINE_ID = '4711';
+
 const JOB_ID = '991';
+
 const CHILD_PIPELINE_ID = 4712;
+
 const VERSION = '1.2.3';
+
 const TAG = `v${VERSION}`;
+
 const DEPLOY_KEY_ID = 77;
+
 const MESSAGE = releaseTagMessage({ version: VERSION, tag: TAG, commitSha: COMMIT_SHA, pipelineId: PIPELINE_ID });
 
 type ApiCall = { readonly path: string; readonly allowMissing?: boolean };
@@ -26,57 +34,57 @@ class ReleaseTagApi implements GitLabClient {
   pipeline = { id: Number(PIPELINE_ID), status: 'running', source: 'push', ref: 'main', sha: COMMIT_SHA };
   stagePipeline = { id: CHILD_PIPELINE_ID, status: 'success', source: 'parent_pipeline', ref: 'main', sha: COMMIT_SHA };
   releaseJobStatus = 'running';
-  parentJobs: unknown[] = [
+  parentJobs = [
     { name: 'quality', status: 'success', allow_failure: false },
     { name: 'unit-tests', status: 'success', allow_failure: false },
     { name: 'build-smoke', status: 'success', allow_failure: false },
     { name: 'smoke:built', status: 'success', allow_failure: false },
   ];
-  stageJobs: unknown[] = [
+  stageJobs = [
     { name: 'deploy:stage', status: 'success', allow_failure: false },
     { name: 'verify:stage: [chromium]', status: 'success', allow_failure: false },
     { name: 'verify:stage: [firefox]', status: 'success', allow_failure: false },
   ];
-  latestTags: unknown[] = [{ name: 'v1.2.2', commit: { id: OTHER_SHA } }];
-  protectedTagRules: unknown[] = [
+  latestTags = [{ name: 'v1.2.2', commit: { id: OTHER_SHA } }];
+  protectedTagRules = [
     {
       name: 'v*',
       create_access_levels: [{ deploy_key_id: DEPLOY_KEY_ID, access_level: 40, user_id: null, group_id: null }],
     },
   ];
-  existingTag: unknown | null = null;
+  existingTag: Schema.Json = null;
 
-  request(path: string, allowMissing = false): Effect.Effect<unknown, ReleaseAutomationFailure> {
-    const api = this;
-
-    return Effect.gen(function* () {
-      yield* Effect.sync(() => api.calls.push({ path, allowMissing }));
+  request(path: string, allowMissing = false): Effect.Effect<Schema.Json, ReleaseAutomationFailure> {
+    return Effect.gen({ self: this }, function* (): Effect.fn.Return<Schema.Json, ReleaseAutomationFailure> {
+      yield* Effect.sync(() => this.calls.push({ path, allowMissing }));
 
       if (path === '/repository/branches/main') {
-        return { name: 'main', protected: api.mainProtected, commit: { id: api.mainSha } };
+        return { name: 'main', protected: this.mainProtected, commit: { id: this.mainSha } };
       }
 
-      if (path === `/pipelines/${PIPELINE_ID}`) return api.pipeline;
+      if (path === `/pipelines/${PIPELINE_ID}`) return this.pipeline;
 
       if (path === `/jobs/${JOB_ID}`) {
         return {
           id: Number(JOB_ID),
           name: 'release:tag',
-          status: api.releaseJobStatus,
+          status: this.releaseJobStatus,
           pipeline: { id: Number(PIPELINE_ID) },
           user: { id: 42, username: 'maintainer' },
         };
       }
 
-      if (path === '/members/all/42') return { id: 42, access_level: api.actorAccessLevel };
-      if (path === `/repository/tags/${TAG}`) return api.existingTag;
-      if (path === `/pipelines/${CHILD_PIPELINE_ID}`) return api.stagePipeline;
+      if (path === '/members/all/42') return { id: 42, access_level: this.actorAccessLevel };
+
+      if (path === `/repository/tags/${TAG}`) return this.existingTag;
+
+      if (path === `/pipelines/${CHILD_PIPELINE_ID}`) return this.stagePipeline;
 
       return yield* Effect.fail(new ReleaseAutomationFailure(`Unexpected fake GitLab request: ${path}`));
     });
   }
 
-  listPages(path: string): Effect.Effect<readonly unknown[], ReleaseAutomationFailure> {
+  listPages(path: string): Effect.Effect<readonly Schema.Json[], ReleaseAutomationFailure> {
     if (path === `/pipelines/${PIPELINE_ID}/jobs?include_retried=false`) return Effect.succeed(this.parentJobs);
 
     if (path === `/pipelines/${PIPELINE_ID}/bridges`) {
@@ -91,7 +99,9 @@ class ReleaseTagApi implements GitLabClient {
     }
 
     if (path === `/pipelines/${CHILD_PIPELINE_ID}/jobs?include_retried=false`) return Effect.succeed(this.stageJobs);
+
     if (path === '/repository/tags') return Effect.succeed(this.latestTags);
+
     if (path === '/protected_tags') return Effect.succeed(this.protectedTagRules);
 
     return Effect.fail(new ReleaseAutomationFailure(`Unexpected fake GitLab listing: ${path}`));
@@ -314,6 +324,33 @@ describe('manual protected-main release tagging', () => {
       commitSha: COMMIT_SHA,
       pipelineId: PIPELINE_ID,
     });
+  });
+
+  it('rejects malformed existing tag evidence before publishing or writing a receipt', async () => {
+    const api = new ReleaseTagApi();
+    api.existingTag = { name: TAG, protected: true, commit: { id: COMMIT_SHA } };
+    let publications = 0;
+    let receipts = 0;
+
+    await expect(
+      Effect.runPromise(
+        createReleaseTag(
+          tagInput(),
+          api,
+          () =>
+            Effect.sync(() => {
+              receipts += 1;
+            }),
+          () =>
+            Effect.sync(() => {
+              publications += 1;
+            }),
+        ),
+      ),
+    ).rejects.toMatchObject({ message: 'Existing release tag response is invalid' });
+
+    expect(publications).toBe(0);
+    expect(receipts).toBe(0);
   });
 
   it('never replaces a tag with a different commit or pipeline identity', async () => {

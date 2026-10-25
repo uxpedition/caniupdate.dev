@@ -75,6 +75,7 @@ const verifyFooter = (page: Page, config: SmokeConfig): Effect.Effect<void, Smok
   Effect.gen(function* () {
     const footer = page.locator('footer');
     const production = config.target === 'production';
+
     const link = footer.getByRole('link', {
       name: `View ${production ? 'release' : config.local ? 'dev' : 'stage'} commit ${config.expectedSha}`,
       exact: true,
@@ -82,6 +83,7 @@ const verifyFooter = (page: Page, config: SmokeConfig): Effect.Effect<void, Smok
 
     if (production) {
       const version = config.expectedVersion;
+
       if (version === null) return yield* Effect.fail(new SmokeFailure('footer-version'));
       yield* playwrightCall('footer-version', () =>
         footer.getByText(`v${version}`, { exact: true }).waitFor({ state: 'visible' }),

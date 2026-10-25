@@ -6,6 +6,7 @@ import ts from 'typescript';
 import type { DeploymentTarget } from './runtimeSettings.ts';
 
 const RateLimitBindingSchema = Schema.Literals(['PUBLIC_RATE_LIMITER', 'BRIEFING_GENERATION_LIMITER']);
+
 export type RateLimitBinding = typeof RateLimitBindingSchema.Type;
 
 const WRANGLER_ENVIRONMENT: Record<DeploymentTarget, 'stage' | 'production'> = {
@@ -105,6 +106,7 @@ export function deploymentRateLimitConfig(
     const config = yield* Schema.decodeUnknownEffect(ConfigSchema, { errors: 'all' })(input).pipe(
       Effect.mapError(() => new RateLimitConfigFailure({ message: 'Invalid Worker deployment configuration' })),
     );
+
     const environment = WRANGLER_ENVIRONMENT[target];
     const environmentConfig = config.env[environment];
 
@@ -131,6 +133,24 @@ export function deploymentRateLimitConfig(
   });
 }
 
+const readRateLimitSource = Effect.fnUntraced(function* (source: string) {
+  const fs = yield* FileSystem.FileSystem;
+
+  const contents = yield* fs
+    .readFileString(source, 'utf8')
+    .pipe(Effect.mapError(() => new RateLimitConfigFailure({ message: 'Invalid Worker deployment configuration' })));
+
+  const parsed = ts.parseConfigFileTextToJson(source, contents);
+
+  if (parsed.error) {
+    return yield* Effect.fail(new RateLimitConfigFailure({ message: 'Invalid Worker deployment configuration' }));
+  }
+
+  return yield* Schema.decodeUnknownEffect(Schema.Json, { errors: 'all' })(parsed.config).pipe(
+    Effect.mapError(() => new RateLimitConfigFailure({ message: 'Invalid Worker deployment configuration' })),
+  );
+});
+
 export function withRateLimitConfig<A, E, R>(
   source: string,
   target: DeploymentTarget,
@@ -141,26 +161,16 @@ export function withRateLimitConfig<A, E, R>(
   return Effect.scoped(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const contents = yield* fs
-        .readFileString(source, 'utf8')
-        .pipe(
-          Effect.mapError(() => new RateLimitConfigFailure({ message: 'Invalid Worker deployment configuration' })),
-        );
-      const parsed = ts.parseConfigFileTextToJson(source, contents);
 
-      if (parsed.error) {
-        return yield* Effect.fail(new RateLimitConfigFailure({ message: 'Invalid Worker deployment configuration' }));
-      }
-
-      const json = yield* Schema.decodeUnknownEffect(Schema.Json, { errors: 'all' })(parsed.config).pipe(
-        Effect.mapError(() => new RateLimitConfigFailure({ message: 'Invalid Worker deployment configuration' })),
-      );
+      const json = yield* readRateLimitSource(source);
       const config = yield* deploymentRateLimitConfig(json, dirname(resolve(source)), target, binding, limit);
+
       const directory = yield* fs
         .makeTempDirectoryScoped({ prefix: 'can-i-update-rate-config-' })
         .pipe(
           Effect.mapError(() => new RateLimitConfigFailure({ message: 'Invalid Worker deployment configuration' })),
         );
+
       const path = join(directory, 'wrangler.json');
 
       yield* fs
@@ -168,6 +178,7 @@ export function withRateLimitConfig<A, E, R>(
         .pipe(
           Effect.mapError(() => new RateLimitConfigFailure({ message: 'Invalid Worker deployment configuration' })),
         );
+
       yield* fs
         .writeFileString(path, JSON.stringify(config), { mode: 0o600 })
         .pipe(

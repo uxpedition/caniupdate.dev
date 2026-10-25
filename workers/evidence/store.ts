@@ -81,6 +81,15 @@ export class SqlEvidenceCache implements ComparisonEvidenceCache {
     }
 
     observeCacheDecision(options, 'miss');
+
+    return this.loadMissing(key, loader, options);
+  }
+
+  private async loadMissing<T>(
+    key: string,
+    loader: () => Promise<T>,
+    options: ComparisonEvidenceCacheOptions<T>,
+  ): Promise<T> {
     const pending = this.populate(key, loader, options);
     this.inFlight.set(key, pending);
 

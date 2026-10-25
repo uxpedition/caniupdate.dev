@@ -32,6 +32,7 @@ export type WorkerSecrets = Readonly<Record<string, string>>;
 export class RuntimeSettingsFailure extends Data.TaggedError('RuntimeSettingsFailure')<{
   readonly message: string;
 }> {}
+
 const runtimeSettingsFailure = (message: string) => new RuntimeSettingsFailure({ message });
 
 export type DeploymentTarget = 'stage' | 'production';
@@ -51,6 +52,7 @@ function readEndpoint(value: string, name: string): Effect.Effect<URL | undefine
       try: () => new URL(value),
       catch: () => runtimeSettingsFailure(`Invalid ${name}`),
     });
+
     const clean = !endpoint.username && !endpoint.password && !endpoint.search && !endpoint.hash;
 
     if (endpoint.protocol !== 'https:' || !clean) {
@@ -65,12 +67,7 @@ function readHeaders(value: string | undefined, name: string): Effect.Effect<str
   if (!value) return Effect.succeed('{}');
 
   return Effect.gen(function* () {
-    const raw = yield* Effect.try({
-      try: (): unknown => JSON.parse(value),
-      catch: () => runtimeSettingsFailure(`Invalid ${name}; expected a JSON string-to-string header map`),
-    });
-
-    yield* Schema.decodeUnknownEffect(HeaderSchema, { errors: 'all' })(raw).pipe(
+    yield* Schema.decodeUnknownEffect(Schema.fromJsonString(HeaderSchema), { errors: 'all' })(value).pipe(
       Effect.mapError(() => runtimeSettingsFailure(`Invalid ${name}; expected a JSON string-to-string header map`)),
     );
 
@@ -131,26 +128,57 @@ function assertInferenceEndpoint(settings: typeof RuntimeSchema.Type) {
   });
 }
 
+function readReleaseVersion(environment: NodeJS.ProcessEnv, target: DeploymentTarget, releaseVersion?: string) {
+  if (environment.NUXT_PUBLIC_RELEASE_VERSION) {
+    return Effect.fail(
+      runtimeSettingsFailure('NUXT_PUBLIC_RELEASE_VERSION must be derived from the production release receipt'),
+    );
+  }
+
+  const receiptVersion = target === 'production' && isStableReleaseVersion(releaseVersion) ? releaseVersion : undefined;
+
+  if (target === 'production' ? receiptVersion === undefined : releaseVersion !== undefined) {
+    return Effect.fail(runtimeSettingsFailure('Release version metadata must match the production deployment receipt'));
+  }
+
+  return Effect.succeed(receiptVersion);
+}
+
+type FrontendSecrets = {
+  NUXT_INDEXING_ENABLED: string;
+  NUXT_PUBLIC_SITE_URL: string;
+  NUXT_PUBLIC_TELEMETRY_ENABLED: string;
+  NUXT_PUBLIC_RELEASE_VERSION?: string;
+  NUXT_OTEL_ENDPOINT: string;
+  NUXT_OTEL_HEADERS: string;
+};
+
+function frontendSecrets(
+  settings: typeof RuntimeSchema.Type,
+  target: DeploymentTarget,
+  telemetry: { endpoint: string; headers: string },
+  releaseVersion: string | undefined,
+) {
+  const frontend: FrontendSecrets = {
+    NUXT_INDEXING_ENABLED: String(target === 'production'),
+    NUXT_PUBLIC_SITE_URL: settings.NUXT_PUBLIC_SITE_URL,
+    NUXT_PUBLIC_TELEMETRY_ENABLED: settings.NUXT_PUBLIC_TELEMETRY_ENABLED,
+    NUXT_OTEL_ENDPOINT: telemetry.endpoint,
+    NUXT_OTEL_HEADERS: telemetry.headers,
+  };
+
+  if (releaseVersion !== undefined) frontend.NUXT_PUBLIC_RELEASE_VERSION = releaseVersion;
+
+  return frontend;
+}
+
 export function readRuntimeSettings(
   environment: NodeJS.ProcessEnv,
   target: DeploymentTarget,
   releaseVersion?: string,
 ): Effect.Effect<RuntimeSettings, RuntimeSettingsFailure> {
   return Effect.gen(function* () {
-    if (environment.NUXT_PUBLIC_RELEASE_VERSION) {
-      return yield* Effect.fail(
-        runtimeSettingsFailure('NUXT_PUBLIC_RELEASE_VERSION must be derived from the production release receipt'),
-      );
-    }
-
-    const releaseReceiptVersion =
-      target === 'production' && isStableReleaseVersion(releaseVersion) ? releaseVersion : undefined;
-
-    if (target === 'production' ? releaseReceiptVersion === undefined : releaseVersion !== undefined) {
-      return yield* Effect.fail(
-        runtimeSettingsFailure('Release version metadata must match the production deployment receipt'),
-      );
-    }
+    const releaseReceiptVersion = yield* readReleaseVersion(environment, target, releaseVersion);
 
     const settings = yield* decodeSettings(environment).pipe(
       Effect.mapError(() =>
@@ -165,14 +193,7 @@ export function readRuntimeSettings(
 
     return {
       rateLimits: { public: settings.PUBLIC_RATE_LIMIT, generation: settings.BRIEFING_GENERATION_RATE_LIMIT },
-      frontend: {
-        NUXT_INDEXING_ENABLED: String(target === 'production'),
-        NUXT_PUBLIC_SITE_URL: settings.NUXT_PUBLIC_SITE_URL,
-        NUXT_PUBLIC_TELEMETRY_ENABLED: settings.NUXT_PUBLIC_TELEMETRY_ENABLED,
-        ...(releaseReceiptVersion === undefined ? {} : { NUXT_PUBLIC_RELEASE_VERSION: releaseReceiptVersion }),
-        NUXT_OTEL_ENDPOINT: telemetry.endpoint,
-        NUXT_OTEL_HEADERS: telemetry.headers,
-      },
+      frontend: frontendSecrets(settings, target, telemetry, releaseReceiptVersion),
       briefing: {
         AI_BRIEFING_ENDPOINT: settings.AI_BRIEFING_ENDPOINT,
         AI_BRIEFING_API_KEY: settings.AI_BRIEFING_API_KEY,

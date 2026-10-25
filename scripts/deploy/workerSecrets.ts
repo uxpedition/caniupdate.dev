@@ -15,6 +15,7 @@ export function withWorkerSecrets<A, E, R>(
   return Effect.scoped(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
+
       const directory = yield* fs
         .makeTempDirectoryScoped({ prefix: 'can-i-update-worker-secrets-' })
         .pipe(
@@ -22,6 +23,7 @@ export function withWorkerSecrets<A, E, R>(
             () => new WorkerSecretsFailure({ message: 'Worker deployment secrets could not be prepared' }),
           ),
         );
+
       const path = join(directory, 'secrets.json');
 
       yield* fs

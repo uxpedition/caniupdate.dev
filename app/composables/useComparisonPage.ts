@@ -5,14 +5,16 @@ import type { $Fetch, H3Event$Fetch } from 'nitropack/types';
 import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue';
 
 import { setResponseStatus, useNuxtApp, useRequestEvent, useRequestFetch } from '#imports';
-import type { PackageMeasurementsResponse } from '#shared/comparison/comparison.defs';
+import type { PackageDeclarationsResponse, PackageMeasurementsResponse } from '#shared/comparison/comparison.defs';
 import { rateLimitMessage } from '#shared/request/rateLimit.defs';
 import { isReviewedComparisonIndexable } from '#shared/site/reviewedComparisons';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import { prefetchDeclarations } from '~/composables/comparisonDeclarationsPrefetch';
+import { comparisonTierTelemetry } from '~/composables/comparisonPageTelemetry';
 import type { ComparisonTierTelemetry } from '~/composables/comparisonPageTelemetry';
 import { prefetchStoredComparison, readStoredComparisonBriefing } from '~/composables/comparisonSsrPrefetch';
 import { packageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
+import type { PackageComparisonQueryOptions } from '~/composables/packageComparisonQueryOptions';
 import {
   packageMeasurementsQueryOptions,
   prefetchPackageMeasurements,
@@ -51,12 +53,49 @@ const useComparisonMeasurementsQuery = (
   };
 
   return {
-    measurements,
-    isPending,
-    isUnavailable,
     markServerPrefetched,
-    rateLimitMessage: computed(() => rateLimitMessage(query.error.value)),
-    retry: () => query.refetch(),
+    state: {
+      measurements,
+      isMeasurementsPending: isPending,
+      isMeasurementsUnavailable: isUnavailable,
+      measurementsRateLimitMessage: computed(() => rateLimitMessage(query.error.value)),
+      retryMeasurements: () => query.refetch(),
+    },
+  };
+};
+
+const useComparisonDeclarationsQuery = (
+  requestFetch: NuxtRequestFetch,
+  packageName: MaybeRefOrGetter<string>,
+  fromVersion: MaybeRefOrGetter<string>,
+  toVersion: MaybeRefOrGetter<string>,
+  tierTelemetry: ComparisonTierTelemetry | undefined,
+) => {
+  const declarationsOptions = packageComparisonQueryOptions(
+    requestFetch,
+    packageName,
+    fromVersion,
+    toVersion,
+    tierTelemetry,
+  );
+
+  const declarationsQuery = useQuery(declarationsOptions);
+  const declarations = computed(() => declarationsQuery.data.value);
+  const isDeclarationsPending = computed(() => declarations.value === undefined && declarationsQuery.isPending.value);
+  const resolved = computed(() => resolvedBriefingVersions(declarations.value));
+
+  return {
+    declarationsOptions,
+    declarations,
+    resolvedFrom: computed(() => resolved.value.from),
+    resolvedTo: computed(() => resolved.value.to),
+    declarationState: {
+      declarations,
+      isDeclarationsPending,
+      isDeclarationsError: computed(() => declarationsQuery.isError.value),
+      declarationsRateLimitMessage: computed(() => rateLimitMessage(declarationsQuery.error.value)),
+      retryDeclarations: () => declarationsQuery.refetch(),
+    },
   };
 };
 
@@ -70,52 +109,31 @@ const useComparisonPageQueries = (
 ) => {
   const runtime = import.meta.client ? useNuxtApp().$telemetry : undefined;
 
-  const tierTelemetry =
-    runtime === undefined
-      ? undefined
-      : pageTraceContext === undefined
-        ? { runtime }
-        : { runtime, context: pageTraceContext };
+  const tierTelemetry = comparisonTierTelemetry(runtime, pageTraceContext);
 
-  const declarationsOptions = packageComparisonQueryOptions(
-    requestFetch,
-    packageName,
-    fromVersion,
-    toVersion,
-    tierTelemetry,
-  );
-
-  const declarationsQuery = useQuery(declarationsOptions);
-  const declarations = computed(() => declarationsQuery.data.value);
-  const isDeclarationsPending = computed(() => declarations.value === undefined && declarationsQuery.isPending.value);
-  const resolved = computed(() => resolvedBriefingVersions(declarations.value));
-  const resolvedFrom = computed(() => resolved.value.from);
-  const resolvedTo = computed(() => resolved.value.to);
+  const declarations = useComparisonDeclarationsQuery(requestFetch, packageName, fromVersion, toVersion, tierTelemetry);
 
   const measurements = useComparisonMeasurementsQuery(
     requestFetch,
     packageName,
-    resolvedFrom,
-    resolvedTo,
+    declarations.resolvedFrom,
+    declarations.resolvedTo,
     tierTelemetry,
   );
 
-  const briefing = useComparisonBriefing(packageName, resolvedFrom, resolvedTo, pageTraceContext);
+  const { markServerBriefingSeeded, ...briefing } = useComparisonBriefing(
+    packageName,
+    declarations.resolvedFrom,
+    declarations.resolvedTo,
+    pageTraceContext,
+  );
 
   return {
-    declarationsOptions,
-    declarationsQuery,
-    declarations,
-    isDeclarationsPending,
-    resolvedFrom,
-    resolvedTo,
-    measurements: measurements.measurements,
-    isMeasurementsPending: measurements.isPending,
-    isMeasurementsUnavailable: measurements.isUnavailable,
-    measurementsRateLimitMessage: measurements.rateLimitMessage,
-    retryMeasurements: measurements.retry,
+    ...declarations,
+    measurements: measurements.state,
     markServerMeasurementsPrefetched: measurements.markServerPrefetched,
     briefing,
+    markServerBriefingSeeded,
   };
 };
 
@@ -155,6 +173,26 @@ const prefetchComparisonForSsr = async ({
   });
 };
 
+/** Complete declaration status and identity work before considering the independent stored tiers. */
+const prefetchPageDeclarations = async (
+  queryClient: QueryClient,
+  options: PackageComparisonQueryOptions,
+  requestEvent: H3Event | undefined,
+  declarations: () => PackageDeclarationsResponse | undefined,
+  convergeIdentity: () => Promise<void>,
+): Promise<void> => {
+  const failureStatus = await prefetchDeclarations(queryClient, options);
+
+  // Use Nuxt's status bridge: app-side H3 and Nitro can use different event implementations.
+  if (requestEvent !== undefined && failureStatus !== undefined) setResponseStatus(requestEvent, failureStatus);
+
+  if (requestEvent !== undefined) {
+    requestEvent.context.comparisonIndexable = isReviewedComparisonIndexable(declarations());
+  }
+
+  await convergeIdentity();
+};
+
 export const useComparisonPage = async (pageTraceContext?: TraceContext) => {
   const { packageName, fromVersion, toVersion } = useComparisonRoute();
   const requestFetch = useRequestFetch();
@@ -166,16 +204,15 @@ export const useComparisonPage = async (pageTraceContext?: TraceContext) => {
   const convergeIdentity = useComparisonIdentity(queries.declarations, queries.declarationsOptions);
 
   if (import.meta.server) {
-    const failureStatus = await prefetchDeclarations(queryClient, queries.declarationsOptions);
-
-    // Use Nuxt's status bridge: app-side H3 and Nitro can use different event implementations.
-    if (requestEvent !== undefined && failureStatus !== undefined) setResponseStatus(requestEvent, failureStatus);
-    if (requestEvent !== undefined) {
-      requestEvent.context.comparisonIndexable = isReviewedComparisonIndexable(queries.declarations.value);
-    }
-
-    await convergeIdentity();
+    await prefetchPageDeclarations(
+      queryClient,
+      queries.declarationsOptions,
+      requestEvent,
+      () => queries.declarations.value,
+      convergeIdentity,
+    );
   }
+
   await prefetchComparisonForSsr({
     requestEvent,
     requestFetch,
@@ -188,28 +225,15 @@ export const useComparisonPage = async (pageTraceContext?: TraceContext) => {
   queries.markServerMeasurementsPrefetched();
 
   if (import.meta.server) {
-    queries.briefing.markServerBriefingSeeded();
+    queries.markServerBriefingSeeded();
   }
 
   return {
     packageName,
     displayFromVersion: computed(() => queries.declarations.value?.from.version ?? fromVersion.value),
     displayToVersion: computed(() => queries.declarations.value?.to.version ?? toVersion.value),
-    declarations: queries.declarations,
-    measurements: queries.measurements,
-    isDeclarationsPending: queries.isDeclarationsPending,
-    isDeclarationsError: computed(() => queries.declarationsQuery.isError.value),
-    declarationsRateLimitMessage: computed(() => rateLimitMessage(queries.declarationsQuery.error.value)),
-    retryDeclarations: () => queries.declarationsQuery.refetch(),
-    isMeasurementsPending: queries.isMeasurementsPending,
-    isMeasurementsUnavailable: queries.isMeasurementsUnavailable,
-    measurementsRateLimitMessage: queries.measurementsRateLimitMessage,
-    retryMeasurements: queries.retryMeasurements,
-    briefing: queries.briefing.briefing,
-    isBriefingPending: queries.briefing.isBriefingPending,
-    briefingStatus: queries.briefing.briefingStatus,
-    briefingError: queries.briefing.briefingError,
-    retryBriefing: queries.briefing.retryBriefing,
-    sources: queries.briefing.sources,
+    ...queries.declarationState,
+    ...queries.measurements,
+    ...queries.briefing,
   };
 };

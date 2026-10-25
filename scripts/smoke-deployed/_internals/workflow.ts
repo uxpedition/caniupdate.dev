@@ -50,6 +50,7 @@ const verifyAccess = (config: SmokeConfig, report: SmokeReport) =>
 
     if (config.target === 'production') {
       report.publicSocketRoute = yield* checkPublicSocketRoute(config);
+
       return;
     }
 
@@ -60,6 +61,30 @@ const verifyAccess = (config: SmokeConfig, report: SmokeReport) =>
 
     report.access = { frontend, socket, authorizedSocketAdmission };
   });
+
+const publishReport = Effect.fnUntraced(function* (
+  outputDirectory: string,
+  report: SmokeReport,
+  exit: Exit.Exit<void, SmokeFailure>,
+) {
+  const fs = yield* FileSystem.FileSystem;
+
+  if (Exit.isFailure(exit)) {
+    const failure = Cause.findErrorOption(exit.cause);
+    report.outcome = 'failed';
+    report.failureStage = Option.isSome(failure)
+      ? failure.value.stage
+      : Cause.hasInterrupts(exit.cause)
+        ? 'interrupted'
+        : 'configuration-or-response';
+  }
+
+  const output = JSON.stringify(report, null, 2) + '\n';
+  // A report write failure must fail the CLI; never silently claim verification succeeded without evidence.
+  yield* fs.makeDirectory(outputDirectory, { recursive: true, mode: 0o700 });
+  yield* fs.writeFileString(resolve(outputDirectory, 'report.json'), output, { mode: 0o600 });
+  yield* Console.log(output.trimEnd());
+});
 
 /** Owns one verification run and always publishes its sanitized report, including on cancellation or defects. */
 export const runSmoke = (outputDirectory: string) =>
@@ -79,6 +104,7 @@ export const runSmoke = (outputDirectory: string) =>
 
       report.target = config.target;
       report.commitSha = config.expectedSha;
+
       if (config.expectedVersion !== null) report.version = config.expectedVersion;
       yield* fs
         .makeDirectory(outputDirectory, { recursive: true, mode: 0o700 })
@@ -100,23 +126,7 @@ export const runSmoke = (outputDirectory: string) =>
 
     return yield* run.pipe(
       Effect.onExit((exit) =>
-        Effect.gen(function* () {
-          if (Exit.isFailure(exit)) {
-            const failure = Cause.findErrorOption(exit.cause);
-            report.outcome = 'failed';
-            report.failureStage = Option.isSome(failure)
-              ? failure.value.stage
-              : Cause.hasInterrupts(exit.cause)
-                ? 'interrupted'
-                : 'configuration-or-response';
-          }
-
-          const output = JSON.stringify(report, null, 2) + '\n';
-          // A report write failure must fail the CLI; never silently claim verification succeeded without evidence.
-          yield* fs.makeDirectory(outputDirectory, { recursive: true, mode: 0o700 });
-          yield* fs.writeFileString(resolve(outputDirectory, 'report.json'), output, { mode: 0o600 });
-          yield* Console.log(output.trimEnd());
-        }).pipe(Effect.mapError(() => new SmokeFailure('report-write'))),
+        publishReport(outputDirectory, report, exit).pipe(Effect.mapError(() => new SmokeFailure('report-write'))),
       ),
     );
   });

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -14,7 +15,9 @@ import {
 } from './buildArtifact.ts';
 
 const COMMIT_SHA = 'a'.repeat(40);
+
 const PIPELINE_ID = '4711';
+
 const runWithNodeServices = <A, E>(program: Effect.Effect<A, E, FileSystem.FileSystem>): Promise<A> =>
   Effect.runPromise(program.pipe(Effect.provide(NodeServices.layer)));
 
@@ -27,6 +30,43 @@ async function writeBundles(root: string): Promise<void> {
 }
 
 describe('verified Worker build artifacts', () => {
+  it('hashes sorted relative paths before contents and excludes the identity file', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'can-i-update-build-artifact-'));
+
+    try {
+      await writeBundles(root);
+      await mkdir(join(root, 'workers', 'frontend', 'a'));
+      await writeFile(join(root, 'workers', 'frontend', 'a', 'z.js'), 'nested');
+      await writeFile(join(root, 'build-identity.json'), 'ignored identity');
+
+      const identity = await runWithNodeServices(createBuildArtifactIdentity(COMMIT_SHA, PIPELINE_ID, root));
+
+      const expected = createHash('sha256')
+        .update('a/z.js\0')
+        .update('nested')
+        .update('index.js\0')
+        .update("export const worker = 'frontend';\n")
+        .digest('hex');
+
+      expect(identity.bundles.frontend).toBe(expected);
+      await writeFile(join(root, 'build-identity.json'), 'changed ignored identity');
+      expect(await runWithNodeServices(createBuildArtifactIdentity(COMMIT_SHA, PIPELINE_ID, root))).toEqual(identity);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ['{', 'Build artifact identity is unreadable'],
+    ['null', 'Build artifact identity is invalid'],
+    ['1e400', 'Build artifact identity is invalid'],
+    ['{}', 'Build artifact identity is invalid'],
+  ])('classifies invalid identity %s before reading bundle files', async (contents, message) => {
+    await expect(runWithNodeServices(verifyBuildArtifactIdentity(contents, '/unused-fixture-path'))).rejects.toThrow(
+      message,
+    );
+  });
+
   it('records and checks the built frontend and backend bundle contents', async () => {
     const root = await mkdtemp(join(tmpdir(), 'can-i-update-build-artifact-'));
 
@@ -35,6 +75,12 @@ describe('verified Worker build artifacts', () => {
       const identity = await runWithNodeServices(createBuildArtifactIdentity(COMMIT_SHA, PIPELINE_ID, root));
 
       await expect(runWithNodeServices(verifyBuildArtifactIdentity(JSON.stringify(identity), root))).resolves.toEqual(
+        identity,
+      );
+
+      const withIgnoredOverflow = `${JSON.stringify(identity).slice(0, -1)},"ignored":1e400}`;
+
+      await expect(runWithNodeServices(verifyBuildArtifactIdentity(withIgnoredOverflow, root))).resolves.toEqual(
         identity,
       );
 

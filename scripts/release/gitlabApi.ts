@@ -8,12 +8,24 @@ const GITLAB_PROJECT_API = `https://gitlab.com/api/v4/projects/${GITLAB_PROJECT_
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
+// Match JSON.parse, including numeric overflow, without imposing domain validation here.
+const ParsedJsonSchema: Schema.Codec<Schema.Json> = Schema.suspend(() =>
+  Schema.Union([
+    Schema.Null,
+    Schema.Boolean,
+    Schema.Number,
+    Schema.String,
+    Schema.Array(ParsedJsonSchema),
+    Schema.Record(Schema.String, ParsedJsonSchema),
+  ]),
+);
+
 export interface GitLabClient {
-  request(path: string, allowMissing?: boolean): Effect.Effect<unknown, ReleaseAutomationFailure>;
-  listPages(path: string): Effect.Effect<readonly unknown[], ReleaseAutomationFailure>;
+  request(path: string, allowMissing?: boolean): Effect.Effect<Schema.Json, ReleaseAutomationFailure>;
+  listPages(path: string): Effect.Effect<readonly Schema.Json[], ReleaseAutomationFailure>;
 }
 
-type GitLabResponse = { readonly value: unknown; readonly headers: Headers };
+type GitLabResponse = { readonly value: Schema.Json; readonly headers: Headers };
 
 export class GitLabApiClient implements GitLabClient {
   private readonly token: string;
@@ -37,6 +49,7 @@ export class GitLabApiClient implements GitLabClient {
         try: () => new Headers({ 'PRIVATE-TOKEN': token, Accept: 'application/json' }),
         catch: () => new ReleaseAutomationFailure('GitLab API request could not be prepared'),
       });
+
       const response = yield* Effect.tryPromise({
         try: (signal) =>
           requestFetch(url, {
@@ -55,16 +68,20 @@ export class GitLabApiClient implements GitLabClient {
         );
       }
 
-      const value: unknown = yield* Effect.tryPromise({
-        try: () => response.json(),
+      const contents = yield* Effect.tryPromise({
+        try: () => response.text(),
         catch: () => new ReleaseAutomationFailure('GitLab API returned an unreadable response'),
       });
+
+      const value = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ParsedJsonSchema))(contents).pipe(
+        Effect.mapError(() => new ReleaseAutomationFailure('GitLab API returned an unreadable response')),
+      );
 
       return { value, headers: response.headers };
     });
   }
 
-  request(path: string, allowMissing = false): Effect.Effect<unknown, ReleaseAutomationFailure> {
+  request(path: string, allowMissing = false): Effect.Effect<Schema.Json, ReleaseAutomationFailure> {
     if (!path.startsWith('/')) {
       return Effect.fail(new ReleaseAutomationFailure('GitLab API path is invalid'));
     }
@@ -78,27 +95,26 @@ export class GitLabApiClient implements GitLabClient {
     );
   }
 
-  listPages(path: string): Effect.Effect<readonly unknown[], ReleaseAutomationFailure> {
+  listPages(path: string): Effect.Effect<readonly Schema.Json[], ReleaseAutomationFailure> {
     if (!path.startsWith('/')) {
       return Effect.fail(new ReleaseAutomationFailure('GitLab API path is invalid'));
     }
 
-    const client = this;
-
-    return Effect.gen(function* () {
+    return Effect.gen({ self: this }, function* () {
       const endpoint = yield* Effect.try({
         try: () => new URL(`${GITLAB_PROJECT_API}${path}`),
         catch: () => new ReleaseAutomationFailure('GitLab API path is invalid'),
       });
-      const rows: unknown[] = [];
+
+      const rows: Schema.Json[] = [];
 
       for (let page = 1; page <= 20; page += 1) {
         endpoint.searchParams.set('per_page', '100');
         endpoint.searchParams.set('page', String(page));
 
-        const response = yield* client.requestResponse(endpoint);
+        const response = yield* this.requestResponse(endpoint);
 
-        const pageRows = yield* Schema.decodeUnknownEffect(Schema.Array(Schema.Unknown))(response.value).pipe(
+        const pageRows = yield* Schema.decodeUnknownEffect(Schema.Array(ParsedJsonSchema))(response.value).pipe(
           Effect.mapError(() => new ReleaseAutomationFailure('GitLab API returned an invalid paginated response')),
         );
 

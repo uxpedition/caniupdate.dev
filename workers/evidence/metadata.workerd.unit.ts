@@ -93,6 +93,7 @@ describe('shared package metadata in production PackageEvidence', () => {
   }, 120_000);
   it('rejects invalid input before provider work and fails closed on corrupt stored metadata', async () => {
     let calls = 0;
+
     const fixture = await openMetadataFixture(async () => {
       calls += 1;
 

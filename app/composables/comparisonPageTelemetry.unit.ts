@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTelemetryRuntime } from '#shared/telemetry/telemetry';
 import { decodeTelemetryPayload } from '#shared/telemetry/telemetry.defs';
 
-import { openComparisonPage, runComparisonTier } from './comparisonPageTelemetry';
+import { comparisonTierTelemetry, openComparisonPage, runComparisonTier } from './comparisonPageTelemetry';
 
 const installCollector = () => {
   const requests: Array<{ url: string; body: string }> = [];
@@ -68,6 +68,22 @@ describe('openComparisonPage', () => {
     expect(span.attributes.map(({ key }) => key)).not.toContain('comparison.version.to');
     expect(log.attributes.map(({ key }) => key)).not.toContain('comparison.version.from');
     expect(log.attributes.map(({ key }) => key)).not.toContain('comparison.version.to');
+  });
+});
+
+describe('comparisonTierTelemetry', () => {
+  it('preserves absent diagnostics and optional context property presence', async () => {
+    const { telemetry } = installCollector();
+    const context = { traceId: '4bf92f3577b34da6a3ce929d0e0e4736', spanId: '00f067aa0ba902b7' };
+
+    try {
+      expect(comparisonTierTelemetry(undefined, context)).toBeUndefined();
+      expect(comparisonTierTelemetry(telemetry, undefined)).toEqual({ runtime: telemetry });
+      expect(Object.hasOwn(comparisonTierTelemetry(telemetry, undefined) ?? {}, 'context')).toBe(false);
+      expect(comparisonTierTelemetry(telemetry, context)).toEqual({ runtime: telemetry, context });
+    } finally {
+      await telemetry.dispose();
+    }
   });
 });
 

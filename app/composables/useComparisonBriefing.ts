@@ -5,7 +5,33 @@ import type { MaybeRefOrGetter } from 'vue';
 import { useNuxtApp, useRequestFetch } from '#imports';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 import type { BriefingStatus } from '~/composables/briefingSubscription';
-import { packageBriefingQueryOptions, type PackageBriefingResponse } from '~/composables/packageBriefingQueryOptions';
+import {
+  type PackageBriefingQueryKey,
+  packageBriefingQueryOptions,
+  type PackageBriefingResponse,
+} from '~/composables/packageBriefingQueryOptions';
+
+/** Vue Query's SSR observer is not subscribed to later request-cache writes. */
+const useServerSeededBriefing = (
+  queryKey: () => PackageBriefingQueryKey,
+  queryData: () => PackageBriefingResponse | undefined,
+) => {
+  const queryClient = useQueryClient();
+  const serverBriefingSeeded = ref(false);
+
+  const briefing = computed(() =>
+    import.meta.server && serverBriefingSeeded.value
+      ? queryClient.getQueryData<PackageBriefingResponse>(queryKey())?.briefing
+      : queryData()?.briefing,
+  );
+
+  return {
+    briefing,
+    markServerBriefingSeeded: () => {
+      serverBriefingSeeded.value = queryClient.getQueryData(queryKey()) !== undefined;
+    },
+  };
+};
 
 export const useComparisonBriefing = (
   packageName: MaybeRefOrGetter<string>,
@@ -14,8 +40,6 @@ export const useComparisonBriefing = (
   pageContext?: TraceContext,
 ) => {
   const requestFetch = useRequestFetch();
-  const queryClient = useQueryClient();
-  const serverBriefingSeeded = ref(false);
   const telemetryRuntime = import.meta.client ? useNuxtApp().$telemetry : undefined;
   // The generation state the submitted job reports, published by the briefing query as it submits and follows its
   // socket. A comparison change is a different job, so the previous pair's state must not describe the new one.
@@ -36,17 +60,13 @@ export const useComparisonBriefing = (
     briefingStatus.value = undefined;
   });
 
-  // Vue Query's SSR observer is not subscribed to later request-cache writes.
-  const briefing = computed(() =>
-    import.meta.server && serverBriefingSeeded.value
-      ? queryClient.getQueryData<PackageBriefingResponse>(toValue(briefingOptions.queryKey))?.briefing
-      : briefingQuery.data.value?.briefing,
+  const { briefing, markServerBriefingSeeded } = useServerSeededBriefing(
+    () => toValue(briefingOptions.queryKey),
+    () => briefingQuery.data.value,
   );
 
   return {
-    markServerBriefingSeeded: () => {
-      serverBriefingSeeded.value = queryClient.getQueryData(toValue(briefingOptions.queryKey)) !== undefined;
-    },
+    markServerBriefingSeeded,
     briefing,
     isBriefingPending: computed(() => briefing.value === undefined && briefingQuery.isPending.value),
     briefingStatus,

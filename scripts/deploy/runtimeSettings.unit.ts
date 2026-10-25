@@ -80,6 +80,19 @@ describe('GitLab private configuration boundaries', () => {
     }
   });
 
+  it('preserves validated header text and clears omitted optional settings', () => {
+    const headers = '{ "authorization": "Basic\\u0020fixture-only" }';
+    const settings = readSettings({ ...validSettings, OTEL_EXPORTER_OTLP_HEADERS: headers }, 'stage');
+
+    expect(settings.frontend.NUXT_OTEL_HEADERS).toBe(headers);
+    expect(settings.briefing.OTEL_EXPORTER_OTLP_HEADERS).toBe(headers);
+    expect(settings.frontend.NUXT_OTEL_ENDPOINT).toBe('');
+    expect(settings.evidence.GITHUB_TOKEN).toBe('');
+    expect(() =>
+      readSettings({ ...validSettings, OTEL_EXPORTER_OTLP_HEADERS: '{"private-fixture-marker":' }, 'stage'),
+    ).toThrow('Invalid OTEL_EXPORTER_OTLP_HEADERS; expected a JSON string-to-string header map');
+  });
+
   it('refuses telemetry enablement that cannot reach an exporter', () => {
     expect(() => readSettings({ ...validSettings, NUXT_PUBLIC_TELEMETRY_ENABLED: 'true' }, 'stage')).toThrow(
       RuntimeSettingsFailure,
@@ -131,6 +144,7 @@ describe('GitLab private configuration boundaries', () => {
       'production',
       '1.2.3',
     );
+
     const stage = readSettings({ ...validSettings, NUXT_INDEXING_ENABLED: 'true' }, 'stage');
 
     expect(production.frontend.NUXT_PUBLIC_SITE_URL).toBe(PRODUCTION_ORIGIN);

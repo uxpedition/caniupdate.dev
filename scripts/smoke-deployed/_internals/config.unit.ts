@@ -53,6 +53,7 @@ describe('deployed smoke configuration boundaries', () => {
         SMOKE_SOCKET_ORIGIN: 'wss://untrusted.example',
       }),
     );
+
     expect(config.target).toBe('production');
     expect(config.frontendOrigin.origin).toBe('https://caniupdate.dev');
     expect(config.socketOrigin.origin).toBe('wss://briefing.caniupdate.dev');
@@ -72,6 +73,7 @@ describe('deployed smoke configuration boundaries', () => {
           }),
         ),
       );
+
       expect(failure.stage).toBe('configuration');
     },
   );

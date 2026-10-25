@@ -36,6 +36,7 @@ describe('GitLab read-only API adapter', () => {
 
   it('caps paginated GitLab evidence at the release safety limit', async () => {
     const requestedPages: string[] = [];
+
     const api = new GitLabApiClient('fixture-token', async (input) => {
       if (!(input instanceof URL)) throw new Error('GitLab API must pass a URL to fetch');
 
@@ -53,6 +54,7 @@ describe('GitLab read-only API adapter', () => {
   it('uses only authenticated GET requests for verified repository evidence', async () => {
     const requests: { readonly method: string | undefined; readonly token: string | null; readonly path: string }[] =
       [];
+
     const api = new GitLabApiClient('fixture-token', async (input, init) => {
       if (!(input instanceof URL)) throw new Error('GitLab API must pass a URL to fetch');
 
@@ -98,8 +100,26 @@ describe('GitLab read-only API adapter', () => {
     expect(String(failure)).not.toContain('fixture-private-response-token');
   });
 
+  it('keeps malformed JSON in the unreadable-response failure category', async () => {
+    const api = new GitLabApiClient('fixture-token', async () => new Response('{private-invalid-json'));
+    const result = Effect.runPromise(api.request('/repository/branches/main'));
+
+    await expect(result).rejects.toMatchObject({ message: 'GitLab API returned an unreadable response' });
+    await expect(result).rejects.toBeInstanceOf(ReleaseAutomationFailure);
+  });
+
+  it.each(['null', 'false', '42', '1e400', '"text"', '{"extra":[null,true,{"name":"main"},1e400]}'])(
+    'keeps valid JSON %s available for the owning domain decoder',
+    async (contents) => {
+      const api = new GitLabApiClient('fixture-token', async () => new Response(contents));
+
+      await expect(Effect.runPromise(api.request('/repository/branches/main'))).resolves.toEqual(JSON.parse(contents));
+    },
+  );
+
   it('rejects invalid API paths before making a request', async () => {
     let fetched = false;
+
     const api = new GitLabApiClient('fixture-token', async () => {
       fetched = true;
 

@@ -12,6 +12,7 @@ import { decodeTelemetryPayload } from '#shared/telemetry/telemetry.defs';
 import { parseTraceparent } from '#shared/telemetry/traceContext.defs';
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
+import { waitForJobEvent } from './briefingSubscription';
 import { packageBriefingQueryOptions } from './packageBriefingQueryOptions';
 
 const HASH = 'b637f83283a13491f7fee3cd9a108ab6ea20994d00a95a6646ba7a1bd48818b4';
@@ -618,6 +619,25 @@ describe('packageBriefingQueryOptions', () => {
 
     await expect(promise).rejects.toThrow('The briefing stream sent a frame the page cannot read');
     expect(socket.closeCalls).toBe(1);
+  });
+
+  it('preserves a status callback failure and detaches the socket without reconnecting', async () => {
+    const failure = new Error('status update failed');
+
+    const onStatus = vi.fn(() => {
+      throw failure;
+    });
+
+    const promise = waitForJobEvent(EVENTS_URL, 3, new AbortController().signal, onStatus);
+    const socket = await waitForSocket(0);
+    socket.snapshot({ status: 'running', revision: 4 });
+
+    await expect(promise).rejects.toBe(failure);
+    expect(socket.closeCalls).toBe(1);
+    socket.snapshot({ status: 'running', revision: 5 });
+    socket.drop();
+    expect(onStatus).toHaveBeenCalledTimes(1);
+    expect(FakeSocket.instances).toHaveLength(1);
   });
 
   it('calls onStatus for every status frame but records each subscription transition once', async () => {

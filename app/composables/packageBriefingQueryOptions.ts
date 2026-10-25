@@ -21,14 +21,14 @@ import {
   type SubscriptionReason,
   type SubscriptionReporter,
 } from './briefingSubscription';
-import { runComparisonTier } from './comparisonPageTelemetry';
+import { comparisonTierTelemetry, runComparisonTier } from './comparisonPageTelemetry';
 import { PACKAGE_COMPARISON_STALE_TIME } from './packageComparisonQueryOptions';
 
 export const PACKAGE_BRIEFING_QUERY_KEY_PREFIX = ['npm', 'packages', 'briefing'] as const;
 
 type NuxtRequestFetch = H3Event$Fetch | $Fetch;
 
-type PackageBriefingQueryKey = readonly [...typeof PACKAGE_BRIEFING_QUERY_KEY_PREFIX, string, string, string];
+export type PackageBriefingQueryKey = readonly [...typeof PACKAGE_BRIEFING_QUERY_KEY_PREFIX, string, string, string];
 
 export const packageBriefingQueryKey = (packageName: string, from: string, to: string): PackageBriefingQueryKey => [
   ...PACKAGE_BRIEFING_QUERY_KEY_PREFIX,
@@ -248,6 +248,31 @@ const fetchBriefingResponse = async (
   return { packageName: response.packageName, from: response.from, to: response.to, briefing };
 };
 
+/** Query identity and eligibility share the same normalized, reactive comparison inputs. */
+const briefingQueryIdentity = (
+  packageName: MaybeRefOrGetter<string>,
+  fromVersion: MaybeRefOrGetter<string>,
+  toVersion: MaybeRefOrGetter<string>,
+) => {
+  const normalizedPackageName = computed(() => toValue(packageName).trim());
+  const normalizedFromVersion = computed(() => toValue(fromVersion).trim());
+  const normalizedToVersion = computed(() => toValue(toVersion).trim());
+
+  return {
+    queryKey: computed<PackageBriefingQueryKey>(() =>
+      packageBriefingQueryKey(normalizedPackageName.value, normalizedFromVersion.value, normalizedToVersion.value),
+    ),
+    // Briefing is client-only: enabling it during SSR would spend a model call on every page view.
+    enabled: computed(
+      () =>
+        import.meta.client === true &&
+        normalizedPackageName.value.length > 0 &&
+        normalizedFromVersion.value.length > 0 &&
+        normalizedToVersion.value.length > 0,
+    ),
+  };
+};
+
 export const packageBriefingQueryOptions = (
   requestFetch: NuxtRequestFetch,
   packageName: MaybeRefOrGetter<string>,
@@ -257,21 +282,12 @@ export const packageBriefingQueryOptions = (
   pageContext?: TraceContext,
   telemetryRuntime?: TelemetryRuntime,
 ) => {
-  const normalizedPackageName = computed(() => toValue(packageName).trim());
-  const normalizedFromVersion = computed(() => toValue(fromVersion).trim());
-  const normalizedToVersion = computed(() => toValue(toVersion).trim());
+  const identity = briefingQueryIdentity(packageName, fromVersion, toVersion);
 
-  const diagnostics =
-    telemetryRuntime === undefined
-      ? undefined
-      : pageContext === undefined
-        ? { runtime: telemetryRuntime }
-        : { runtime: telemetryRuntime, context: pageContext };
+  const diagnostics = comparisonTierTelemetry(telemetryRuntime, pageContext);
 
   const options = queryOptions({
-    queryKey: computed<PackageBriefingQueryKey>(() =>
-      packageBriefingQueryKey(normalizedPackageName.value, normalizedFromVersion.value, normalizedToVersion.value),
-    ),
+    queryKey: identity.queryKey,
     queryFn: (context: PackageBriefingQueryContext) =>
       runComparisonTier(
         'briefing',
@@ -281,15 +297,7 @@ export const packageBriefingQueryOptions = (
         () => fetchBriefingResponse(context, requestFetch, onStatus, pageContext, telemetryRuntime),
         (result) => (result.briefing.status === 'available' ? 'success' : 'unavailable'),
       ),
-    // Briefing is client-only: with declarations awaited during SSR, this query would otherwise enable server-side
-    // and spend a model call on every page view.
-    enabled: computed(
-      () =>
-        import.meta.client === true &&
-        normalizedPackageName.value.length > 0 &&
-        normalizedFromVersion.value.length > 0 &&
-        normalizedToVersion.value.length > 0,
-    ),
+    enabled: identity.enabled,
     staleTime: PACKAGE_COMPARISON_STALE_TIME,
     retry: false,
     retryOnMount: false,

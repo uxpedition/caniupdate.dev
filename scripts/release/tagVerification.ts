@@ -6,8 +6,11 @@ import { releaseMetadataFromTagMessage } from './metadata.ts';
 import { compareStableReleaseVersions, ReleaseAutomationFailure } from './version.ts';
 
 const SHA = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/));
+
 const PositiveId = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0));
+
 const NullableNumber = Schema.Union([Schema.Number, Schema.Null]);
+
 const NullableString = Schema.Union([Schema.String, Schema.Null]);
 
 const BranchSchema = Schema.Struct({
@@ -15,6 +18,7 @@ const BranchSchema = Schema.Struct({
   protected: Schema.Boolean,
   commit: Schema.Struct({ id: SHA }),
 });
+
 const PipelineSchema = Schema.Struct({
   id: PositiveId,
   status: Schema.String,
@@ -22,6 +26,7 @@ const PipelineSchema = Schema.Struct({
   ref: Schema.String,
   sha: SHA,
 });
+
 const ReleaseJobSchema = Schema.Struct({
   id: PositiveId,
   name: Schema.String,
@@ -29,14 +34,18 @@ const ReleaseJobSchema = Schema.Struct({
   pipeline: Schema.Struct({ id: PositiveId }),
   user: Schema.Union([Schema.Struct({ id: PositiveId, username: Schema.String }), Schema.Null]),
 });
+
 const MemberSchema = Schema.Struct({ id: PositiveId, access_level: PositiveId });
+
 const PipelineJobSchema = Schema.Struct({ name: Schema.String, status: Schema.String, allow_failure: Schema.Boolean });
+
 const BridgeSchema = Schema.Struct({
   name: Schema.String,
   status: Schema.String,
   allow_failure: Schema.Boolean,
   downstream_pipeline: Schema.Union([Schema.Struct({ id: PositiveId }), Schema.Null]),
 });
+
 const DownstreamPipelineSchema = Schema.Struct({
   id: PositiveId,
   status: Schema.String,
@@ -44,7 +53,9 @@ const DownstreamPipelineSchema = Schema.Struct({
   ref: Schema.String,
   sha: SHA,
 });
+
 const RepositoryTagSchema = Schema.Struct({ name: Schema.String, commit: Schema.Struct({ id: SHA }) });
+
 const TagSchema = Schema.Struct({
   name: Schema.String,
   target: SHA,
@@ -52,12 +63,14 @@ const TagSchema = Schema.Struct({
   message: NullableString,
   commit: Schema.Struct({ id: SHA }),
 });
+
 const ProtectedTagAccessSchema = Schema.Struct({
   access_level: Schema.optionalKey(NullableNumber),
   user_id: Schema.optionalKey(NullableNumber),
   group_id: Schema.optionalKey(NullableNumber),
   deploy_key_id: Schema.optionalKey(NullableNumber),
 });
+
 const ProtectedTagSchema = Schema.Struct({
   name: Schema.String,
   create_access_levels: Schema.Array(ProtectedTagAccessSchema),
@@ -67,7 +80,7 @@ const DECODE_OPTIONS = { errors: 'all' as const, onExcessProperty: 'ignore' as c
 
 function decode<A>(
   schema: Schema.Codec<A>,
-  value: unknown,
+  value: Schema.Json,
   failure: string,
 ): Effect.Effect<A, ReleaseAutomationFailure> {
   return Schema.decodeUnknownEffect(
@@ -147,6 +160,7 @@ function assertMaintainerReleaseJob(
       yield* api.request(`/jobs/${releaseJobId}`),
       'GitLab release job response is invalid',
     );
+
     const actor = releaseJob.user;
 
     if (
@@ -181,6 +195,7 @@ function assertSuccessfulMainJobs(
 ): Effect.Effect<void, ReleaseAutomationFailure> {
   return Effect.gen(function* () {
     const rawJobs = yield* api.listPages(`/pipelines/${pipelineId}/jobs?include_retried=false`);
+
     const parentJobs = yield* Effect.forEach(rawJobs, (value) =>
       decode(PipelineJobSchema, value, 'GitLab main pipeline job response is invalid'),
     );
@@ -199,9 +214,11 @@ function stagePipelineIdFromBridge(
 ): Effect.Effect<number, ReleaseAutomationFailure> {
   return Effect.gen(function* () {
     const rawBridges = yield* api.listPages(`/pipelines/${pipelineId}/bridges`);
+
     const bridges = yield* Effect.forEach(rawBridges, (value) =>
       decode(BridgeSchema, value, 'GitLab stage delivery bridge response is invalid'),
     );
+
     const stageBridges = bridges.filter((bridge) => bridge.name === 'stage:delivery');
     const [stageBridge] = stageBridges;
 
@@ -246,6 +263,7 @@ function assertSuccessfulStagePipeline(
     }
 
     const rawJobs = yield* api.listPages(`/pipelines/${stagePipelineId}/jobs?include_retried=false`);
+
     const stageJobs = yield* Effect.forEach(rawJobs, (value) =>
       decode(PipelineJobSchema, value, 'GitLab stage job response is invalid'),
     );
@@ -288,7 +306,7 @@ export function assertVerifiedProtectedMainPipeline(
 }
 
 function latestStableReleaseVersion(
-  tags: readonly unknown[],
+  tags: readonly Schema.Json[],
 ): Effect.Effect<string | undefined, ReleaseAutomationFailure> {
   return Effect.gen(function* () {
     let latest: string | undefined;
@@ -346,14 +364,17 @@ export function assertProtectedTagAccess(
 ): Effect.Effect<void, ReleaseAutomationFailure> {
   return Effect.gen(function* () {
     const rawRules = yield* api.listPages('/protected_tags');
+
     const rules = yield* Effect.forEach(rawRules, (value) =>
       decode(ProtectedTagSchema, value, 'GitLab protected-tag response is invalid'),
     );
+
     const matchingRules = rules.filter((rule) => protectedPatternMatches(rule.name, tagName));
 
     if (matchingRules.length === 0) {
       return yield* Effect.fail(new ReleaseAutomationFailure('No protected-tag rule covers this release tag'));
     }
+
     if (matchingRules.length > 1) {
       return yield* Effect.fail(new ReleaseAutomationFailure('Only one protected-tag rule may cover this release tag'));
     }
@@ -384,7 +405,7 @@ function tagMatchesReleaseReceipt(tag: typeof TagSchema.Type, receipt: ReleaseTa
 }
 
 function matchesExistingReleaseTag(
-  value: unknown | null,
+  value: Schema.Json,
   receipt: ReleaseTagReceipt,
 ): Effect.Effect<boolean, ReleaseAutomationFailure> {
   if (value === null) return Effect.succeed(false);

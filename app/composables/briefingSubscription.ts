@@ -124,17 +124,52 @@ const reportBriefingStatus = (onStatus: (state: BriefingStatus) => void, state: 
   }
 };
 
+/** Normal completion detaches immediately; interruption uses the callback's returned cleanup. */
+const listenForSocketOutcome = (
+  socket: WebSocket,
+  receive: (event: MessageEvent, complete: (effect: Effect.Effect<SocketOutcome, Error>) => void) => void,
+  closed: () => SocketOutcome,
+): Effect.Effect<SocketOutcome, Error> =>
+  Effect.callback<SocketOutcome, Error>((resume) => {
+    let resumed = false;
+
+    function onMessage(event: MessageEvent): void {
+      receive(event, complete);
+    }
+
+    function onClose(): void {
+      complete(Effect.succeed(closed()));
+    }
+
+    function detachListeners(): void {
+      socket.removeEventListener('message', onMessage);
+      socket.removeEventListener('close', onClose);
+    }
+
+    function complete(effect: Effect.Effect<SocketOutcome, Error>): void {
+      if (resumed) return;
+      resumed = true;
+      detachListeners();
+      resume(effect);
+    }
+
+    socket.addEventListener('message', onMessage);
+    socket.addEventListener('close', onClose);
+
+    return Effect.sync(detachListeners);
+  });
+
 const listenForJobEvents = (
   socket: WebSocket,
   revision: number,
   onStatus: (state: BriefingStatus) => void,
   onTransition?: SubscriptionReporter,
-): Effect.Effect<SocketOutcome, Error> =>
-  Effect.callback<SocketOutcome, Error>((resume) => {
-    let highest = revision;
-    let resumed = false;
+): Effect.Effect<SocketOutcome, Error> => {
+  let highest = revision;
 
-    function onMessage(event: MessageEvent): void {
+  return listenForSocketOutcome(
+    socket,
+    (event, complete) => {
       const message = messageFromSocketEvent(event, highest);
 
       if (message === undefined) {
@@ -161,30 +196,10 @@ const listenForJobEvents = (
         reportSubscriptionTransition(onTransition, { outcome: 'failure', reason: 'unexpected', revision: highest });
         complete(Effect.fail(statusError));
       }
-    }
-
-    function onClose(): void {
-      complete(Effect.succeed(disconnected({ revision: highest })));
-    }
-
-    function detachListeners(): void {
-      socket.removeEventListener('message', onMessage);
-      socket.removeEventListener('close', onClose);
-    }
-
-    function complete(effect: Effect.Effect<SocketOutcome, Error>): void {
-      if (resumed) return;
-      // Effect.callback runs its returned cleanup on interruption only; normal resumption detaches listeners here.
-      resumed = true;
-      detachListeners();
-      resume(effect);
-    }
-
-    socket.addEventListener('message', onMessage);
-    socket.addEventListener('close', onClose);
-
-    return Effect.sync(detachListeners);
-  });
+    },
+    () => disconnected({ revision: highest }),
+  );
+};
 
 /** Each connection scope owns its socket and listener cleanup. */
 const readJobEventSocket = (
@@ -212,6 +227,46 @@ const readJobEventSocket = (
     }),
   );
 
+type SubscriptionCursor = { revision: number };
+
+/** Reconnects carry the highest applied revision forward without submitting a new job. */
+const followJobEvents = Effect.fnUntraced(function* (
+  url: string,
+  cursor: SubscriptionCursor,
+  onStatus: (state: BriefingStatus) => void,
+  onTransition: SubscriptionReporter | undefined,
+): Effect.fn.Return<PackageBriefing, Error> {
+  let attempts = 0;
+
+  while (true) {
+    const outcome = yield* readJobEventSocket(url, cursor.revision, onStatus, onTransition);
+    cursor.revision = outcome.revision;
+
+    if (isCompletedSocketMessage(outcome)) return outcome.briefing;
+    const delay = RECONNECT_DELAYS_MS.at(attempts);
+
+    if (delay === undefined) {
+      reportSubscriptionTransition(onTransition, {
+        outcome: 'failure',
+        reason: 'disconnect-exhausted',
+        attempt: attempts,
+        revision: cursor.revision,
+      });
+
+      return yield* Effect.fail(new Error('The briefing stream closed before it reported a result'));
+    }
+
+    attempts += 1;
+    reportSubscriptionTransition(onTransition, {
+      outcome: 'retry',
+      reason: 'disconnected',
+      attempt: attempts,
+      revision: cursor.revision,
+    });
+    yield* Effect.sleep(Duration.millis(delay));
+  }
+});
+
 /**
  * Follows one job's socket to a terminal frame. Effect scopes each connection, owns reconnect sleeps, and applies one
  * deadline to the whole subscription. Reconnecting only reads the current snapshot; it never submits another job.
@@ -228,44 +283,13 @@ export const waitForJobEvent = async (
     throwSubscriptionAbort(signal);
   }
 
-  let highest = revision;
-
-  const subscription = Effect.gen(function* () {
-    let attempts = 0;
-
-    while (true) {
-      const outcome = yield* readJobEventSocket(url, highest, onStatus, onTransition);
-      highest = outcome.revision;
-
-      if (isCompletedSocketMessage(outcome)) return outcome.briefing;
-      const delay = RECONNECT_DELAYS_MS.at(attempts);
-
-      if (delay === undefined) {
-        reportSubscriptionTransition(onTransition, {
-          outcome: 'failure',
-          reason: 'disconnect-exhausted',
-          attempt: attempts,
-          revision: highest,
-        });
-
-        return yield* Effect.fail(new Error('The briefing stream closed before it reported a result'));
-      }
-
-      attempts += 1;
-      reportSubscriptionTransition(onTransition, {
-        outcome: 'retry',
-        reason: 'disconnected',
-        attempt: attempts,
-        revision: highest,
-      });
-      yield* Effect.sleep(Duration.millis(delay));
-    }
-  });
+  const cursor: SubscriptionCursor = { revision };
+  const subscription = followJobEvents(url, cursor, onStatus, onTransition);
 
   const boundedSubscription = Effect.timeoutOrElse(subscription, {
     duration: SUBSCRIPTION_DEADLINE,
     orElse: () => {
-      reportSubscriptionTransition(onTransition, { outcome: 'failure', reason: 'timeout', revision: highest });
+      reportSubscriptionTransition(onTransition, { outcome: 'failure', reason: 'timeout', revision: cursor.revision });
 
       return Effect.fail(new Error('The briefing subscription exceeded its 180-second deadline'));
     },
@@ -274,7 +298,11 @@ export const waitForJobEvent = async (
   return Effect.runPromise(boundedSubscription, { signal }).catch((cause: unknown) => {
     if (!signal.aborted) throw cause;
 
-    reportSubscriptionTransition(onTransition, { outcome: 'cancelled', reason: 'cancelled', revision: highest });
+    reportSubscriptionTransition(onTransition, {
+      outcome: 'cancelled',
+      reason: 'cancelled',
+      revision: cursor.revision,
+    });
 
     return throwSubscriptionAbort(signal);
   });

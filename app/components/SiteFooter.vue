@@ -4,12 +4,17 @@ import { isStableReleaseVersion } from '#shared/site/releaseIdentity';
 import { PRODUCTION_SITE_ORIGIN } from '#shared/site/siteUrl';
 
 const { buildIdentity } = useAppConfig();
+
 const runtimeConfig = useRuntimeConfig();
 
 const productionRuntime = runtimeConfig.public.siteUrl === PRODUCTION_SITE_ORIGIN;
+
 const stageRuntime = runtimeConfig.public.siteUrl === 'https://stage.caniupdate.dev';
+
 const releaseVersion = runtimeConfig.public.releaseVersion;
+
 const productionVersion = productionRuntime && isStableReleaseVersion(releaseVersion) ? `v${releaseVersion}` : null;
+
 const commit =
   buildIdentity.commitSha === null
     ? null

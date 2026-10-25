@@ -15,6 +15,7 @@ import {
   type PackageEvidenceFailure,
 } from './errors';
 import type {
+  ComparisonEvidenceCache,
   ComparisonEvidenceCacheDecision,
   ComparisonEvidenceCacheOptions,
   ComparisonEvidenceServices,
@@ -52,6 +53,19 @@ export const cacheKey = (scope: string, input: CacheIdentity): string => {
   return `${scope}:${digest}`;
 };
 
+const normalizeCollectionFailure = <T>(effect: Effect.Effect<T, unknown, HttpClient.HttpClient>) =>
+  effect.pipe(
+    Effect.mapError(toPackageEvidenceFailure),
+    Effect.catchDefect((cause) => Effect.fail(new EvidenceCollectionError({ cause }))),
+  );
+
+const reportStorageFailure = (provider: EvidenceProvider, cause: PackageEvidenceFailure) =>
+  cause instanceof EvidenceStorageError || cause instanceof EvidenceStorageCorruptionError
+    ? Effect.logError('evidence.storage.failed').pipe(
+        Effect.annotateLogs({ provider, outcome: 'failure', ...evidenceStorageDiagnostic(cause) }),
+      )
+    : Effect.void;
+
 /**
  * Runs one provider lookup through the caller's cache. The loader inherits the caller's context so logs and spans
  * from providers reach the configured export; without a cache the provider runs directly on the ambient client.
@@ -66,57 +80,47 @@ export const runCached = <T>(
   const cache = services?.cache;
 
   // Loader defects are unexpected collection failures; typed provider failures keep their evidence classification.
-  if (cache === undefined) {
-    return effect.pipe(
-      Effect.mapError(toPackageEvidenceFailure),
-      Effect.catchDefect((cause) => Effect.fail(new EvidenceCollectionError({ cause }))),
-    );
-  }
+  const load = normalizeCollectionFailure(effect);
 
-  return Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient;
-    const context = yield* Effect.context<never>();
-    // The cache reports at most one decision per lookup; a lookup that fails before deciding reports none.
-    let decision: ComparisonEvidenceCacheDecision | undefined;
-
-    const loaded = Effect.tryPromise({
-      try: () =>
-        cache.load(
-          key,
-          () =>
-            Effect.runPromiseWith(context)(
-              effect.pipe(
-                Effect.provideService(HttpClient.HttpClient, client),
-                Effect.mapError(toPackageEvidenceFailure),
-                Effect.catchDefect((cause) => Effect.fail(new EvidenceCollectionError({ cause }))),
-              ),
-            ),
-          {
-            ...options,
-            observe: (observed) => {
-              decision = observed;
-            },
-          },
-        ),
-      catch: toEvidenceCacheFailure,
-    });
-
-    // This caller owns the lookup: it reports a storage failure once and the decision it observed.
-    return yield* loaded.pipe(
-      Effect.tapError((cause) =>
-        cause instanceof EvidenceStorageError || cause instanceof EvidenceStorageCorruptionError
-          ? Effect.logError('evidence.storage.failed').pipe(
-              Effect.annotateLogs({ provider, outcome: 'failure', ...evidenceStorageDiagnostic(cause) }),
-            )
-          : Effect.void,
-      ),
-      Effect.ensuring(
-        Effect.suspend(() =>
-          decision === undefined
-            ? Effect.void
-            : Effect.logInfo('evidence.cache.decision').pipe(Effect.annotateLogs({ provider, outcome: decision })),
-        ),
-      ),
-    );
-  });
+  return cache === undefined ? load : loadCached(provider, key, load, cache, options);
 };
+
+const loadCached = Effect.fnUntraced(function* <T>(
+  provider: EvidenceProvider,
+  key: string,
+  effect: Effect.Effect<T, PackageEvidenceFailure, HttpClient.HttpClient>,
+  cache: ComparisonEvidenceCache,
+  options: ComparisonEvidenceCacheOptions<T>,
+): Effect.fn.Return<T, PackageEvidenceFailure, HttpClient.HttpClient> {
+  const client = yield* HttpClient.HttpClient;
+  const context = yield* Effect.context<never>();
+  // The cache reports at most one decision per lookup; a lookup that fails before deciding reports none.
+  let decision: ComparisonEvidenceCacheDecision | undefined;
+
+  const loaded = Effect.tryPromise({
+    try: () =>
+      cache.load(
+        key,
+        () => Effect.runPromiseWith(context)(effect.pipe(Effect.provideService(HttpClient.HttpClient, client))),
+        {
+          ...options,
+          observe: (observed) => {
+            decision = observed;
+          },
+        },
+      ),
+    catch: toEvidenceCacheFailure,
+  });
+
+  // This caller owns the lookup: it reports a storage failure once and the decision it observed.
+  return yield* loaded.pipe(
+    Effect.tapError((cause) => reportStorageFailure(provider, cause)),
+    Effect.ensuring(
+      Effect.suspend(() =>
+        decision === undefined
+          ? Effect.void
+          : Effect.logInfo('evidence.cache.decision').pipe(Effect.annotateLogs({ provider, outcome: decision })),
+      ),
+    ),
+  );
+});

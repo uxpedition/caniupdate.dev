@@ -27,6 +27,13 @@ describe('release identity', () => {
     expect(decodeReleaseTagReceipt(receipt)).toEqual(receipt);
   });
 
+  it('ignores unrelated receipt fields while preserving the tag mismatch error', () => {
+    expect(decodeReleaseTagReceipt({ ...receipt, unrelated: 'ignored' })).toEqual(receipt);
+    expect(() => decodeReleaseTagReceipt({ ...receipt, tag: 'v1.2.4' })).toThrow(
+      'Release receipt tag does not match its version',
+    );
+  });
+
   it.each([
     { ...receipt, tag: 'v1.2.4' },
     { ...receipt, version: '1.2.3-rc.1', tag: 'v1.2.3-rc.1' },

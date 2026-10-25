@@ -213,6 +213,15 @@ export class PackageEvidence extends DurableObject<EvidenceEnv> {
 
     if (input instanceof Response) return input;
 
+    return this.#collectResponse(path, input, context, identity);
+  }
+
+  async #collectResponse(
+    path: string,
+    input: EvidenceRequest,
+    context: Context.Context<never>,
+    identity: Record<string, string>,
+  ): Promise<Response> {
     const key = `${path}:${JSON.stringify(input)}`;
     const load = path === '/measurements' ? this.#measurements(input) : this.#briefingEvidence(input);
     const result = await this.#coalesce(key, load, context, identity);

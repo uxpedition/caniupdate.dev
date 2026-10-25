@@ -23,6 +23,7 @@ export function captureCommand(command: string, args: string[]) {
         stderr: 'ignore',
         forceKillAfter: '5 seconds',
       });
+
       const [output, status] = yield* Effect.all(
         [child.stdout.pipe(Stream.decodeText(), Stream.runCollect), child.exitCode],
         { concurrency: 'unbounded' },
@@ -43,6 +44,7 @@ export function runCommand(command: string, args: string[], environment: NodeJS.
         env: environment,
         forceKillAfter: '5 seconds',
       });
+
       const status = yield* child.exitCode;
 
       if (status !== 0) {
@@ -73,12 +75,15 @@ export function assertRemoteReleaseTag(tag: string, commitSha: string) {
     const result = yield* Effect.exit(
       captureCommand('git', ['ls-remote', '--exit-code', 'origin', `refs/tags/${tag}`, `refs/tags/${tag}^{}`]),
     );
+
     const output = Exit.isFailure(result) ? '' : result.value;
+
     const refs = output
       .trim()
       .split('\n')
       .map((line) => line.split(/\s+/))
       .filter((fields) => fields.length === 2);
+
     const tagObject = refs.find((fields) => fields[1] === `refs/tags/${tag}`);
     const peeled = refs.find((fields) => fields[1] === `refs/tags/${tag}^{}`);
 
@@ -93,19 +98,20 @@ export function assertRemoteReleaseTag(tag: string, commitSha: string) {
 export function readDeployedVersion(outputFile: string, expectedWorker: string) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
+
     const contents = yield* fs
       .readFileString(outputFile, 'utf8')
       .pipe(
         Effect.mapError(() => new DeploymentFailure({ message: 'Invalid artifact or unreadable deployment receipt' })),
       );
+
     const records = contents.trim().split('\n');
     let versionId: string | undefined;
 
     for (const line of records) {
-      const record = yield* Effect.try({
-        try: (): unknown => JSON.parse(line),
-        catch: () => new DeploymentFailure({ message: 'Invalid artifact or unreadable deployment receipt' }),
-      });
+      const record = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(line).pipe(
+        Effect.mapError(() => new DeploymentFailure({ message: 'Invalid artifact or unreadable deployment receipt' })),
+      );
 
       if (!isDeployment(record)) continue;
 

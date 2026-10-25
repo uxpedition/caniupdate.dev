@@ -10,7 +10,9 @@ import { PRIVATE_CI_KEYS } from '../deploy/configurationKeys.ts';
 import { ReleaseAutomationFailure } from './version.ts';
 
 const GITLAB_SSH_REMOTE = 'git@gitlab.com:uxpedition-oss/caniupdate.dev.git';
+
 const GITLAB_ED25519_FINGERPRINT = 'SHA256:eUXGGm1YGsMAS7vkcx6JOJdOGHPem5gQp4taiCfCLB8';
+
 const SSH_SETUP_FAILURE = 'GitLab SSH trust setup failed; provider output was suppressed';
 
 const SENSITIVE_GITLAB_CI_KEYS = [
@@ -28,6 +30,7 @@ function isolatedToolEnvironment(overrides: NodeJS.ProcessEnv = process.env): No
   const environment = { ...overrides };
 
   for (const key of PRIVATE_CI_KEYS) delete environment[key];
+
   for (const key of SENSITIVE_GITLAB_CI_KEYS) delete environment[key];
 
   return environment;
@@ -73,6 +76,35 @@ function runGit(
   });
 }
 
+const verifyHostKey = Effect.fnUntraced(function* (line: string, publicKeyPath: string) {
+  const [host, type, key] = line.split(/\s+/);
+
+  if (host === undefined || type !== 'ssh-ed25519' || key === undefined) {
+    return yield* Effect.fail(new ReleaseAutomationFailure('GitLab SSH host-key response is invalid'));
+  }
+
+  yield* Effect.tryPromise({
+    try: () => writeFile(publicKeyPath, `${type} ${key}\n`, { mode: 0o600 }),
+    catch: () => new ReleaseAutomationFailure(SSH_SETUP_FAILURE),
+  });
+
+  const fingerprint = yield* Effect.try({
+    try: () =>
+      execFileSync('ssh-keygen', ['-lf', publicKeyPath, '-E', 'sha256'], {
+        encoding: 'utf8',
+        env: isolatedToolEnvironment(),
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }),
+    catch: () => new ReleaseAutomationFailure(SSH_SETUP_FAILURE),
+  });
+
+  if (!fingerprint.includes(GITLAB_ED25519_FINGERPRINT)) {
+    return yield* Effect.fail(
+      new ReleaseAutomationFailure('GitLab SSH host fingerprint does not match the pinned official key'),
+    );
+  }
+});
+
 function readVerifiedHostKeys(directory: string): Effect.Effect<readonly string[], ReleaseAutomationFailure> {
   return Effect.gen(function* () {
     const keyScan = yield* Effect.try({
@@ -84,6 +116,7 @@ function readVerifiedHostKeys(directory: string): Effect.Effect<readonly string[
         }),
       catch: () => new ReleaseAutomationFailure(SSH_SETUP_FAILURE),
     });
+
     const keyLines = keyScan.split('\n').filter((line) => line.length > 0 && !line.startsWith('#'));
 
     if (keyLines.length === 0) {
@@ -93,32 +126,7 @@ function readVerifiedHostKeys(directory: string): Effect.Effect<readonly string[
     const knownHosts: string[] = [];
 
     for (const line of keyLines) {
-      const [host, type, key] = line.split(/\s+/);
-
-      if (host === undefined || type !== 'ssh-ed25519' || key === undefined) {
-        return yield* Effect.fail(new ReleaseAutomationFailure('GitLab SSH host-key response is invalid'));
-      }
-
-      const publicKeyPath = resolve(directory, `host-${knownHosts.length}.pub`);
-      yield* Effect.tryPromise({
-        try: () => writeFile(publicKeyPath, `${type} ${key}\n`, { mode: 0o600 }),
-        catch: () => new ReleaseAutomationFailure(SSH_SETUP_FAILURE),
-      });
-      const fingerprint = yield* Effect.try({
-        try: () =>
-          execFileSync('ssh-keygen', ['-lf', publicKeyPath, '-E', 'sha256'], {
-            encoding: 'utf8',
-            env: isolatedToolEnvironment(),
-            stdio: ['ignore', 'pipe', 'ignore'],
-          }),
-        catch: () => new ReleaseAutomationFailure(SSH_SETUP_FAILURE),
-      });
-
-      if (!fingerprint.includes(GITLAB_ED25519_FINGERPRINT)) {
-        return yield* Effect.fail(
-          new ReleaseAutomationFailure('GitLab SSH host fingerprint does not match the pinned official key'),
-        );
-      }
+      yield* verifyHostKey(line, resolve(directory, `host-${knownHosts.length}.pub`));
 
       knownHosts.push(line);
     }
@@ -169,6 +177,51 @@ function configureTrustedGitLabSsh(
   });
 }
 
+function publishTrustedTag(
+  tagName: string,
+  commitSha: string,
+  message: string,
+  trustedSsh: TrustedGitLabSsh,
+): Effect.Effect<void, ReleaseAutomationFailure> {
+  let tagCreated = false;
+
+  const publish = Effect.gen(function* () {
+    yield* runGit(
+      ['tag', '-a', tagName, commitSha, '-m', message],
+      isolatedToolEnvironment({
+        ...process.env,
+        GIT_COMMITTER_NAME: 'Can I update release automation',
+        GIT_COMMITTER_EMAIL: 'release-automation@can-i-update.invalid',
+      }),
+    );
+
+    tagCreated = true;
+
+    yield* runGit(
+      ['push', GITLAB_SSH_REMOTE, `refs/tags/${tagName}`],
+      isolatedToolEnvironment({
+        ...process.env,
+        GIT_SSH_COMMAND: trustedSsh.command,
+        GIT_TERMINAL_PROMPT: '0',
+      }),
+    );
+  });
+
+  return publish.pipe(
+    Effect.catch(() =>
+      Effect.gen(function* () {
+        if (tagCreated) yield* runGit(['tag', '-d', tagName]);
+
+        return yield* Effect.fail(
+          new ReleaseAutomationFailure(
+            'Protected release tag push failed; remote state must be inspected before retrying',
+          ),
+        );
+      }),
+    ),
+  );
+}
+
 export function pushAnnotatedReleaseTag(
   version: string,
   commitSha: string,
@@ -199,45 +252,7 @@ export function pushAnnotatedReleaseTag(
       }),
       (directory) =>
         configureTrustedGitLabSsh(privateKeyFile, directory).pipe(
-          Effect.flatMap((trustedSsh) => {
-            let tagCreated = false;
-
-            const publish = Effect.gen(function* () {
-              yield* runGit(
-                ['tag', '-a', tagName, commitSha, '-m', message],
-                isolatedToolEnvironment({
-                  ...process.env,
-                  GIT_COMMITTER_NAME: 'Can I update release automation',
-                  GIT_COMMITTER_EMAIL: 'release-automation@can-i-update.invalid',
-                }),
-              );
-              yield* Effect.sync(() => {
-                tagCreated = true;
-              });
-              yield* runGit(
-                ['push', GITLAB_SSH_REMOTE, `refs/tags/${tagName}`],
-                isolatedToolEnvironment({
-                  ...process.env,
-                  GIT_SSH_COMMAND: trustedSsh.command,
-                  GIT_TERMINAL_PROMPT: '0',
-                }),
-              );
-            });
-
-            return publish.pipe(
-              Effect.catch(() =>
-                Effect.gen(function* () {
-                  if (tagCreated) yield* runGit(['tag', '-d', tagName]);
-
-                  return yield* Effect.fail(
-                    new ReleaseAutomationFailure(
-                      'Protected release tag push failed; remote state must be inspected before retrying',
-                    ),
-                  );
-                }),
-              ),
-            );
-          }),
+          Effect.flatMap((trustedSsh) => publishTrustedTag(tagName, commitSha, message, trustedSsh)),
         ),
       (directory) =>
         Effect.tryPromise({

@@ -11,6 +11,7 @@ describe('deployment secret-file lifetime', () => {
   it('keeps files owner-only and removes the directory even when deployment fails', async () => {
     let secretPath = '';
     const uploadFailure = new Error('fixture upload failure');
+
     const program = withWorkerSecrets({ AI_BRIEFING_API_KEY: 'fixture-only-key' }, (path) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;

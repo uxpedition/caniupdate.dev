@@ -7,6 +7,7 @@ function request(from: string, to: string, packageName = '@scope/example') {
   const event = mockEvent(
     `http://localhost/resolve/${encodeURIComponent(packageName)}?${new URLSearchParams({ from, to })}`,
   );
+
   event.context.params = { packageName: encodeURIComponent(packageName) };
 
   const metadata = vi.fn().mockResolvedValue({

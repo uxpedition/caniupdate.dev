@@ -1,7 +1,9 @@
-import { Schema } from 'effect';
+import { Function, Schema } from 'effect';
 
 const STABLE_VERSION_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?![\s\S])/;
+
 const SHA_PATTERN = /^[0-9a-f]{40}(?![\s\S])/;
+
 const PIPELINE_ID_PATTERN = /^[1-9][0-9]*(?![\s\S])/;
 
 export const StableReleaseVersionSchema = Schema.String.check(Schema.isPattern(STABLE_VERSION_PATTERN));
@@ -17,13 +19,14 @@ export const ReleaseTagReceiptSchema = Schema.Struct({
 
 export type ReleaseTagReceipt = typeof ReleaseTagReceiptSchema.Type;
 
-export function decodeReleaseTagReceipt(value: unknown): ReleaseTagReceipt {
-  const receipt = Schema.decodeUnknownSync(ReleaseTagReceiptSchema, {
+export const decodeReleaseTagReceipt = Function.flow(
+  Schema.decodeUnknownSync(ReleaseTagReceiptSchema, {
     errors: 'all',
     onExcessProperty: 'ignore',
-  })(value);
+  }),
+  (receipt): ReleaseTagReceipt => {
+    if (receipt.tag !== `v${receipt.version}`) throw new Error('Release receipt tag does not match its version');
 
-  if (receipt.tag !== `v${receipt.version}`) throw new Error('Release receipt tag does not match its version');
-
-  return receipt;
-}
+    return receipt;
+  },
+);

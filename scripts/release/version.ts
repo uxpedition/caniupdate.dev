@@ -13,6 +13,7 @@ function compareVersionPart(left: string | undefined, right: string | undefined)
   const rightPart = BigInt(right);
 
   if (leftPart < rightPart) return -1;
+
   if (leftPart > rightPart) return 1;
 
   return 0;

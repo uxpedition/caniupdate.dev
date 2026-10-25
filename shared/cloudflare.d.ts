@@ -6,9 +6,9 @@ import type { StoredBriefingResult } from './comparison/briefing/storedBriefing.
 import type { PackageEvidenceNamespace } from './comparison/evidence/packageEvidence.defs';
 import type { RateLimitCaller } from './request/rateLimit.defs';
 
-type DisposableBriefingServiceResult = BriefingServiceResult & { [Symbol.dispose](): void };
+export type DisposableBriefingServiceResult = BriefingServiceResult & { [Symbol.dispose](): void };
 
-type DisposableStoredBriefingResult = StoredBriefingResult & { [Symbol.dispose](): void };
+export type DisposableStoredBriefingResult = StoredBriefingResult & { [Symbol.dispose](): void };
 
 /** Native submission object with Cloudflare's documented lifecycle hook. */
 export type BriefingServiceBinding = {

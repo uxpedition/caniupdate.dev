@@ -21,6 +21,7 @@ import {
 import { ReleaseAutomationFailure } from './version.ts';
 
 const SHA = /^[0-9a-f]{40}$/;
+
 const POSITIVE_ID = /^[1-9][0-9]*$/;
 
 export type ReleaseTagInput = {
@@ -50,7 +51,7 @@ type PreparedReleaseTag = {
 
 export function assertReleaseTagContext(environment: NodeJS.ProcessEnv): Effect.Effect<void, ReleaseAutomationFailure> {
   return Effect.gen(function* () {
-    const expected: Readonly<Record<string, string>> = {
+    const expected = {
       CI_SERVER_HOST: 'gitlab.com',
       CI_PROJECT_ID: '86537464',
       CI_PROJECT_PATH: 'uxpedition-oss/caniupdate.dev',
@@ -189,6 +190,7 @@ export function loadReleaseTagInput(
       try: () => readFile(resolve('.output/build-identity.json'), 'utf8'),
       catch: () => new ReleaseAutomationFailure('Build identity artifact could not be read'),
     });
+
     const version = environment['RELEASE_VERSION'];
     const commitSha = environment['CI_COMMIT_SHA'];
     const pipelineId = environment['CI_PIPELINE_ID'];

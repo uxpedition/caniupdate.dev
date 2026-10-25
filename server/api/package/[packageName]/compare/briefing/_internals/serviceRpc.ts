@@ -1,5 +1,7 @@
 import { Predicate, Schema } from 'effect';
 
+import type { DisposableBriefingServiceResult, DisposableStoredBriefingResult } from '#shared/cloudflare';
+
 type RpcResultData = typeof RpcResultDataSchema.Type;
 
 type DisposableRpcResult = RpcResultData & { [Symbol.dispose](): void };
@@ -63,8 +65,8 @@ const copyNodeDevelopmentRpcServiceResultData = (result: RpcResultData): RpcResu
 
 /** Receive a private native RPC value, invoke its disposer, and strictly decode only its application fields. */
 export const receiveServiceRpcResult = async <T>(
-  invoke: () => Promise<unknown>,
-  decode: (value: unknown) => T,
+  invoke: () => Promise<DisposableBriefingServiceResult | DisposableStoredBriefingResult>,
+  decode: (value: RpcResultData) => T,
 ): Promise<T> => {
   const rpcResult: unknown = await invoke();
 

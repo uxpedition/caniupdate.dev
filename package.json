@@ -28,8 +28,8 @@
     "zed:vue-language-server": "node node_modules/@vue/language-server/bin/vue-language-server.js --stdio",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "oxlint . --fix",
-    "lint:check": "oxlint .",
+    "lint": "oxlint . --fix --deny-warnings",
+    "lint:check": "oxlint . --deny-warnings",
     "format": "oxfmt . .gitlab-ci.yml --write",
     "format:check": "oxfmt . .gitlab-ci.yml --check"
   },

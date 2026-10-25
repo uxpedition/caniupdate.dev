@@ -73,6 +73,7 @@ describe('deployment rate binding configuration', () => {
     const before = await readFile(source, 'utf8');
     let temporary = '';
     const failure = new Error('fixture deployment failure');
+
     const program = withRateLimitConfig(source, 'stage', 'BRIEFING_GENERATION_LIMITER', 2, (path) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -94,6 +95,7 @@ describe('deployment rate binding configuration', () => {
     const source = 'workers/briefing/wrangler.jsonc';
     const before = await readFile(source, 'utf8');
     let config: unknown;
+
     const program = withRateLimitConfig(source, 'production', 'BRIEFING_GENERATION_LIMITER', 5, (path) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, type Hash } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -26,6 +26,7 @@ import {
   readRuntimeSettings,
   RuntimeSettingsFailure,
   type DeploymentTarget,
+  type RuntimeSettings,
   type WorkerSecrets,
 } from './runtimeSettings.ts';
 import { withWorkerSecrets } from './workerSecrets.ts';
@@ -33,9 +34,13 @@ import { withWorkerSecrets } from './workerSecrets.ts';
 type Step = { name: string; status: 'started' | 'passed' | 'failed'; versionId?: string };
 
 const targetArgument = process.argv.find((argument) => argument.startsWith('--target='));
+
 const targetValue = targetArgument?.slice('--target='.length);
+
 const target: DeploymentTarget = targetValue === 'production' ? 'production' : 'stage';
+
 const wranglerEnvironment = target;
+
 const workers =
   target === 'stage'
     ? {
@@ -50,8 +55,24 @@ const workers =
         frontend: 'can-i-update-production',
         origin: PRODUCTION_ORIGIN,
       };
+
 const reportDirectory = target === 'stage' ? '.data/stage-deployment' : '.data/production-deployment';
+
 const dryRun = process.argv.includes('--dry-run');
+
+const digestFile = Effect.fnUntraced(function* (fs: FileSystem.FileSystem, digest: Hash, file: string) {
+  const contents = yield* fs
+    .readFile(file)
+    .pipe(
+      Effect.mapError(() => new DeploymentFailure({ message: 'Invalid artifact or unreadable deployment receipt' })),
+    );
+
+  yield* Effect.sync(() => {
+    digest.update(file);
+    digest.update('\0');
+    digest.update(contents);
+  });
+});
 
 function digestDirectory(directory: string): Effect.Effect<string, DeploymentFailure, FileSystem.FileSystem> {
   return Effect.gen(function* () {
@@ -72,6 +93,7 @@ function digestDirectory(directory: string): Effect.Effect<string, DeploymentFai
 
         for (const name of entries) {
           const file = join(path, name);
+
           const entry = yield* Effect.tryPromise({
             try: () => lstat(file),
             catch: () => new DeploymentFailure({ message: 'Invalid artifact or unreadable deployment receipt' }),
@@ -80,19 +102,7 @@ function digestDirectory(directory: string): Effect.Effect<string, DeploymentFai
           if (entry.isDirectory()) {
             yield* visit(file);
           } else if (entry.isFile()) {
-            const contents = yield* fs
-              .readFile(file)
-              .pipe(
-                Effect.mapError(
-                  () => new DeploymentFailure({ message: 'Invalid artifact or unreadable deployment receipt' }),
-                ),
-              );
-
-            yield* Effect.sync(() => {
-              digest.update(file);
-              digest.update('\0');
-              digest.update(contents);
-            });
+            yield* digestFile(fs, digest, file);
           } else {
             return yield* Effect.fail(
               new DeploymentFailure({ message: 'Build artifact contains an unsupported entry' }),
@@ -105,6 +115,28 @@ function digestDirectory(directory: string): Effect.Effect<string, DeploymentFai
 
     return digest.digest('hex');
   });
+}
+
+function deployBundle(
+  bundleName: WorkerBundleName,
+  config: string,
+  secrets: WorkerSecrets,
+  environment: NodeJS.ProcessEnv,
+  outputFile: string,
+  wranglerEnvironment: string,
+  dryRun: boolean,
+) {
+  return withWorkerSecrets(secrets, (secretFile) =>
+    runCommand(
+      'nub',
+      [
+        'exec',
+        'wrangler',
+        ...workerDeployArguments(workerBundleEntryPoint(bundleName), config, wranglerEnvironment, secretFile, dryRun),
+      ],
+      { ...environment, WRANGLER_OUTPUT_FILE_PATH: outputFile },
+    ),
+  );
 }
 
 function deployWorker(
@@ -135,23 +167,7 @@ function deployWorker(
       );
 
     const deploy = (deploymentConfig: string) =>
-      withWorkerSecrets(secrets, (secretFile) =>
-        runCommand(
-          'nub',
-          [
-            'exec',
-            'wrangler',
-            ...workerDeployArguments(
-              workerBundleEntryPoint(bundleName),
-              deploymentConfig,
-              wranglerEnvironment,
-              secretFile,
-              dryRun,
-            ),
-          ],
-          { ...environment, WRANGLER_OUTPUT_FILE_PATH: outputFile },
-        ),
-      );
+      deployBundle(bundleName, deploymentConfig, secrets, environment, outputFile, wranglerEnvironment, dryRun);
 
     if (rateLimit === undefined) {
       yield* deploy(config);
@@ -166,10 +182,15 @@ function deployWorker(
 }
 
 const steps: Step[] = [];
+
 let currentStep: Step | undefined;
+
 let artifactDigest: string | undefined;
+
 let migrationFiles: string[] = [];
+
 let failureReason: string | undefined;
+
 let releaseReceipt: ReleaseTagReceipt | undefined;
 
 function matchesProtectedPipelineArtifact(build: BuildArtifactIdentity): boolean {
@@ -196,6 +217,7 @@ function readBuildArtifact() {
       .pipe(
         Effect.mapError(() => new DeploymentFailure({ message: 'Invalid artifact or unreadable deployment receipt' })),
       );
+
     const build = yield* verifyBuildArtifactIdentity(identityContents);
 
     if (!matchesProtectedPipelineArtifact(build)) {
@@ -217,11 +239,13 @@ function readProductionReceipt(build: BuildArtifactIdentity) {
 
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
+
     const receiptContents = yield* fs
       .readFileString('.data/production-release/tag.json', 'utf8')
       .pipe(
         Effect.mapError(() => new DeploymentFailure({ message: 'Invalid artifact or unreadable deployment receipt' })),
       );
+
     const receipt = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ReleaseTagReceiptSchema), {
       errors: 'all',
       onExcessProperty: 'ignore',
@@ -251,6 +275,7 @@ function readProductionReceipt(build: BuildArtifactIdentity) {
 function loadRuntimeSettings(releaseVersion?: string) {
   return Effect.gen(function* () {
     const settings = yield* readRuntimeSettings(process.env, target, releaseVersion);
+
     const workerEnvironment: NodeJS.ProcessEnv = {
       ...process.env,
       CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false',
@@ -309,6 +334,37 @@ function applyRemoteMigrations(buildCommitSha: string, workerEnvironment: NodeJS
   });
 }
 
+const deployBundles = Effect.fnUntraced(function* (
+  settings: RuntimeSettings,
+  workerEnvironment: NodeJS.ProcessEnv,
+  commitSha: string,
+) {
+  const deploy = (bundle: WorkerBundleName, config: string, rateLimit?: { binding: RateLimitBinding; limit: number }) =>
+    deployWorker(
+      workers[bundle],
+      bundle,
+      config,
+      settings[bundle],
+      workerEnvironment,
+      commitSha,
+      reportDirectory,
+      wranglerEnvironment,
+      dryRun,
+      target,
+      rateLimit,
+    );
+
+  yield* deploy('evidence', 'workers/evidence/wrangler.jsonc');
+  yield* deploy('briefing', 'workers/briefing/wrangler.jsonc', {
+    binding: 'BRIEFING_GENERATION_LIMITER',
+    limit: settings.rateLimits.generation,
+  });
+  yield* deploy('frontend', '.output/server/wrangler.json', {
+    binding: 'PUBLIC_RATE_LIMITER',
+    limit: settings.rateLimits.public,
+  });
+});
+
 const deployment = Effect.gen(function* () {
   const preflightStep: Step = { name: 'preflight', status: 'started' };
 
@@ -324,44 +380,36 @@ const deployment = Effect.gen(function* () {
 
   if (!dryRun) yield* applyRemoteMigrations(build.commitSha, workerEnvironment);
 
-  yield* deployWorker(
-    workers.evidence,
-    'evidence',
-    'workers/evidence/wrangler.jsonc',
-    settings.evidence,
-    workerEnvironment,
-    build.commitSha,
-    reportDirectory,
-    wranglerEnvironment,
-    dryRun,
-    target,
-  );
-  yield* deployWorker(
-    workers.briefing,
-    'briefing',
-    'workers/briefing/wrangler.jsonc',
-    settings.briefing,
-    workerEnvironment,
-    build.commitSha,
-    reportDirectory,
-    wranglerEnvironment,
-    dryRun,
-    target,
-    { binding: 'BRIEFING_GENERATION_LIMITER', limit: settings.rateLimits.generation },
-  );
-  yield* deployWorker(
-    workers.frontend,
-    'frontend',
-    '.output/server/wrangler.json',
-    settings.frontend,
-    workerEnvironment,
-    build.commitSha,
-    reportDirectory,
-    wranglerEnvironment,
-    dryRun,
-    target,
-    { binding: 'PUBLIC_RATE_LIMITER', limit: settings.rateLimits.public },
-  );
+  yield* deployBundles(settings, workerEnvironment, build.commitSha);
+});
+
+const writeDeploymentReport = Effect.fnUntraced(function* (status: 'failed' | 'passed') {
+  const fs = yield* FileSystem.FileSystem;
+
+  yield* fs
+    .writeFileString(
+      join(reportDirectory, 'report.json'),
+      JSON.stringify(
+        {
+          commitSha: process.env['CI_COMMIT_SHA'],
+          pipelineId: process.env['CI_PIPELINE_ID'],
+          parentPipelineId: process.env['PARENT_PIPELINE_ID'],
+          target,
+          dryRun,
+          artifactDigest,
+          release: releaseReceipt,
+          migrationFiles,
+          recordedAt: new Date().toISOString(),
+          status,
+          failureReason,
+          steps,
+        },
+        null,
+        2,
+      ) + '\n',
+      { mode: 0o600 },
+    )
+    .pipe(Effect.mapError(() => new DeploymentFailure({ message: 'Deployment report could not be written' })));
 });
 
 const program = Effect.gen(function* () {
@@ -391,30 +439,7 @@ const program = Effect.gen(function* () {
     });
   }
 
-  yield* fs
-    .writeFileString(
-      join(reportDirectory, 'report.json'),
-      JSON.stringify(
-        {
-          commitSha: process.env['CI_COMMIT_SHA'],
-          pipelineId: process.env['CI_PIPELINE_ID'],
-          parentPipelineId: process.env['PARENT_PIPELINE_ID'],
-          target,
-          dryRun,
-          artifactDigest,
-          release: releaseReceipt,
-          migrationFiles,
-          recordedAt: new Date().toISOString(),
-          status: Exit.isFailure(result) ? 'failed' : 'passed',
-          failureReason,
-          steps,
-        },
-        null,
-        2,
-      ) + '\n',
-      { mode: 0o600 },
-    )
-    .pipe(Effect.mapError(() => new DeploymentFailure({ message: 'Deployment report could not be written' })));
+  yield* writeDeploymentReport(Exit.isFailure(result) ? 'failed' : 'passed');
 }).pipe(Effect.provide(NodeServices.layer));
 
 NodeRuntime.runMain(program);

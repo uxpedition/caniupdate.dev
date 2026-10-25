@@ -3,9 +3,13 @@ import { mockEvent } from 'h3';
 import { Miniflare } from 'miniflare';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import type {
+  BriefingServiceBinding,
+  DisposableBriefingServiceResult,
+  DisposableStoredBriefingResult,
+} from '#shared/cloudflare';
 import type { AvailablePackageBriefing, BriefingEvidence } from '#shared/comparison/briefing/briefing.defs';
 import type { BriefingSubmission } from '#shared/comparison/briefing/briefingJob.defs';
-import type { BriefingServiceResult } from '#shared/comparison/briefing/briefingService.defs';
 import type { StoredBriefingResult } from '#shared/comparison/briefing/storedBriefing.defs';
 import type {
   PackageEvidenceNamespace,
@@ -32,21 +36,12 @@ const getObject = vi.fn<(id: PackageEvidenceObjectId) => PackageEvidenceObject>(
 
 const namespace: PackageEvidenceNamespace = { idFromName, get: getObject };
 
-type DisposableBriefingServiceResult = BriefingServiceResult & { [Symbol.dispose](): void };
-
-type DisposableStoredBriefingResult = StoredBriefingResult & { [Symbol.dispose](): void };
-
-type BriefingService = {
-  submit(packet: BriefingEvidence, caller: RateLimitCaller): Promise<DisposableBriefingServiceResult>;
-  read(packet: BriefingEvidence): Promise<DisposableStoredBriefingResult>;
-};
-
 // The private binding returns Cloudflare's native disposable objects.
 const submit = vi.fn<(packet: BriefingEvidence, caller: RateLimitCaller) => Promise<DisposableBriefingServiceResult>>();
 
 const read = vi.fn<(packet: BriefingEvidence) => Promise<DisposableStoredBriefingResult>>();
 
-const service: BriefingService = { submit, read };
+const service: BriefingServiceBinding = { submit, read };
 
 const evidence = (): BriefingEvidence => ({
   packageName: 'minimist',
@@ -149,7 +144,7 @@ export default { fetch() { return new Response('ok'); } };`,
   });
 
   try {
-    const bindings = await runtime.getBindings<{ BRIEFING_SERVICE: BriefingService }>(callerName);
+    const bindings = await runtime.getBindings<{ BRIEFING_SERVICE: BriefingServiceBinding }>(callerName);
 
     return { service: bindings.BRIEFING_SERVICE, dispose: () => runtime.dispose() };
   } catch (error) {
@@ -162,7 +157,7 @@ function eventFor(
   from = '1.0.0',
   to = '2.0.0',
   packageName = 'minimist',
-  env: { PACKAGE_EVIDENCE?: PackageEvidenceNamespace; BRIEFING_SERVICE?: BriefingService } = {
+  env: { PACKAGE_EVIDENCE?: PackageEvidenceNamespace; BRIEFING_SERVICE?: BriefingServiceBinding } = {
     PACKAGE_EVIDENCE: namespace,
     BRIEFING_SERVICE: service,
   },

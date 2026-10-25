@@ -1,11 +1,13 @@
-import { createHash } from 'node:crypto';
+import { createHash, type Hash } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
 import { Data, Effect, FileSystem, Schema } from 'effect';
 
 const SHA = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/));
+
 const SHA256 = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/));
+
 const PIPELINE_ID = Schema.String.check(Schema.isPattern(/^[1-9][0-9]*$/));
 
 export const BuildArtifactIdentitySchema = Schema.Struct({
@@ -52,6 +54,20 @@ export function workerDeployArguments(
   ];
 }
 
+function digestFile(fs: FileSystem.FileSystem, digest: Hash, file: string, path: string) {
+  return Effect.gen(function* () {
+    const contents = yield* fs
+      .readFile(file)
+      .pipe(Effect.mapError(() => new BuildArtifactFailure({ message: 'Worker build artifact is unreadable' })));
+
+    yield* Effect.sync(() => {
+      digest.update(path);
+      digest.update('\0');
+      digest.update(contents);
+    });
+  });
+}
+
 function directoryDigest(
   directory: string,
   ignoredEntry?: string,
@@ -82,17 +98,7 @@ function directoryDigest(
           if (entry.isDirectory()) {
             yield* visit(file);
           } else if (entry.isFile()) {
-            const contents = yield* fs
-              .readFile(file)
-              .pipe(
-                Effect.mapError(() => new BuildArtifactFailure({ message: 'Worker build artifact is unreadable' })),
-              );
-
-            yield* Effect.sync(() => {
-              digest.update(relativePath);
-              digest.update('\0');
-              digest.update(contents);
-            });
+            yield* digestFile(fs, digest, file, relativePath);
           } else {
             return yield* Effect.fail(
               new BuildArtifactFailure({ message: 'Worker build artifact contains an unsupported file type' }),
@@ -114,6 +120,7 @@ function workerBundleDigest(
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const entryPoint = workerBundleEntryPoint(name, outputRoot);
+
     const entry = yield* fs
       .stat(entryPoint)
       .pipe(
@@ -132,12 +139,10 @@ function workerBundleDigest(
   });
 }
 
-function decodeBuildArtifactIdentity(value: unknown): Effect.Effect<BuildArtifactIdentity, BuildArtifactFailure> {
-  return Schema.decodeUnknownEffect(BuildArtifactIdentitySchema, {
-    errors: 'all',
-    onExcessProperty: 'ignore',
-  })(value).pipe(Effect.mapError(() => new BuildArtifactFailure({ message: 'Build artifact identity is invalid' })));
-}
+const decodeBuildArtifactIdentity = Schema.decodeUnknownEffect(BuildArtifactIdentitySchema, {
+  errors: 'all',
+  onExcessProperty: 'ignore',
+});
 
 function readBundleDigests(
   outputRoot: string,
@@ -167,7 +172,7 @@ export function createBuildArtifactIdentity(
       pipelineId,
       bundles: yield* readBundleDigests(outputRoot),
       artifactSha256: yield* directoryDigest(resolve(outputRoot), 'build-identity.json'),
-    });
+    }).pipe(Effect.mapError(() => new BuildArtifactFailure({ message: 'Build artifact identity is invalid' })));
   });
 }
 
@@ -197,11 +202,14 @@ export function verifyBuildArtifactIdentity(
   outputRoot = '.output',
 ): Effect.Effect<BuildArtifactIdentity, BuildArtifactFailure, FileSystem.FileSystem> {
   return Effect.gen(function* () {
-    const value = yield* Effect.try({
-      try: (): unknown => JSON.parse(contents),
-      catch: () => new BuildArtifactFailure({ message: 'Build artifact identity is unreadable' }),
-    });
-    const identity = yield* decodeBuildArtifactIdentity(value);
+    const value = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(contents).pipe(
+      Effect.mapError(() => new BuildArtifactFailure({ message: 'Build artifact identity is unreadable' })),
+    );
+
+    const identity = yield* decodeBuildArtifactIdentity(value).pipe(
+      Effect.mapError(() => new BuildArtifactFailure({ message: 'Build artifact identity is invalid' })),
+    );
+
     const actualDigests = yield* readBundleDigests(outputRoot);
     const artifactSha256 = yield* directoryDigest(resolve(outputRoot), 'build-identity.json');
 

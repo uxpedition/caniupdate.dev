@@ -97,6 +97,18 @@ const hostedOrigins = {
   production: { SMOKE_ORIGIN: PRODUCTION_ORIGIN, SMOKE_SOCKET_ORIGIN: PRODUCTION_SOCKET_ORIGIN },
 };
 
+const readAccessHeaders = Effect.fnUntraced(function* (target: SmokeConfig['target']) {
+  const accessHeaders: Record<string, string> = {};
+
+  if (target === 'stage') {
+    const credentials = yield* Config.schema(CredentialsSchema);
+    accessHeaders[ACCESS_HEADER_NAMES[0]] = credentials.CF_ACCESS_CLIENT_ID;
+    accessHeaders[ACCESS_HEADER_NAMES[1]] = credentials.CF_ACCESS_CLIENT_SECRET;
+  }
+
+  return accessHeaders;
+});
+
 export const readSmokeConfig: Effect.Effect<SmokeConfig, SmokeFailure> = Effect.gen(function* () {
   const environment = yield* Config.schema(EnvironmentSchema);
   const local = environment.SMOKE_LOCAL === 'true';
@@ -111,6 +123,7 @@ export const readSmokeConfig: Effect.Effect<SmokeConfig, SmokeFailure> = Effect.
           SMOKE_ORIGIN: new URL(hostedOrigins[target].SMOKE_ORIGIN),
           SMOKE_SOCKET_ORIGIN: new URL(hostedOrigins[target].SMOKE_SOCKET_ORIGIN),
         };
+
   const frontendOrigin = origins.SMOKE_ORIGIN;
   const socketOrigin = origins.SMOKE_SOCKET_ORIGIN;
 
@@ -120,13 +133,7 @@ export const readSmokeConfig: Effect.Effect<SmokeConfig, SmokeFailure> = Effect.
   if (!isAllowedTarget(target, frontendOrigin, socketOrigin))
     return yield* Effect.fail(new SmokeFailure('configuration'));
 
-  const accessHeaders: Record<string, string> = {};
-
-  if (target === 'stage') {
-    const credentials = yield* Config.schema(CredentialsSchema);
-    accessHeaders[ACCESS_HEADER_NAMES[0]] = credentials.CF_ACCESS_CLIENT_ID;
-    accessHeaders[ACCESS_HEADER_NAMES[1]] = credentials.CF_ACCESS_CLIENT_SECRET;
-  }
+  const accessHeaders = yield* readAccessHeaders(target);
 
   const socketHttpOrigin = new URL(socketOrigin.href);
   socketHttpOrigin.protocol = socketOrigin.protocol === 'wss:' ? 'https:' : 'http:';

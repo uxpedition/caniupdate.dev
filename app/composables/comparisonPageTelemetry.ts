@@ -8,10 +8,49 @@ import type { TraceContext } from '#shared/telemetry/traceContext.defs';
 
 export type ComparisonTierTelemetry = { readonly runtime: TelemetryRuntime; readonly context?: TraceContext };
 
+/** Keep absent diagnostic context absent rather than creating an own key with an undefined value. */
+export const comparisonTierTelemetry = (
+  runtime: TelemetryRuntime | undefined,
+  context: TraceContext | undefined,
+): ComparisonTierTelemetry | undefined => {
+  if (runtime === undefined) return undefined;
+
+  return context === undefined ? { runtime } : { runtime, context };
+};
+
 type ResolvedTier = {
   readonly packageName: string;
   readonly from: string | { readonly version: string };
   readonly to: string | { readonly version: string };
+};
+
+/** Metadata and outcome classification are diagnostic-only and cannot replace a successful query value. */
+const logTierSuccess = <A extends ResolvedTier>(
+  result: A,
+  context: TraceContext,
+  operation: 'declarations' | 'measurements' | 'briefing',
+  retainedData: boolean,
+  started: number,
+  outcome: (result: A) => 'success' | 'partial' | 'unavailable',
+) => {
+  const fields: ComparisonTelemetryAttributes & { outcome?: 'success' | 'partial' | 'unavailable' } =
+    comparisonTelemetryAttributes(result);
+
+  try {
+    fields.outcome = outcome(result);
+  } catch {
+    // A classifier is diagnostic-only. Missing outcome is uncertainty, not a changed query result.
+  }
+
+  return Effect.logInfo('comparison.tier.settled').pipe(
+    Effect.annotateLogs({
+      ...context,
+      ...fields,
+      operation,
+      retainedData: String(retainedData),
+      durationMs: telemetryDecimal(Date.now() - started),
+    }),
+  );
 };
 
 /** Each query owns its settlement; retained data describes the cache at request start, not a second state store. */
@@ -48,25 +87,7 @@ export const runComparisonTier = <A extends ResolvedTier>(
       ),
     );
 
-    // Metadata never throws, and a classifier throw drops only the outcome: diagnostics never change the query result.
-    const fields: ComparisonTelemetryAttributes & { outcome?: 'success' | 'partial' | 'unavailable' } =
-      comparisonTelemetryAttributes(result);
-
-    try {
-      fields.outcome = outcome(result);
-    } catch {
-      // A classifier is diagnostic-only. Missing outcome is uncertainty, not a changed query result.
-    }
-
-    yield* Effect.logInfo('comparison.tier.settled').pipe(
-      Effect.annotateLogs({
-        ...context,
-        ...fields,
-        operation,
-        retainedData: String(retainedData),
-        durationMs: telemetryDecimal(Date.now() - started),
-      }),
-    );
+    yield* logTierSuccess(result, context, operation, retainedData, started, outcome);
 
     return result;
   }).pipe(
