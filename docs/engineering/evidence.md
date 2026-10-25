@@ -123,7 +123,9 @@ Each archive owns an Effect reference for source-capture reservations. Entry col
 
 Each result keeps at most 64 reached-file fingerprints, 64 findings, 64 uninspected package names, and 32 other coverage reasons. Imports from the same package share one package entry, even when their subpaths differ. A finding has a package-relative path, line numbers, and an excerpt of at most 600 characters. Command expansion, import tracing, and syntax-tree traversal also have work limits. Unsupported shell syntax, external modules, computed imports, parsing failures, missing files, and reached limits make coverage incomplete rather than silently meaning “nothing found.” Install coverage is separate from archive-inventory coverage.
 
-The browser receives findings and coverage, not fingerprints. A comparison reports changed contents only for paths whose fingerprints were observed on both sides. It does not treat an untraced file as missing or claim that matching observed files prove the installation is unchanged.
+The browser receives findings and coverage, not fingerprints. Source links point to the exact package version and line on npmx.dev. A comparison reports changed contents only for paths whose fingerprints were observed on both sides. It does not treat an untraced file as missing or claim that matching observed files prove the installation is unchanged.
+
+The install-script display derives counts, command changes, finding groups, and source links with pure Effect data utilities. Vue owns reactive state; derived measurements are used only when their package and versions match the displayed declarations.
 
 ### OSV advisories
 

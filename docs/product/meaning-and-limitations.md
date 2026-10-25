@@ -93,6 +93,24 @@ The summary above the tables shows matches **only in previous**, **only in new**
 
 An issue matched only to the target version does not, by itself, prove that version introduced it. **Missing or incomplete coverage cannot prove that an issue was fixed or that a package is safe.**
 
+### Install scripts
+
+Expand **Install scripts** to see the commands for each version and findings from the package files they use. Commands appear before file inspection finishes.
+
+Long results scroll within each version's column. The comparison summary stays outside these scrolling areas. Focus a column to scroll it with the keyboard.
+
+Added, removed, and changed commands have separate counts. These counts come from declared scripts, not code inspection. Code coverage is shown separately.
+
+Findings can show network requests, other programs being started, files being read or changed, environment settings being read, and native code being built. Open **Show code** for a short excerpt, or follow the file and line link to that exact package version on npmx.dev.
+
+Checks read published package files without running scripts. Supported commands and imports are followed within that package, including imports using its own name or a `#` shortcut. Dependencies and downloaded files are not inspected.
+
+These are code patterns, not a record of an installation. A function or branch containing a call might never run. We cannot tell from these findings alone which files, addresses, or settings will be used, or what their final values will be.
+
+**Not checked** shows skipped packages in one comma-separated list, with each package named once. Other gaps appear separately. Gaps include import paths calculated at runtime, unsupported commands, and files too large to inspect. Missing findings do not mean that a script does nothing or that a package is safe.
+
+The section also checks for changed contents in files inspected in both versions, even when the command stayed the same. Matching observed files do not prove that all installation behavior stayed the same. These results inform your review; they are not a security verdict.
+
 ### Release notes, exports, and types
 
 A release-note finding reports a relevant change described by the maintainer. The collected notes may not cover every behavior change.

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ChevronDown, LoaderCircle, Minus, Plus } from '@lucide/vue';
+import { Array as EffectArray } from 'effect';
 import { computed, nextTick, ref } from 'vue';
 
 import type { TraceContext } from '#shared/telemetry/traceContext.defs';
@@ -10,6 +11,8 @@ import ComparisonFactSources from '~/components/comparison/ComparisonFactSources
 import DependencyChanges from '~/components/comparison/DependencyChanges.vue';
 import DependencyTable from '~/components/comparison/DependencyTable.vue';
 import EvidencePanel from '~/components/comparison/EvidencePanel.vue';
+import { matchingInstallMeasurements } from '~/components/comparison/installScripts';
+import InstallScripts from '~/components/comparison/InstallScripts.vue';
 import { buildPackageSurface } from '~/components/comparison/packageSurface';
 import PackageSurface from '~/components/comparison/PackageSurface.vue';
 import RowHelp from '~/components/comparison/RowHelp.vue';
@@ -81,7 +84,15 @@ const groups = computed(() => [
   { title: 'Size & provenance', rows: rows.value.slice(8) },
 ]);
 
-const changedCount = computed(() => rows.value.filter((row) => row.changed).length);
+const changedCount = computed(() => {
+  const checked = declarations.value ? matchingInstallMeasurements(declarations.value, measurements.value) : undefined;
+  const installChanged = (checked?.comparison.installImplementation.changedFiles.length ?? 0) > 0;
+
+  return EffectArray.countBy(
+    rows.value,
+    ({ row, changed }) => changed || (row.sourceId === 'comparison.installScripts' && installChanged),
+  );
+});
 
 const dependencyCount = computed(() => declarations.value?.comparison.dependencies.length ?? 0);
 
@@ -392,141 +403,161 @@ const revealCitation = async (event: MouseEvent) => {
                 @toggle="toggleRow('comparison-exports')"
               />
               <template v-for="item in group.rows" :key="item.anchor">
-                <tr :id="item.anchor" class="scroll-mt-6">
-                  <th
-                    scope="row"
-                    class="border-b border-b-border/55 py-[15px] pr-4 pl-0 align-top font-normal wrap-anywhere max-[700px]:py-3.5 max-[700px]:pr-2"
-                  >
-                    <div class="flex items-start">
-                      <button
-                        v-if="item.expandable"
-                        type="button"
-                        :aria-expanded="expanded.has(item.anchor)"
-                        :aria-controls="`details-${item.anchor}`"
-                        class="inline-flex cursor-pointer items-baseline gap-2 text-left [font:inherit] text-inherit focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring max-[700px]:underline max-[700px]:decoration-border max-[700px]:underline-offset-4"
-                        @click="toggleRow(item.anchor)"
-                      >
-                        {{ item.row.label
-                        }}<span
-                          aria-hidden="true"
-                          class="inline-flex shrink-0 self-center text-muted-foreground transition-transform duration-150 motion-reduce:transition-none max-[700px]:hidden"
-                          :class="{ 'rotate-180': expanded.has(item.anchor) }"
+                <InstallScripts
+                  v-if="item.row.sourceId === 'comparison.installScripts'"
+                  :declarations="declarations"
+                  :measurements="measurements"
+                  :unavailable="isMeasurementsUnavailable"
+                  :open="expanded.has(item.anchor)"
+                  @toggle="toggleRow(item.anchor)"
+                />
+                <template v-else>
+                  <tr :id="item.anchor" class="scroll-mt-6">
+                    <th
+                      scope="row"
+                      class="border-b border-b-border/55 py-[15px] pr-4 pl-0 align-top font-normal wrap-anywhere max-[700px]:py-3.5 max-[700px]:pr-2"
+                    >
+                      <div class="flex items-start">
+                        <button
+                          v-if="item.expandable"
+                          type="button"
+                          :aria-expanded="expanded.has(item.anchor)"
+                          :aria-controls="`details-${item.anchor}`"
+                          class="inline-flex cursor-pointer items-baseline gap-2 text-left [font:inherit] text-inherit focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-ring max-[700px]:underline max-[700px]:decoration-border max-[700px]:underline-offset-4"
+                          @click="toggleRow(item.anchor)"
                         >
-                          <ChevronDown :size="14" />
-                        </span>
-                      </button>
-                      <span v-else>{{ item.row.label }}</span>
-                      <RowHelp :label="item.row.label" :explanation="item.row.explanation" />
-                    </div>
-                  </th>
-                  <td
-                    class="border-b border-b-border/55 px-4 py-[15px] align-top text-muted-foreground wrap-anywhere max-[700px]:px-2 max-[700px]:py-3.5"
-                  >
-                    <LoadingMessage
-                      v-if="item.from === MEASURING_VALUE"
-                      as="span"
-                      class="inline-flex"
-                      loading-text="Measuring…"
-                    />
-                    <template v-else>{{ item.from }}</template>
-                    <span v-if="item.fromNote" class="mt-[5px] block text-[11px] leading-[1.6] text-muted-foreground">{{
-                      item.fromNote
-                    }}</span>
-                  </td>
-                  <td
-                    class="border-b border-b-border/55 px-4 py-[15px] align-top wrap-anywhere max-[700px]:px-2 max-[700px]:py-3.5"
-                  >
-                    <span class="font-medium" :class="{ 'text-change': item.changed }"
-                      ><LoadingMessage
+                          {{ item.row.label
+                          }}<span
+                            aria-hidden="true"
+                            class="inline-flex shrink-0 self-center text-muted-foreground transition-transform duration-150 motion-reduce:transition-none max-[700px]:hidden"
+                            :class="{ 'rotate-180': expanded.has(item.anchor) }"
+                          >
+                            <ChevronDown :size="14" />
+                          </span>
+                        </button>
+                        <span v-else>{{ item.row.label }}</span>
+                        <RowHelp :label="item.row.label" :explanation="item.row.explanation" />
+                      </div>
+                    </th>
+                    <td
+                      class="border-b border-b-border/55 px-4 py-[15px] align-top text-muted-foreground wrap-anywhere max-[700px]:px-2 max-[700px]:py-3.5"
+                    >
+                      <LoadingMessage
                         v-if="item.from === MEASURING_VALUE"
                         as="span"
-                        class="inline-flex text-foreground"
+                        class="inline-flex"
                         loading-text="Measuring…"
-                      /><template v-else>{{ item.to }}</template></span
-                    ><span v-if="item.toNote" class="mt-[5px] block text-[11px] leading-[1.6] text-muted-foreground">{{
-                      item.toNote
-                    }}</span
-                    ><span
-                      v-if="item.note && item.showNote"
-                      class="mt-[5px] block text-[11px] leading-[1.6] text-muted-foreground"
-                      >{{ item.note }}</span
-                    >
-                  </td>
-                </tr>
-                <tr v-if="item.expandable" v-show="expanded.has(item.anchor)" :id="`details-${item.anchor}`">
-                  <td
-                    colspan="3"
-                    :class="
-                      item.row.sourceId === 'comparison.dependencies' ||
-                      item.row.sourceId === 'comparison.peers' ||
-                      item.row.sourceId === 'comparison.advisories'
-                        ? 'p-0'
-                        : 'rounded-[6px] bg-muted p-4.5'
-                    "
-                  >
-                    <DependencyChanges
-                      v-if="item.row.sourceId === 'comparison.dependencies' || item.row.sourceId === 'comparison.peers'"
-                      :changes="
-                        item.row.sourceId === 'comparison.peers'
-                          ? declarations.comparison.peers
-                          : declarations.comparison.dependencies
-                      "
-                    />
-                    <AdvisoryChanges
-                      v-if="item.row.sourceId === 'comparison.advisories' && measurements"
-                      :comparison="measurements.comparison.advisories"
-                    />
-                    <div
-                      v-if="item.row.sourceId === 'comparison.dependencies' || item.row.sourceId === 'comparison.peers'"
-                      class="grid grid-cols-2 items-start gap-5 max-[700px]:grid-cols-1"
-                    >
-                      <DependencyTable :version="declarations.from" :peers="item.row.sourceId === 'comparison.peers'" />
-                      <DependencyTable :version="declarations.to" :peers="item.row.sourceId === 'comparison.peers'" />
-                    </div>
-                    <div
-                      v-else-if="item.row.sourceId === 'comparison.advisories' && measurements"
-                      class="grid grid-cols-2 items-start gap-5 max-[700px]:grid-cols-1"
-                    >
-                      <AdvisoryTable
-                        :version="displayFromVersion"
-                        :vulnerabilities="measurements.from.vulnerabilities"
                       />
-                      <AdvisoryTable :version="displayToVersion" :vulnerabilities="measurements.to.vulnerabilities" />
-                    </div>
-                    <div
-                      v-else
-                      class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-7 max-[700px]:grid-cols-[minmax(0,1fr)] max-[700px]:gap-5"
+                      <template v-else>{{ item.from }}</template>
+                      <span
+                        v-if="item.fromNote"
+                        class="mt-[5px] block text-[11px] leading-[1.6] text-muted-foreground"
+                        >{{ item.fromNote }}</span
+                      >
+                    </td>
+                    <td
+                      class="border-b border-b-border/55 px-4 py-[15px] align-top wrap-anywhere max-[700px]:px-2 max-[700px]:py-3.5"
                     >
-                      <div>
-                        <h3 class="mb-3 font-mono text-xs leading-[normal] text-muted-foreground">
-                          {{ displayFromVersion }}
-                        </h3>
-                        <pre
-                          class="max-h-104 overflow-auto font-mono text-xs leading-[1.8] whitespace-pre-wrap wrap-anywhere"
-                          >{{ item.row.from }}</pre>
-                      </div>
-                      <div>
-                        <h3 class="mb-3 font-mono text-xs leading-[normal] text-muted-foreground">
-                          {{ displayToVersion }}
-                        </h3>
-                        <pre
-                          class="max-h-104 overflow-auto font-mono text-xs leading-[1.8] whitespace-pre-wrap wrap-anywhere"
-                          >{{ item.row.to }}</pre>
-                      </div>
-                    </div>
-                    <p
-                      v-if="
-                        item.row.detail &&
-                        item.row.sourceId !== 'comparison.dependencies' &&
-                        item.row.sourceId !== 'comparison.peers' &&
-                        item.row.sourceId !== 'comparison.advisories'
+                      <span class="font-medium" :class="{ 'text-change': item.changed }"
+                        ><LoadingMessage
+                          v-if="item.from === MEASURING_VALUE"
+                          as="span"
+                          class="inline-flex text-foreground"
+                          loading-text="Measuring…"
+                        /><template v-else>{{ item.to }}</template></span
+                      ><span
+                        v-if="item.toNote"
+                        class="mt-[5px] block text-[11px] leading-[1.6] text-muted-foreground"
+                        >{{ item.toNote }}</span
+                      ><span
+                        v-if="item.note && item.showNote"
+                        class="mt-[5px] block text-[11px] leading-[1.6] text-muted-foreground"
+                        >{{ item.note }}</span
+                      >
+                    </td>
+                  </tr>
+                  <tr v-if="item.expandable" v-show="expanded.has(item.anchor)" :id="`details-${item.anchor}`">
+                    <td
+                      colspan="3"
+                      :class="
+                        item.row.sourceId === 'comparison.dependencies' ||
+                        item.row.sourceId === 'comparison.peers' ||
+                        item.row.sourceId === 'comparison.advisories'
+                          ? 'p-0'
+                          : 'rounded-[6px] bg-muted p-4.5'
                       "
-                      class="mt-4 text-xs leading-[1.7] text-muted-foreground"
                     >
-                      {{ item.row.detail }}
-                    </p>
-                  </td>
-                </tr>
+                      <DependencyChanges
+                        v-if="
+                          item.row.sourceId === 'comparison.dependencies' || item.row.sourceId === 'comparison.peers'
+                        "
+                        :changes="
+                          item.row.sourceId === 'comparison.peers'
+                            ? declarations.comparison.peers
+                            : declarations.comparison.dependencies
+                        "
+                      />
+                      <AdvisoryChanges
+                        v-if="item.row.sourceId === 'comparison.advisories' && measurements"
+                        :comparison="measurements.comparison.advisories"
+                      />
+                      <div
+                        v-if="
+                          item.row.sourceId === 'comparison.dependencies' || item.row.sourceId === 'comparison.peers'
+                        "
+                        class="grid grid-cols-2 items-start gap-5 max-[700px]:grid-cols-1"
+                      >
+                        <DependencyTable
+                          :version="declarations.from"
+                          :peers="item.row.sourceId === 'comparison.peers'"
+                        />
+                        <DependencyTable :version="declarations.to" :peers="item.row.sourceId === 'comparison.peers'" />
+                      </div>
+                      <div
+                        v-else-if="item.row.sourceId === 'comparison.advisories' && measurements"
+                        class="grid grid-cols-2 items-start gap-5 max-[700px]:grid-cols-1"
+                      >
+                        <AdvisoryTable
+                          :version="displayFromVersion"
+                          :vulnerabilities="measurements.from.vulnerabilities"
+                        />
+                        <AdvisoryTable :version="displayToVersion" :vulnerabilities="measurements.to.vulnerabilities" />
+                      </div>
+                      <div
+                        v-else
+                        class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-7 max-[700px]:grid-cols-[minmax(0,1fr)] max-[700px]:gap-5"
+                      >
+                        <div>
+                          <h3 class="mb-3 font-mono text-xs leading-[normal] text-muted-foreground">
+                            {{ displayFromVersion }}
+                          </h3>
+                          <pre
+                            class="max-h-104 overflow-auto font-mono text-xs leading-[1.8] whitespace-pre-wrap wrap-anywhere"
+                            >{{ item.row.from }}</pre>
+                        </div>
+                        <div>
+                          <h3 class="mb-3 font-mono text-xs leading-[normal] text-muted-foreground">
+                            {{ displayToVersion }}
+                          </h3>
+                          <pre
+                            class="max-h-104 overflow-auto font-mono text-xs leading-[1.8] whitespace-pre-wrap wrap-anywhere"
+                            >{{ item.row.to }}</pre>
+                        </div>
+                      </div>
+                      <p
+                        v-if="
+                          item.row.detail &&
+                          item.row.sourceId !== 'comparison.dependencies' &&
+                          item.row.sourceId !== 'comparison.peers' &&
+                          item.row.sourceId !== 'comparison.advisories'
+                        "
+                        class="mt-4 text-xs leading-[1.7] text-muted-foreground"
+                      >
+                        {{ item.row.detail }}
+                      </p>
+                    </td>
+                  </tr>
+                </template>
               </template>
             </tbody>
           </table>
