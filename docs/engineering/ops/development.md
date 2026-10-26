@@ -264,7 +264,7 @@ This is not a hosted-stage check or an offline check: public evidence providers 
 
 Validation jobs have no deployment credentials. Their reusable dependency cache is limited to the download-store paths above. Only `build-smoke` uploads `.output/`, retained for seven days. It has no GitLab environment and receives no site origin, private Worker runtime settings, or deployment credentials.
 
-A passing protected `main` push continues to `stage:delivery`; MRs do not deploy. The child pipeline runs `deploy:stage`, then independent Chromium and Firefox `verify:stage` jobs. Its parent holds the `stage` resource-group lock through deployment and both browser checks, preventing another pipeline from replacing the site mid-test.
+A passing protected `main` push continues to `stage:delivery`; MRs do not deploy. The child pipeline runs `deploy:stage`, then one `verify:stage` job that checks Chromium followed by Firefox. Its parent holds the `stage` resource-group lock through deployment and both browser checks, preventing another pipeline from replacing the site mid-test.
 
 Child jobs use environment `stage`. `nub run deploy:stage` invokes `scripts/deploy/deploy.ts`, and Workers use Wrangler `--env stage`. Build artifacts and sanitized deployment/verification records have Maintainer-only access and bounded retention.
 
@@ -300,9 +300,10 @@ OS libraries. It does not contain the application, application dependencies, cre
 The application Playwright package still comes from each job's frozen `nub ci`.
 The browser bootstrap preserves the shared download-cache policy and verifies the restored store before installation.
 
-**The image is not active in browser jobs.** Registry publication and a verified digest are prerequisites.
-The existing deployed checks still install their selected browser. See
-[publication and activation](deployment.md#browser-ci-image-publication-and-activation) before switching them.
+Staging and production browser verification each use one job with a published image pinned by digest.
+Each job shares bootstrap and dependency installation, then runs Chromium followed by Firefox.
+It does not install browsers or OS packages. Other jobs keep the ordinary Node image.
+See [publication and activation](deployment.md#browser-ci-image-publication-and-activation) when updating the image.
 
 The `browser-image` child pipeline builds on image inputs, package manifest/lockfile, Node pin, or ordinary
 bootstrap changes. Other protected-main pipelines expose an optional manual maintenance action.

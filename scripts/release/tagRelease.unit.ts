@@ -42,8 +42,7 @@ class ReleaseTagApi implements GitLabClient {
   ];
   stageJobs = [
     { name: 'deploy:stage', status: 'success', allow_failure: false },
-    { name: 'verify:stage: [chromium]', status: 'success', allow_failure: false },
-    { name: 'verify:stage: [firefox]', status: 'success', allow_failure: false },
+    { name: 'verify:stage', status: 'success', allow_failure: false },
   ];
   latestTags = [{ name: 'v1.2.2', commit: { id: OTHER_SHA } }];
   protectedTagRules = [
@@ -222,7 +221,15 @@ describe('manual protected-main release tagging', () => {
       'an unsuccessful unit-test gate',
       (api: ReleaseTagApi) => (api.parentJobs[1] = { name: 'unit-tests', status: 'failed', allow_failure: false }),
     ],
-    ['a missing Firefox stage verification', (api: ReleaseTagApi) => (api.stageJobs = api.stageJobs.slice(0, 2))],
+    ['a missing combined stage verification', (api: ReleaseTagApi) => (api.stageJobs = api.stageJobs.slice(0, 1))],
+    [
+      'a failed combined stage verification',
+      (api: ReleaseTagApi) => (api.stageJobs[1] = { name: 'verify:stage', status: 'failed', allow_failure: false }),
+    ],
+    [
+      'an optional combined stage verification',
+      (api: ReleaseTagApi) => (api.stageJobs[1] = { name: 'verify:stage', status: 'success', allow_failure: true }),
+    ],
     ['a non-Maintainer release actor', (api: ReleaseTagApi) => (api.actorAccessLevel = 30)],
     [
       'an unsuccessful downstream stage pipeline',

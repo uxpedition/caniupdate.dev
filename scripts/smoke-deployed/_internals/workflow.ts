@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 
-import { Cause, Config, Console, Duration, Effect, Exit, FileSystem, Option, Schema } from 'effect';
+import { Cause, Console, Duration, Effect, Exit, FileSystem, Option, Schema } from 'effect';
 import { HttpClientResponse } from 'effect/http';
 
 import {
@@ -10,7 +10,7 @@ import {
   checkUnauthenticatedSocket,
   checkPublicSocketRoute,
 } from './access.ts';
-import { runBrowser, type BrowserOutcome, type BrowserName } from './browserScenario.ts';
+import { runBrowser, type BrowserOutcome } from './browserScenario.ts';
 import { readSmokeConfig, REQUEST_TIMEOUT_MS, type SmokeConfig } from './config.ts';
 import { SmokeFailure } from './errors.ts';
 
@@ -93,13 +93,6 @@ export const runSmoke = (outputDirectory: string) =>
     const fs = yield* FileSystem.FileSystem;
 
     const run = Effect.gen(function* () {
-      const browser = yield* Config.Literals(['chromium', 'firefox'], 'SMOKE_BROWSER').pipe(
-        Config.option,
-        Effect.mapError(() => new SmokeFailure('browser-selection')),
-      );
-
-      const browsers: readonly BrowserName[] = Option.isNone(browser) ? ['chromium', 'firefox'] : [browser.value];
-
       const config = yield* readSmokeConfig;
 
       report.target = config.target;
@@ -113,7 +106,7 @@ export const runSmoke = (outputDirectory: string) =>
       yield* verifySurface(config);
       report.health = 'passed';
 
-      for (const name of browsers) {
+      for (const name of ['chromium', 'firefox'] as const) {
         const outcome = yield* runBrowser(name, config, outputDirectory);
         report.browsers.push(outcome);
 

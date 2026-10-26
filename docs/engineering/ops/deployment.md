@@ -313,13 +313,13 @@ Retain sanitized, dated baseline evidence in the issue or release record. Keep c
 
 [GitLab CI](../../../.gitlab-ci.yml) validates MRs and main pushes. Only a **protected `main` push**, after required validation, can start `stage:delivery`. No MR or tag deploys stage.
 
-`stage:delivery` starts the [delivery child pipeline](../../../scripts/deploy/ci-stage.yml): `deploy:stage`, then separate Chromium and Firefox `verify:stage` jobs.
+`stage:delivery` starts the [delivery child pipeline](../../../scripts/deploy/ci-stage.yml): `deploy:stage`, then one `verify:stage` job that runs Chromium followed by Firefox.
 
 `build-smoke` has no GitLab environment or stage runtime values. It receives no Cloudflare, Access, provider, or telemetry credentials. It retains `.output` for seven days with Maintainer access and embeds the full source SHA and repository URL for the footer.
 
 `smoke:built` checks a separate copy. `deploy:stage` uses the original artifact and deploys all three verified bundles with `--no-bundle`. Browser smoke compares the rendered commit link with the expected CI SHA. There is no build-metadata endpoint.
 
-The parent holds the `stage` resource-group lock until the whole child pipeline finishes. This uses GitLab's [resource-group downstream pipeline pattern](https://docs.gitlab.com/ci/resource_groups/#pipeline-level-concurrency-control-with-cross-projectparent-child-pipelines) with `strategy: mirror`. No child job acquires the lock. Both browsers can run together without a newer deployment replacing the site.
+The parent holds the `stage` resource-group lock until the whole child pipeline finishes. This uses GitLab's [resource-group downstream pipeline pattern](https://docs.gitlab.com/ci/resource_groups/#pipeline-level-concurrency-control-with-cross-projectparent-child-pipelines) with `strategy: mirror`. No child job acquires the lock. A newer deployment cannot replace the site between or during the two browser checks.
 
 `deploy:stage` is non-interruptible and stops on any failure. Browser checks start only after it succeeds. It reads only `stage`-scoped runtime values and sends each complete allowed list through the owning Worker's temporary secrets file.
 
@@ -335,9 +335,19 @@ Allow the CI-only Access token through a **Service Auth** policy on both browser
 
 Protect `main`, retain fork-variable restrictions, and restrict stage deployment to Maintainers where GitLab protected environments are available.
 
-Each `verify:stage` job installs its selected pinned Playwright runtime and uses `SMOKE_BROWSER=chromium` or `SMOKE_BROWSER=firefox`. Its environment action is `verify`, not a new deployment. Each browser checks access, health, search, version selection, declarations/measurements, rendered facts, direct reload, and the stage commit link.
+`verify:stage` and `verify:production` use the same published browser image, pinned by digest in their child
+pipeline configurations. Each job verifies the tool versions, restores and validates the dependency download
+cache, and runs `nub ci` once. Chromium and Firefox then run sequentially in one smoke process, sharing
+setup rather than running two jobs in parallel. This reduces duplicate runner work at the cost of waiting
+for both browsers in sequence.
 
-The submission POST is intercepted before it reaches the server, so these checks never trigger paid generation. A browser failure fails both child and parent pipelines. Retrying verification does not redeploy.
+The staging job's environment action is `verify`, not a new deployment. Access and health checks run once.
+Each browser checks search, version selection, declarations and measurements, rendered facts, direct reload,
+and the staging commit link. One report and artifact archive contain both browsers' results and screenshots.
+
+The submission POST is intercepted before it reaches the server, so these checks never trigger paid generation.
+A browser failure stops the smoke process and fails both child and parent pipelines. The report retains completed
+browser results and the failure stage. Retrying verification does not redeploy.
 
 Stage smoke also checks unauthorized frontend/socket rejection, authenticated health, artifact SHA, and socket-host admission. It uses an unassigned sentinel job and expects application 404; this is not a subscription.
 
@@ -350,8 +360,9 @@ Local checks and dry-runs do not activate hosted automation. Before each live re
 ### Browser CI image publication and activation
 
 The [image maintenance procedure](development.md#browser-ci-image-maintenance) describes the build inputs
-and local verification. Live browser jobs still use ordinary bootstrap and installation. Do not switch them
-to an image tag that has not been published and verified.
+and local verification. Browser verification jobs select their published digest through
+`ci-browser-bootstrap.yml`; deployment and validation jobs keep ordinary bootstrap. Do not select an image
+tag or an unpublished digest.
 
 Before enabling the image workflow, confirm an isolated amd64 runner supports rootless BuildKit user
 namespaces and mounts. The workflow uses the pinned BuildKit rootless image, not privileged Docker-in-Docker
@@ -365,7 +376,7 @@ Publication requires separate operator authorization:
 
 1. Enable this project's GitLab container registry. Protect GitLab environment `browser-image` for Maintainers.
    Keep all application and deployment secrets scoped to their existing environments; give this environment none.
-   Protect registry tags matching `^browser-.*$` with Maintainer minimum roles for push and deletion.
+   Protect registry tags matching `browser-*` with Maintainer minimum roles for push and deletion.
    [Registry tag protection](https://docs.gitlab.com/user/packages/container_registry/protected_container_tags/)
    is separate from environment protection; the manual job alone does not restrict other registry clients.
 2. Run `browser-image` on a reviewed protected-default-branch pipeline. Input changes select it automatically;
@@ -382,18 +393,19 @@ Publication requires separate operator authorization:
    `ci-stage.yml` and `ci-production.yml`, supplying its required `image` input as the actual
    `CI_REGISTRY_IMAGE` path followed by `@sha256:` and the verified digest. The input has no default and
    rejects unpinned tags. Extend `.browser-runtime` only from `verify:stage` and `verify:production`.
-   Keep ordinary `ci-bootstrap.yml` for all other jobs. Do not change either Chromium/Firefox matrix.
-6. In that same activation change, remove the `playwright install --with-deps` subprocess and its failure
-   handling from `scripts/smoke-deployed/ci-run.ts`. Keep its environment decoding, private-key filtering,
-   smoke invocation, and failure reporting unchanged. The browser template checks image metadata against
-   the repository pins before its own frozen `nub ci`; it neither downloads Nub nor installs OS/browser packages.
+   Keep ordinary `ci-bootstrap.yml` for all other jobs. Each verification job runs both browsers sequentially;
+   do not add a matrix or restore a browser-install step.
+6. Keep the target decoding, private-key filtering, smoke invocation, and failure reporting in
+   `scripts/smoke-deployed/ci-run.ts`. The smoke process runs Chromium followed by Firefox without a
+   per-browser selector. The browser template checks image metadata against the repository pins before
+   its frozen `nub ci`; it neither downloads Nub nor installs OS or browser packages.
 7. Verify the resolved GitLab configuration and run authorized staging Chromium and Firefox checks.
    Confirm bootstrap uses the recorded digest, all versions match, and no browser or apt installation occurs.
    Only then use the same digest for production verification. Preserve the deployment locks and release gates.
 
-No image has been published or digest selected by the checked-in configuration. The unused browser template
-is intentionally not included in live pipelines. Publication, runner compatibility, authenticated pulls,
-and the activation change are prerequisites, not implicit fallbacks or claims of hosted verification.
+The selected digest is recorded in the two child pipeline configurations. A published image and successful
+build-time fixture checks do not prove that a consuming job can pull and start it. Verify authenticated
+pulls and the combined browser job on the intended runner before treating the activation as verified.
 For an update, repeat the same procedure with synchronized pins and a new digest. To roll back after activation,
 restore the previously verified digest only when its tooling still matches the repository; otherwise revert
 the matching tooling change too. Retain active and rollback digests in the registry cleanup policy.

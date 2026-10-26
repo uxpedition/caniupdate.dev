@@ -9,26 +9,8 @@ class CiRunFailure extends Data.TaggedError('CiRunFailure')<{
 }> {}
 
 const CiEnvironmentSchema = Schema.Struct({
-  SMOKE_BROWSER: Schema.Union([Schema.Literal('chromium'), Schema.Literal('firefox')]),
   SMOKE_TARGET: Schema.Union([Schema.Literal('stage'), Schema.Literal('production')]),
 });
-
-const runCommand = (
-  args: readonly string[],
-  environment: NodeJS.ProcessEnv,
-  failureMessage: string,
-): Effect.Effect<number, CiRunFailure, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  Effect.gen(function* () {
-    const childProcess = yield* ChildProcess.make('nub', args, {
-      env: environment,
-      extendEnv: false,
-      stdin: 'inherit',
-      stdout: 'inherit',
-      stderr: 'inherit',
-    }).pipe(Effect.mapError(() => new CiRunFailure({ message: failureMessage })));
-
-    return yield* childProcess.exitCode.pipe(Effect.mapError(() => new CiRunFailure({ message: failureMessage })));
-  });
 
 const program: Effect.Effect<void, CiRunFailure, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> = Effect.gen(
   function* () {
@@ -37,14 +19,13 @@ const program: Effect.Effect<void, CiRunFailure, ChildProcessSpawner.ChildProces
       onExcessProperty: 'ignore',
     })(
       yield* Effect.sync(() => ({
-        SMOKE_BROWSER: process.env['SMOKE_BROWSER'],
         SMOKE_TARGET: process.env['SMOKE_TARGET'],
       })),
     ).pipe(
       Effect.mapError(
         () =>
           new CiRunFailure({
-            message: 'Browser verification requires a supported browser and deployment target.',
+            message: 'Browser verification requires a supported deployment target.',
           }),
       ),
     );
@@ -60,21 +41,21 @@ const program: Effect.Effect<void, CiRunFailure, ChildProcessSpawner.ChildProces
       }
     }
 
-    const install = yield* runCommand(
-      ['exec', 'playwright', 'install', '--with-deps', environment.SMOKE_BROWSER],
-      childEnvironment,
-      'Browser runtime installation failed.',
+    const failureMessage = 'Deployed browser verification failed.';
+
+    const childProcess = yield* ChildProcess.make('nub', ['run', 'smoke:deployed'], {
+      env: childEnvironment,
+      extendEnv: false,
+      stdin: 'inherit',
+      stdout: 'inherit',
+      stderr: 'inherit',
+    }).pipe(Effect.mapError(() => new CiRunFailure({ message: failureMessage })));
+
+    const code = yield* childProcess.exitCode.pipe(
+      Effect.mapError(() => new CiRunFailure({ message: failureMessage })),
     );
 
-    if (install !== 0) return yield* Effect.fail(new CiRunFailure({ message: 'Browser runtime installation failed.' }));
-
-    const smoke = yield* runCommand(
-      ['run', 'smoke:deployed'],
-      childEnvironment,
-      'Deployed browser verification failed.',
-    );
-
-    if (smoke !== 0) return yield* Effect.fail(new CiRunFailure({ message: 'Deployed browser verification failed.' }));
+    if (code !== 0) return yield* Effect.fail(new CiRunFailure({ message: failureMessage }));
   },
 );
 

@@ -1,5 +1,8 @@
 include:
   - local: scripts/deploy/ci-bootstrap.yml
+  - local: scripts/deploy/ci-browser-bootstrap.yml
+    inputs:
+      image: registry.gitlab.com/uxpedition-oss/caniupdate.dev@sha256:dc3a93e4e44764fb67b7bff97ab075dc387e6b6269e5dba559a7f40a52dca427
 
 workflow:
   rules:
@@ -39,15 +42,13 @@ deploy:production:
       - .data/production-release/tag.json
 
 verify:production:
+  extends: .browser-runtime
   stage: verify
   timeout: 10m
   interruptible: false
   needs:
     - job: deploy:production
       artifacts: true
-  parallel:
-    matrix:
-      - SMOKE_BROWSER: [chromium, firefox]
   script:
     - export SMOKE_EXPECTED_VERSION="$(node --input-type=module -e 'import{readFileSync}from"node:fs";process.stdout.write(JSON.parse(readFileSync(".data/production-release/tag.json","utf8")).version)')"
     - node scripts/smoke-deployed/ci-run.ts
@@ -58,6 +59,6 @@ verify:production:
     when: always
     access: maintainer
     expire_in: 30 days
-    name: 'production-$SMOKE_BROWSER-$CI_COMMIT_SHA'
+    name: 'production-browsers-$CI_COMMIT_SHA'
     paths:
       - .data/deployed-verification/

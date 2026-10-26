@@ -1,5 +1,8 @@
 include:
   - local: scripts/deploy/ci-bootstrap.yml
+  - local: scripts/deploy/ci-browser-bootstrap.yml
+    inputs:
+      image: registry.gitlab.com/uxpedition-oss/caniupdate.dev@sha256:dc3a93e4e44764fb67b7bff97ab075dc387e6b6269e5dba559a7f40a52dca427
 
 workflow:
   rules:
@@ -11,7 +14,6 @@ stages:
   - verify
 
 # stage:delivery in the parent owns the stage resource group for this entire pipeline.
-# No child job acquires it, so both browser jobs can run concurrently without deadlocking.
 deploy:stage:
   stage: deploy
   timeout: 15m
@@ -36,15 +38,13 @@ deploy:stage:
       - .data/stage-deployment/report.json
 
 verify:stage:
+  extends: .browser-runtime
   stage: verify
   timeout: 10m
   interruptible: false
   needs:
     - job: deploy:stage
       artifacts: false
-  parallel:
-    matrix:
-      - SMOKE_BROWSER: [chromium, firefox]
   environment:
     name: stage
     action: verify
@@ -58,6 +58,6 @@ verify:stage:
     when: always
     access: maintainer
     expire_in: 30 days
-    name: 'stage-$SMOKE_BROWSER-$CI_COMMIT_SHA'
+    name: 'stage-browsers-$CI_COMMIT_SHA'
     paths:
       - .data/deployed-verification/

@@ -270,7 +270,7 @@ function assertSuccessfulStagePipeline(
 
     yield* requireSuccessfulJobs(
       stageJobs,
-      ['deploy:stage', 'verify:stage: [chromium]', 'verify:stage: [firefox]'],
+      ['deploy:stage', 'verify:stage'],
       'Stage deployment and Chromium/Firefox verification must all succeed',
     );
   });
